@@ -11,9 +11,10 @@ class Pipeline extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'account', 'coaching', 'speaker', 'endorse', 'progress',
+        'category', 'account', 'coaching', 'speaker', 'endorse', 'progress',
         'tanggal_posting', 'tanggal_payment', 'payment_status',
-        'amount_idr', 'amount_usd', 'notes', 'created_by', 'updated_by',
+        'amount_idr', 'amount_usd', 'notes', 'ke_gilang', 'catatan',
+        'created_by', 'updated_by',
     ];
 
     protected $casts = [
@@ -28,7 +29,21 @@ class Pipeline extends Model
         return $this->belongsToMany(Output::class);
     }
 
+    public const CATEGORIES = [
+        'endorse' => 'Endorse', 'agensi' => 'Agensi',
+        'coaching' => 'Coaching', 'speaker' => 'Speaker',
+    ];
     public const ACCOUNTS = ['fk' => 'FK', 'ai_preneur' => 'AI Preneur'];
-    public const PROGRESS = ['editing' => 'Editing', 'progress' => 'Progress', 'done' => 'Done'];
+
+    /** Warna badge per account (kelas Tailwind). */
+    public const ACCOUNT_COLORS = [
+        'fk'         => 'bg-brand-600 text-white',
+        'ai_preneur' => 'bg-violet-600 text-white',
+    ];
+    public const PROGRESS = [
+        'script' => 'Script', 'editing' => 'Editing', 'progress' => 'Progress',
+        'done' => 'Done', 'pending' => 'Pending', 'tentatif' => 'Tentatif',
+    ];
     public const PAYMENT = ['belum' => 'Belum', 'dp' => 'DP', 'lunas' => 'Lunas'];
+    public const KE_GILANG = ['belum' => 'Belum', 'sudah' => 'Sudah', 'done' => 'DONE'];
 }
