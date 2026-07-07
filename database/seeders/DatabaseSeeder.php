@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
+        // Data pipeline diimpor via file SQL (mis. di Hostinger), bukan seeder.
+        // Akun admin tetap dibuat agar bisa login setelah fresh install lokal.
         User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
@@ -25,7 +27,5 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password123'),
             ]
         );
-
-        $this->call(PipelineSeeder::class);
     }
 }
