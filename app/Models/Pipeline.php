@@ -12,18 +12,21 @@ class Pipeline extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'category', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'progress',
-        'tanggal_posting', 'tanggal_payment', 'payment_status',
-        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'ke_gilang', 'catatan',
-        'created_by', 'updated_by',
+        'category', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
+        'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
+        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'ke_gilang', 'catatan',
+        'archived_at', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'tanggal_posting' => 'date',
         'tanggal_payment' => 'date',
+        'deadline' => 'date',
+        'archived_at' => 'datetime',
         'amount_idr' => 'decimal:2',
         'amount_usd' => 'decimal:2',
         'todos' => 'array',
+        'labels' => 'array',
     ];
 
     public function outputs(): BelongsToMany
@@ -36,10 +39,24 @@ class Pipeline extends Model
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
-    public const CATEGORIES = [
-        'endorse' => 'Endorse', 'agensi' => 'Agensi',
-        'coaching' => 'Coaching', 'speaker' => 'Speaker',
-    ];
+    /** Komentar kartu (terbaru dulu saat ditampilkan). */
+    public function comments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PipelineComment::class);
+    }
+
+    /** Lampiran file kartu. */
+    public function attachments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PipelineAttachment::class);
+    }
+
+    /** Kategori/board dinamis dari tabel categories: ['key' => 'Name']. */
+    public static function categories(): array
+    {
+        return Category::orderBy('id')->pluck('name', 'key')->all();
+    }
+
     public const ACCOUNTS = ['fk' => 'FK', 'ai_preneur' => 'AI Preneur'];
 
     /** Warna badge per account (kelas Tailwind). */

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Pipeline;
 use App\Support\ExchangeRate;
+use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
@@ -17,7 +18,7 @@ class DashboardController extends Controller
 
         $countBy = fn (string $col) => $all->groupBy($col)->map->count();
 
-        return view('dashboard', [
+        return Inertia::render('Dashboard', [
             'rate'        => $rate,
             'total'       => $all->count(),
             'totalIdr'    => $totalIdr,
@@ -28,6 +29,8 @@ class DashboardController extends Controller
             'done'        => $all->where('progress', 'done')->count(),
             'perCategory' => $countBy('category'),   // Pipeline
             'perProgress' => $countBy('progress'),    // Kanban
+            'categories'  => Pipeline::categories(),  // key => nama board
+            'progresses'  => Pipeline::PROGRESS,      // key => label progress
         ]);
     }
 }

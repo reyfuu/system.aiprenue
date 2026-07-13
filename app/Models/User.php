@@ -39,6 +39,12 @@ class User extends Authenticatable
         return in_array('*', $allowed, true) || in_array($menu, $allowed, true);
     }
 
+    /** Boleh CRUD / kelola (kanban board, tasks). Hanya super admin & IT. */
+    public function canManage(): bool
+    {
+        return in_array($this->role, ['super_admin', 'it'], true);
+    }
+
     /** Route landing pertama yang boleh diakses user. */
     public function homeRoute(): string
     {

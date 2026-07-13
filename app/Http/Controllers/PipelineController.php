@@ -4,15 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Output;
 use App\Models\Pipeline;
+use App\Models\User;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class PipelineController extends Controller
 {
     public function index(Request $request)
     {
-        $categories = array_keys(Pipeline::CATEGORIES);
-        $category = in_array($request->category, $categories) ? $request->category : 'endorse';
+        $categories = array_keys(Pipeline::categories());
+        $category = in_array($request->category, $categories) ? $request->category : ($categories[0] ?? 'endorse');
 
         $query = Pipeline::query()->where('category', $category)->with('outputs');
 
@@ -55,32 +57,113 @@ class PipelineController extends Controller
             ->groupBy('category')->pluck('total', 'category')->toArray();
         $counts = array_merge(array_fill_keys($categories, 0), $counts);
 
-        return view('pipelines.index', [
-            'pipelines' => $pipelines,
-            'category'  => $category,
-            'counts'    => $counts,
-            'outputs'   => Output::orderBy('name')->get(),
-            'summary'   => $summary,
-            'filters'   => $request->only(['account', 'progress', 'payment_status', 'output', 'search']),
+        return Inertia::render('Pipelines/Index', [
+            'pipelines'  => $pipelines->load('outputs'),
+            'category'   => $category,
+            'counts'     => $counts,
+            'categories' => Pipeline::categories(),                 // key => nama board
+            'outputs'    => Output::orderBy('name')->get(),
+            'summary'    => $summary,
+            'filters'    => $request->only(['account', 'progress', 'payment_status', 'output', 'search']),
+            // Referensi untuk filter & form tambah/edit
+            'accounts'   => Pipeline::ACCOUNTS,
+            'progresses' => Pipeline::PROGRESS,
+            'payments'   => Pipeline::PAYMENT,
+            'keGilang'   => Pipeline::KE_GILANG,
+            'staff'      => User::orderBy('name')->get(['id', 'name', 'role']),
         ]);
     }
 
     public function kanban(Request $request)
     {
-        $categories = array_keys(Pipeline::CATEGORIES);
-        $category = in_array($request->category, $categories) ? $request->category : 'endorse';
+        $categories = array_keys(Pipeline::categories());
+        $category = in_array($request->category, $categories) ? $request->category : ($categories[0] ?? 'endorse');
 
-        $pipelines = Pipeline::where('category', $category)->with(['outputs', 'assignee'])->orderBy('id')->get();
+        // Tampilkan kartu aktif; bila ?archived=1 → tampilkan yg diarsipkan
+        $showArchived = $request->boolean('archived');
+        $pipelines = Pipeline::where('category', $category)
+            ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
+            ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->orderBy('id')->get();
 
-        $counts = Pipeline::selectRaw('category, COUNT(*) as total')
+        // Hitung kartu AKTIF per kategori (arsip tidak dihitung)
+        $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category')->toArray();
         $counts = array_merge(array_fill_keys($categories, 0), $counts);
 
-        return view('pipelines.kanban', [
-            'category'  => $category,
-            'counts'    => $counts,
-            'pipelines' => $pipelines,
-            'staff'     => \App\Models\User::orderBy('name')->get(['id', 'name', 'role']),
+        // Jumlah kartu di arsip board ini (untuk tombol toggle)
+        $archivedCount = Pipeline::where('category', $category)->whereNotNull('archived_at')->count();
+
+        // Kolom board ini + susun kartu per kolom (derivasi pindah dari blade @php)
+        $columns = \App\Models\BoardColumn::forBoard($category);
+        $colKeys = $columns->pluck('key')->all();
+        $board = array_fill_keys($colKeys, []); // kolom kosong per key
+        foreach ($pipelines as $p) {
+            // kartu dgn kolom terhapus → jatuh ke kolom pertama
+            $ck = in_array($p->progress, $colKeys, true) ? $p->progress : ($colKeys[0] ?? $p->progress);
+            $board[$ck][] = [
+                'id'             => $p->id,
+                'code'           => 't_'.str_pad($p->id, 6, '0', STR_PAD_LEFT),
+                'endorse'        => $p->endorse,
+                'account'        => Pipeline::ACCOUNTS[$p->account] ?? $p->account,          // label akun
+                'account_color'  => Pipeline::ACCOUNT_COLORS[$p->account] ?? 'bg-slate-500 text-white',
+                'outputs'        => $p->outputs->pluck('name'),
+                'payment'        => Pipeline::PAYMENT[$p->payment_status] ?? $p->payment_status,
+                'payment_status' => $p->payment_status,
+                'amount_idr'     => $p->amount_idr,
+                'amount_usd'     => $p->amount_usd,
+                'assignee'       => $p->assignee?->name,
+                'link'           => $p->link,
+                'todos'          => $p->todos ?? [],
+                'labels'         => $p->labels ?? [],
+                'time'           => $p->updated_at?->diffForHumans(null, true).' lalu',
+                // fitur kartu: deadline, deskripsi, arsip
+                'deadline'       => $p->deadline?->toDateString(),
+                'description'    => $p->description,
+                'archived'       => (bool) $p->archived_at,
+                // komentar (terbaru dulu) + lampiran
+                'comments'       => $p->comments->sortByDesc('created_at')->values()->map(fn ($c) => [
+                    'id'      => $c->id,
+                    'body'    => $c->body,
+                    'user'    => $c->user?->name,
+                    'user_id' => $c->user_id,
+                    'time'    => $c->created_at?->diffForHumans(),
+                ]),
+                'comment_count'    => $p->comments->count(),
+                'attachments'      => $p->attachments->map(fn ($a) => [
+                    'id'   => $a->id,
+                    'name' => $a->name,
+                    'url'  => $a->url,
+                    'size' => $a->size,
+                    'user' => $a->user?->name,
+                ]),
+                'attachment_count' => $p->attachments->count(),
+                // field mentah utk form edit
+                'account_key'    => $p->account,
+                'assigned_to'    => $p->assigned_to,
+                'progress'       => $p->progress,
+                'output_ids'     => $p->outputs->pluck('id'),
+                'notes'          => $p->notes,
+                'ke_gilang'      => $p->ke_gilang,
+            ];
+        }
+
+        return Inertia::render('Kanban', [
+            'category'      => $category,
+            'counts'        => $counts,
+            'categories'    => Pipeline::categories(),                       // key => nama board
+            'board'         => $board,                                       // kartu tersusun per kolom
+            'columns'       => $columns,                                     // kolom dinamis board ini
+            'showArchived'  => $showArchived,                               // sedang lihat arsip?
+            'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
+            'staff'         => User::orderBy('name')->get(['id', 'name', 'role']),
+            'outputs'      => Output::orderBy('name')->get(),
+            'canManage'    => auth()->user()->canManage(),                   // super_admin/it → boleh CRUD
+            'currentBoard' => \App\Models\Category::where('key', $category)->first(),
+            // Referensi untuk form tambah/edit kartu
+            'accounts'     => Pipeline::ACCOUNTS,
+            'payments'     => Pipeline::PAYMENT,
+            'keGilang'     => Pipeline::KE_GILANG,
         ]);
     }
 
@@ -98,8 +181,9 @@ class PipelineController extends Controller
 
     public function updateProgress(Request $request, Pipeline $pipeline)
     {
+        $validKeys = \App\Models\BoardColumn::where('board_key', $pipeline->category)->pluck('key')->all();
         $data = $request->validate([
-            'progress' => 'required|in:script,editing,progress,pending,done',
+            'progress' => ['required', \Illuminate\Validation\Rule::in($validKeys)],
         ]);
         $pipeline->update($data);
 
@@ -108,7 +192,7 @@ class PipelineController extends Controller
 
     public function report(Request $request)
     {
-        $category = in_array($request->category, array_keys(Pipeline::CATEGORIES)) ? $request->category : null;
+        $category = in_array($request->category, array_keys(Pipeline::categories())) ? $request->category : null;
         $kurs = (float) ($request->kurs ?: ExchangeRate::usdToIdr()); // kurs USD→IDR terkini untuk grand total
 
         $base = Pipeline::query();
@@ -160,29 +244,45 @@ class PipelineController extends Controller
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
-        return redirect()->route('pipelines.index')->with('status', 'Entri diperbarui.');
+        return redirect()->back()->with('status', 'Entri diperbarui.');
     }
 
     public function destroy(Pipeline $pipeline)
     {
         $pipeline->delete();
 
-        return redirect()->route('pipelines.index')->with('status', 'Entri dihapus.');
+        return redirect()->back()->with('status', 'Entri dihapus.');
+    }
+
+    /** Arsipkan / kembalikan kartu (toggle archived_at). */
+    public function archive(Pipeline $pipeline)
+    {
+        $archiving = is_null($pipeline->archived_at);                 // sedang mengarsip?
+        $pipeline->update(['archived_at' => $archiving ? now() : null]);
+
+        return redirect()->back()->with('status', $archiving ? 'Kartu diarsipkan.' : 'Kartu dikembalikan.');
     }
 
     private function validated(Request $request): array
     {
+        $validProgress = \App\Models\BoardColumn::where('board_key', $request->category)->pluck('key')->all();
+
         return $request->validate([
-            'category'        => 'required|in:endorse,agensi,coaching,speaker',
+            'category'        => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::categories()))],
             'account'         => 'required|in:fk,ai_preneur',
             'assigned_to'     => 'nullable|exists:users,id',
             'link'            => 'nullable|url|max:2048',
+            'labels'          => 'nullable|array',
+            'labels.*.name'   => 'required_with:labels|string|max:50',
+            'labels.*.color'  => 'required_with:labels|string|max:40',
             'coaching'        => 'nullable|string|max:255',
             'speaker'         => 'nullable|string|max:255',
             'endorse'         => 'required|string|max:255',
-            'progress'        => 'required|in:script,editing,progress,pending,done',
+            'description'     => 'nullable|string',
+            'progress'        => ['required', \Illuminate\Validation\Rule::in($validProgress ?: ['script'])],
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
+            'deadline'        => 'nullable|date',
             'payment_status'  => 'required|in:belum,dp,lunas',
             'amount_idr'      => 'nullable|numeric|min:0',
             'amount_usd'      => 'nullable|numeric|min:0',

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Inventory;
 use App\Models\Transaction;
 use Carbon\Carbon;
+use Inertia\Inertia;
 
 class PembukuanController extends Controller
 {
@@ -70,7 +71,7 @@ class PembukuanController extends Controller
 
     public function index()
     {
-        return view('pembukuan.index', ['payload' => $this->build()]);
+        return Inertia::render('Pembukuan', ['payload' => $this->build()]);
     }
 
     public function report()

@@ -5,13 +5,17 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 
 class UserController extends Controller
 {
     public function index()
     {
-        return view('users.index', [
-            'users' => User::orderBy('name')->get(),
+        return Inertia::render('Users', [
+            // Daftar user (password otomatis hidden oleh model)
+            'users' => User::orderBy('name')->get(['id', 'name', 'email', 'role']),
+            // Peta role untuk dropdown form
+            'roles' => User::ROLES,
         ]);
     }
 
