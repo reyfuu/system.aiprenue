@@ -1,6 +1,6 @@
 # SKILLS — Kapabilitas Sistem & Tim
 
-Dokumen ini merinci kapabilitas (skill) yang dibutuhkan untuk **membangun** dan **mengoperasikan** Sistem Manajemen Proyek/Task berbasis Laravel + Tailwind.
+Kapabilitas untuk **membangun** dan **mengoperasikan** System AI Preneur (Laravel + Inertia + React).
 
 Referensi arsitektur: [DESIGN.md](DESIGN.md) · Peran pembangun: [AGENTS.md](AGENTS.md)
 
@@ -9,76 +9,66 @@ Referensi arsitektur: [DESIGN.md](DESIGN.md) · Peran pembangun: [AGENTS.md](AGE
 ## A. Skill Teknis (untuk membangun sistem)
 
 ### 1. Backend — Laravel / PHP
-- **PHP 8.3+**: tipe data, enum, match expression, readonly property, attribute (`#[Fillable]`).
-- **Eloquent ORM**: relasi (hasMany, belongsToMany, morphMany), eager loading, scope, accessor/mutator.
-- **Migrasi & Seeder**: skema DB, foreign key, index, factory untuk data dummy.
-- **Autentikasi & Otorisasi**: Laravel Breeze/Fortify, Policies, Gates, middleware.
-- **Validasi**: Form Request, custom rules.
-- **Queue & Jobs**: DB queue, job async untuk pekerjaan berat.
-- **Events & Listeners**: pola event-driven untuk log aktivitas & notifikasi.
-- **Testing**: PHPUnit/Pest — Feature test & Unit test.
+- **PHP 8.5**: enum, match, readonly, attribute (`#[Fillable]`).
+- **Eloquent ORM**: relasi (hasMany, belongsTo, belongsToMany), eager loading (hindari N+1), accessor (mis. `url` pada attachment), cast json/date.
+- **Inertia (server)**: `Inertia::render()`, shared props via `HandleInertiaRequests`, redirect → reload props.
+- **Migrasi & Seeder**: skema, foreign key + cascade, index, seeder data contoh.
+- **Otorisasi**: middleware kustom (`EnsureMenuAccess`) + method peran (`canSee`/`canManage`) — bukan Policy per-model.
+- **Validasi**: `$request->validate()` / Rule::in dinamis (progress mengikuti kolom board).
+- **File storage**: disk `public` + `storage:link` untuk lampiran.
+- **PDF**: barryvdh/laravel-dompdf (blade report → PDF).
 
-### 2. Frontend — React + Chart.js + Tailwind
-- **React**: komponen fungsional, hooks (`useState`/`useEffect`), props, mount ke Blade shell via Vite.
-- **Chart.js**: grafik bar/line/pie untuk pembukuan & dashboard (omzet per bulan, tren, komposisi). Pakai `react-chartjs-2` sebagai wrapper.
-- **Tailwind v4**: utility classes, responsive design, komponen reusable.
-- **Vite**: bundling React + CSS, `@vite` entry di Blade.
-- **Blade shell**: layout/entry yang me-mount komponen React; Alpine hanya untuk sisa interaksi ringan yang belum dimigrasi. (tanpa Livewire)
-- **UX dasar**: form yang jelas, loading state, empty state, feedback aksi.
+### 2. Frontend — Inertia + React + Chart.js + Tailwind
+- **React 19**: komponen fungsional, hooks (`useState`/`useEffect`), props dari Inertia.
+- **Inertia (client)**: `useForm` (submit + errors + file upload `forceFormData`), `router` (get/patch/delete, `preserveScroll/State`), `<Link>`, `usePage()` (shared props).
+- **Chart.js** (`react-chartjs-2`): bar/line/pie untuk pembukuan (omzet per bulan, komposisi).
+- **Tailwind v4**: utility classes, responsive, `@source inline(...)` untuk safelist warna dinamis dari DB.
+- **Vite**: entry `app.jsx`, `import.meta.glob` untuk resolusi halaman Inertia.
+- **UX**: modal, optimistic UI (drag-drop), loading/empty state, toast flash.
 
 ### 3. Database & Infrastruktur
-- **SQL** (SQLite lokal / MySQL produksi): query, join, index, normalisasi.
-- **Cache/session/queue**: driver database (tanpa Redis).
-- **Git**: branching, PR, commit yang rapi.
-- **Deployment**: `.env` config, migrasi produksi, queue worker (Supervisor), scheduler (cron).
+- **SQLite** (WAL): dev lokal; deploy via import `.sql`.
+- **Cache/session**: driver default (tanpa Redis).
+- **Git**: branching, commit rapi.
+- **Deploy**: build `public/build/` di laptop, upload; `.env` produksi; `storage:link` di server.
 
 ---
 
-## B. Skill Fungsional (kapabilitas yang disediakan aplikasi ke pengguna)
+## B. Skill Fungsional (kapabilitas aplikasi per peran)
 
-Kapabilitas yang dimiliki pengguna sesuai perannya (lihat matriks RBAC di DESIGN.md §6).
+Lihat matriks lengkap di [PRD.md](PRD.md) §3.
 
-### Admin
-- Kelola akun pengguna & role global.
-- Konfigurasi sistem, akses semua proyek.
-- Audit log & pemulihan data (soft delete).
+### super_admin / it
+- Akses semua menu; CRUD pipeline, board & kolom kanban, user.
+- Kelola kartu: deadline, arsip, label, deskripsi, lampiran, komentar, checklist.
+- Report PDF, dashboard, pembukuan.
 
-### Manager / Project Lead
-- Buat & kelola proyek beserta anggotanya.
-- Susun task, tetapkan assignee, prioritas, dan deadline.
-- Pantau progress lewat board kanban & dashboard.
-- Terima laporan beban kerja dan burndown.
+### admin
+- Lihat menu Script & Kanban (baca saja).
 
-### Member
-- Lihat proyek yang diikuti.
-- Buat/ubah task, update status (drag di kanban).
-- Komentar & mention rekan tim, unggah lampiran.
-- Terima notifikasi assignment & deadline.
-
-### Viewer
-- Akses baca-saja terhadap proyek & progress.
+### editor / staff
+- Lihat Kanban (baca saja) + **berkomentar** pada kartu (termasuk yang ditugaskan kepadanya).
 
 ---
 
 ## C. Skill Non-Teknis (proses tim)
 
-- **Manajemen proyek Agile**: sprint, backlog, prioritas.
-- **Komunikasi**: penulisan task/requirement yang jelas.
-- **Code review**: standar kualitas, keamanan, konsistensi.
-- **Dokumentasi**: menjaga DESIGN.md/README tetap up-to-date.
+- **Komunikasi**: penulisan requirement/task yang jelas.
+- **Code review**: benar (edge/null/otorisasi), aman (secret, injection, path traversal), maintainable, minim (tanpa abstraksi berlebih).
+- **Dokumentasi**: jaga README/PRD/DESIGN tetap selaras dengan kode.
 
 ---
 
-## D. Definition of Done (DoD) per Fitur
+## D. Definition of Done (per fitur)
 
-Sebuah fitur dianggap selesai bila:
-- [ ] Migrasi + model + relasi dibuat & teruji.
-- [ ] Policy/otorisasi diterapkan dan diuji.
-- [ ] Validasi input (Form Request) lengkap.
-- [ ] UI Blade/Tailwind responsif & aksesibel.
-- [ ] Feature test menutup happy-path + edge case utama.
-- [ ] Tidak ada N+1 query (eager loading dicek).
-- [ ] Dokumentasi/README diperbarui bila perlu.
+- [ ] Migrasi + model + relasi dibuat.
+- [ ] Otorisasi (menu + `canManage`) diterapkan & diuji (super_admin vs editor/staff → 403 yang benar).
+- [ ] Validasi input lengkap.
+- [ ] Halaman/komponen React responsif; `className`, bukan Blade.
+- [ ] Tidak ada N+1 (eager loading dicek).
+- [ ] `npm run build` sukses; warna dinamis ter-safelist.
+- [ ] Verifikasi jalan (smoke test HTTP / self-check).
+- [ ] Dokumentasi diperbarui bila perlu.
 
 ---
 
@@ -86,7 +76,8 @@ Sebuah fitur dianggap selesai bila:
 
 | Milestone | Skill dominan |
 |-----------|---------------|
-| M1 Fondasi | Eloquent, migrasi, auth, RBAC, Form Request |
-| M2 Kolaborasi | React (kanban drag-drop, modal), Events/Listeners, notifikasi |
-| M3 Insight | Query agregasi, **Chart.js** (grafik), file storage |
-| M4 Polish | Broadcasting/realtime, testing, deployment, optimasi |
+| M1 Fondasi | Eloquent, migrasi, auth, middleware peran, validasi |
+| M2 Modul | React + Chart.js (pembukuan), kanban dinamis, user CRUD |
+| M3 SPA | Inertia (server & client), resolusi halaman, shared props |
+| M4 Kartu | file storage, komentar/otorisasi, useForm upload, optimistic UI |
+| M5 Deploy | build asset, import SQL, `storage:link`, hardening |

@@ -1,22 +1,42 @@
-# Pipeline FK-AI Preneur
+# System AI Preneur
 
-Aplikasi web manajemen **pipeline endorsement, agensi, coaching & speaker** untuk FK-AI Preneur — menggantikan spreadsheet "PIPELINE FK-AI PRENEUR". Mengelola progress produksi, pembayaran (IDR & USD), dan menyajikan report omzet dengan konversi kurs otomatis.
+Aplikasi manajemen bisnis untuk ekosistem **AI Preneur** — mengelola **pipeline endorsement**, **papan Kanban** produksi, **pembukuan keuangan**, template **script**, dan **manajemen user** berbasis peran. Menggantikan spreadsheet manual; pembayaran mendukung IDR & USD dengan konversi kurs otomatis.
 
 Dokumen terkait: [PRD.md](PRD.md) · [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md) · [AGENTS.md](AGENTS.md)
 
 ---
 
-## Fitur
+## Modul
 
-- **4 kategori** dalam bentuk tab: Endorse, Agensi, Coaching, Speaker.
-- **Tabel pipeline** lengkap (kolom A–N sheet): Account, Endorse, Output, Progress, Tanggal Posting/Payment, Status Payment, Jumlah IDR & USD, Notes, Ke Gilang, Catatan.
-- **CRUD** via modal dengan **dialog konfirmasi** (tambah/edit/hapus) & notifikasi toast.
-- **Status berwarna**: Progress (Script/Editing/Progress/Done/Pending/Tentatif), Payment (Lunas/DP/Belum), Ke Gilang (DONE/Sudah/Belum).
-- **Warna account**: FK = biru, AI Preneur = violet.
-- **Filter otomatis** (tanpa tombol) berdasarkan account, progress, payment, output, dan pencarian.
-- **Dashboard omzet**: total IDR, USD, dan total gabungan (USD dikonversi ke IDR pakai **kurs terkini** — di-cache 12 jam, fallback Rp 16.000).
-- **Report PDF** omzet per kategori / semua (landscape A4).
-- **Login** (session auth) — semua halaman pipeline dilindungi.
+| Menu | Isi |
+|------|-----|
+| **Dashboard** | Ringkasan pipeline, kanban (per progress), & pembukuan (omzet IDR/USD/kurs). |
+| **Pipeline** | Tabel lengkap per board: account, endorse, output, progress, tanggal, payment, jumlah IDR/USD, notes, dll. Filter + CRUD via modal + report PDF. |
+| **Kanban** | Papan bergaya Trello. Board & kolom **dinamis** (bukan enum tetap), drag-drop kartu, label warna. Lihat detail fitur kartu di bawah. |
+| **Script** | Grid folder naskah (template; data dikirim Hermes agent ke `public/scripts/*`). |
+| **Pembukuan** | Rekap keuangan React + **Chart.js**: pemasukan/pengeluaran per bulan, laba, inventaris, report PDF. |
+| **User** | CRUD user + peran (super_admin, it, admin, editor, staff). |
+
+### Fitur kartu Kanban
+
+- **Deadline** — badge tanggal, merah bila lewat tenggat.
+- **Arsip** — arsipkan kartu selesai; toggle "Arsip (n)" untuk melihat & mengembalikan.
+- **Label** — preset warna (Urgent/Penting/Review/Selesai/Info); Urgent memberi penanda merah menonjol.
+- **Deskripsi** — detail task per kartu.
+- **Lampiran** — unggah/unduh/hapus file (disimpan di disk `public`).
+- **Komentar** — thread diskusi; **staff yang ditugasi pun boleh berkomentar** meski hanya bisa melihat.
+- **Checklist** — todolist dengan progress bar.
+
+### Hak akses per peran
+
+| Peran | Menu | Kelola (CRUD kartu/board/kolom/lampiran) |
+|-------|------|------------------------------------------|
+| `super_admin`, `it` | semua | ✅ penuh |
+| `admin` | Script, Kanban | ❌ lihat saja |
+| `editor` | Kanban | ❌ lihat + **komentar** |
+| `staff` | Kanban | ❌ lihat + **komentar** |
+
+Otorisasi dua lapis: `EnsureMenuAccess` (akses menu) + cek `canManage()` untuk route mutasi. UI menyembunyikan aksi yang tak diizinkan; server tetap menolak dengan 403.
 
 ---
 
@@ -24,147 +44,93 @@ Dokumen terkait: [PRD.md](PRD.md) · [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILL
 
 | Lapisan | Teknologi |
 |---------|-----------|
-| Backend | Laravel 11, PHP 8.5 |
-| Frontend | Blade + Tailwind CSS v4 + Alpine.js (di-**build** via Vite, bukan CDN) |
-| Database | MariaDB |
-| PDF | barryvdh/laravel-dompdf |
-| Kurs | open.er-api.com (gratis, tanpa API key) |
-| Admin DB | phpMyAdmin |
+| Backend | Laravel 13, PHP 8.5 |
+| Frontend | **Inertia.js + React 19** (SPA), Tailwind CSS v4, Vite |
+| Grafik | Chart.js (khusus modul Pembukuan) |
+| Database | **SQLite** (mode WAL) |
+| PDF | barryvdh/laravel-dompdf (report Pipeline & Pembukuan) |
+| Kurs | open.er-api.com (gratis, tanpa API key; cache 12 jam, fallback Rp 16.000) |
+
+> Arsitektur SPA: setiap halaman adalah komponen React di `resources/js/Pages/`, dirender via `Inertia::render()` dari controller. Tidak ada Blade page (kecuali root `app.blade.php` & template PDF).
 
 ---
 
-## Prasyarat (macOS + Homebrew)
+## Menjalankan (lokal)
 
 ```bash
-brew install php composer mariadb phpmyadmin node
-```
-
----
-
-## Menjalankan (cara cepat)
-
-```bash
-./start.sh
-```
-
-Script ini menyalakan **MariaDB + Laravel app + phpMyAdmin** sekaligus.
-Untuk menghentikan app & phpMyAdmin: `./start.sh stop`.
-
-| Layanan | URL | Login |
-|---------|-----|-------|
-| **Aplikasi** | http://127.0.0.1:8123 | `admin@example.com` / `password123` |
-| **phpMyAdmin** | http://127.0.0.1:8081 | user `root`, password **kosong** |
-
-> Catatan: phpMyAdmin dipindah ke **port 8081** karena port 8080 sering dipakai proses lain.
-
----
-
-## Menjalankan (manual, langkah demi langkah)
-
-```bash
-export PATH="/opt/homebrew/opt/php/bin:/opt/homebrew/opt/mariadb/bin:$PATH"
-
-# 1. Database
-brew services start mariadb
-
-# 2. Dependency (sekali saja)
+# 1. Dependency (sekali saja)
 composer install
 npm install
 
-# 3. Konfigurasi
-cp .env.example .env      # (jika .env belum ada)
-php artisan key:generate  # (jika APP_KEY kosong)
+# 2. Konfigurasi
+cp .env.example .env        # jika .env belum ada
+php artisan key:generate    # jika APP_KEY kosong
+touch database/database.sqlite   # buat file DB SQLite (jika belum ada)
 
-# 4. Migrasi + data awal (dari sheet)
+# 3. Migrasi + data contoh
 php artisan migrate:fresh --seed
 
-# 5. Build asset frontend (Tailwind + Alpine)
-npm run build             # atau `npm run dev` untuk mode watch
+# 4. Build / dev asset
+npm run dev                 # mode watch (development)
+# atau: npm run build       # produksi (menghasilkan public/build/)
 
-# 6. Jalankan
-php artisan serve --port=8123
-php -S 127.0.0.1:8081 -t /opt/homebrew/share/phpmyadmin
+# 5. Jalankan server
+php artisan serve
 ```
+
+Login contoh: `admin@example.com` / `password123` (super_admin). Seeder juga membuat editor/staff (`dimas@example.com`, `rani@example.com`, dll) dengan password sama.
+
+Data contoh: 21 pipeline, 5 board (kategori), 21 transaksi pembukuan, 7 user.
 
 ---
 
-## Deploy ke Hostinger (shared hosting, TANPA Node)
+## Deploy
 
-Hostinger **tidak perlu Node/npm**. Tailwind & Alpine hanya di-build di laptop, hasilnya file statis yang diunggah.
+Server **tidak menjalankan Node**. Tailwind & React di-build di laptop; hasilnya file statis di `public/build/` yang ikut diunggah.
 
-1. **Build di laptop:**
-   ```bash
-   npm run build      # menghasilkan public/build/ (CSS + JS statis)
-   ```
-2. **Upload ke Hostinger** (File Manager / FTP / git) — pastikan folder **`public/build/`** ikut terunggah. (Folder ini sengaja tidak di-`.gitignore`.)
-3. **Import data**: upload `database/pipeline_dump.sql` via phpMyAdmin Hostinger ke database kosong.
-4. **Set `.env` produksi**: `APP_ENV=production`, `APP_DEBUG=false`, `APP_KEY` (jalankan `php artisan key:generate` sekali), dan kredensial `DB_*` Hostinger.
-5. **Composer di server** (jika belum): `composer install --no-dev --optimize-autoloader`.
+1. **Build di laptop:** `npm run build` → menghasilkan `public/build/`.
+2. **Upload** kode + folder `public/build/` (folder ini sengaja tidak di-`.gitignore`).
+3. **Database:** import file `.sql` (schema + data) — dump disiapkan di folder `/wrapxbake/sql`. Sesuaikan dialek dengan DB target server.
+4. **`.env` produksi:** `APP_ENV=production`, `APP_DEBUG=false`, `APP_KEY` (`php artisan key:generate`), koneksi DB server.
+5. **Server:** `composer install --no-dev --optimize-autoloader` lalu `php artisan storage:link` (agar lampiran kartu bisa diakses publik).
 
-> Kalau nanti mengubah tampilan (kelas Tailwind), **build ulang di laptop** lalu upload `public/build/` yang baru. Server tidak pernah menjalankan `npm`.
-
----
-
-## Database
-
-- **Nama DB**: `pipeline`
-- **Koneksi** (`.env`): `mariadb`, host `127.0.0.1`, port `3306`, user `root`, password kosong.
-- Seed berisi **46 baris** dari sheet (38 endorse, 6 agensi, 2 coaching) + akun admin.
-
-Konfigurasi phpMyAdmin ada di `/opt/homebrew/etc/phpmyadmin.config.inc.php` (auth cookie, host `127.0.0.1`, izinkan password kosong).
-
----
-
-## Troubleshooting
-
-**phpMyAdmin tidak jalan / "This site can't be reached"**
-Server `php -S` dev tidak berjalan permanen — akan mati bila terminal ditutup atau komputer restart. Jalankan lagi:
-```bash
-./start.sh
-```
-Jika port 8081 juga dipakai, ganti port: `php -S 127.0.0.1:8082 -t /opt/homebrew/share/phpmyadmin`.
-
-**"Access denied for user 'root'"**
-MariaDB root memakai password kosong via TCP. Pastikan `.env` `DB_PASSWORD=` (kosong).
-
-**Tampilan berantakan / warna hilang**
-Asset perlu di-build ulang setelah mengubah kelas Tailwind:
-```bash
-npm run build
-```
-
-**Cek apakah layanan hidup**
-```bash
-mysqladmin ping -h 127.0.0.1        # MariaDB
-curl -I http://127.0.0.1:8123       # App
-curl -I http://127.0.0.1:8081       # phpMyAdmin
-```
-
----
-
-## Keamanan (WAJIB dibaca sebelum repo dibuat public)
-
-- **JANGAN commit `.env`** — sudah masuk `.gitignore`. File ini memuat `APP_KEY` & kredensial DB.
-- **Kredensial admin di seeder** (`admin@example.com` / `password123`) hanya untuk **data contoh lokal**. Ganti password segera di lingkungan nyata, atau pindahkan ke variabel `.env` (`ADMIN_PASSWORD`).
-- **Password DB root kosong** hanya aman untuk **lokal**. Untuk server, set password & user khusus.
-- Data pipeline pada seeder bersifat **contoh**; hapus/anonimkan nilai sensitif (nominal, nama klien) sebelum repo publik jika tidak ingin dibagikan.
+> Mengubah tampilan/logic frontend → **build ulang** di laptop lalu upload `public/build/` yang baru.
 
 ---
 
 ## Struktur Penting
 
 ```
-app/Models/Pipeline.php              # model utama + konstanta enum & warna
+app/Models/
+  Pipeline.php                       # model utama + relasi (comments, attachments, outputs, assignee)
+  BoardColumn.php  Category.php       # kolom & board dinamis kanban
+  PipelineComment.php  PipelineAttachment.php
+  Transaction.php  Inventory.php      # pembukuan
+  User.php                            # peran + canSee()/canManage()/homeRoute()
 app/Http/Controllers/
-  PipelineController.php             # CRUD, filter, report PDF
-  AuthController.php                 # login / logout
-app/Support/ExchangeRate.php        # kurs USD→IDR (cache 12 jam)
-database/seeders/PipelineSeeder.php # data dari sheet
+  PipelineController.php              # pipeline + kanban + archive
+  BoardController.php  ColumnController.php
+  CommentController.php  AttachmentController.php
+  DashboardController.php  PembukuanController.php  UserController.php  AuthController.php
+app/Http/Middleware/
+  HandleInertiaRequests.php           # shared props (auth, flash)
+  EnsureMenuAccess.php                # otorisasi menu + route mutasi
+resources/js/
+  app.jsx                            # entry Inertia
+  Layout.jsx  Sidebar.jsx            # kerangka + navigasi
+  Pages/                             # Login, Dashboard, Kanban, Pipelines/Index, Pembukuan, Script, Users
+  scripts/components/                # komponen Chart.js pembukuan
+resources/css/app.css                # Tailwind v4 + palet brand + safelist warna dinamis
 resources/views/
-  pipelines/index.blade.php         # dashboard tabel
-  pipelines/report.blade.php        # template PDF omzet
-  auth/login.blade.php              # halaman login
-resources/css/app.css               # Tailwind v4 + palet brand
-resources/js/app.js                 # Alpine.js
-start.sh                            # start semua layanan
+  app.blade.php                      # root Inertia (satu-satunya blade halaman)
+  pipelines/report.blade.php  pembukuan/report.blade.php   # template PDF
 ```
+
+---
+
+## Keamanan
+
+- **JANGAN commit `.env`** (memuat `APP_KEY` & kredensial). Sudah di `.gitignore`.
+- Kredensial seeder (`admin@example.com` / `password123`) hanya untuk **lokal** — ganti di produksi.
+- Data pipeline pada seeder bersifat **contoh**; anonimkan nilai sensitif sebelum repo dibuat publik.
+- Lampiran diunggah ke `storage/app/public`; batas 10 MB per file.

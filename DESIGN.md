@@ -1,188 +1,141 @@
-# DESIGN — Sistem Manajemen Proyek & Task
+# DESIGN — System AI Preneur
 
-Dokumen arsitektur dan desain teknis untuk aplikasi manajemen proyek/task.
+Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
 
-- **Stack**: Laravel 13 (PHP 8.3+), Blade + Tailwind v4, Alpine.js untuk interaksi (tanpa Livewire), Vite. SQLite (lokal) / MySQL (produksi). Queue driver database.
-- **Tujuan**: Mengelola proyek, task, tim, deadline, dan progress secara terpusat.
-
----
-
-## 1. Ruang Lingkup (Scope)
-
-| Fitur | Deskripsi | Prioritas |
-|-------|-----------|-----------|
-| Autentikasi & Role | Login, register, RBAC (Admin, Manager, Member) | P0 |
-| Manajemen Proyek | CRUD proyek, status, deadline, owner | P0 |
-| Manajemen Task | CRUD task, assignee, prioritas, due date, subtask | P0 |
-| Board Kanban | Drag & drop task antar kolom status | P1 |
-| Komentar & Aktivitas | Diskusi per task + log aktivitas | P1 |
-| Notifikasi | In-app + email saat assign/mention/deadline | P1 |
-| Dashboard & Laporan | Ringkasan progress, beban kerja, burndown | P2 |
-| Lampiran File | Upload dokumen ke task | P2 |
+- **Stack**: Laravel 13 (PHP 8.5), **Inertia.js + React 19** (SPA), Tailwind v4, Vite. SQLite (mode WAL). PDF via DomPDF. Grafik via Chart.js (modul Pembukuan).
+- **Tujuan**: mengelola pipeline endorsement, alur produksi Kanban, pembukuan, script, dan user secara terpusat dengan hak akses per peran.
 
 ---
 
-## 2. Arsitektur Aplikasi
+## 1. Arsitektur
 
 ```
-┌─────────────────────────────────────────────┐
-│                 Browser (SPA-lite)           │
-│         Blade + Tailwind + Alpine.js         │
-└───────────────────────┬─────────────────────┘
-                        │ HTTP / WebSocket
-┌───────────────────────▼─────────────────────┐
-│                Laravel Application            │
-│  Routes → Controllers → Form Requests         │
-│  Policies (RBAC) → Services → Actions         │
-│  Eloquent Models → Repositories (opsional)    │
-│  Events → Listeners → Jobs (Queue)            │
-└───────────┬───────────────────────┬──────────┘
-            │                       │
-   ┌────────▼────────┐     ┌────────▼────────┐
-   │  SQLite / MySQL │     │  DB queue,      │
-   │   (data utama)  │     │  cache, session │
-   └─────────────────┘     └─────────────────┘
+┌───────────────────────────────────────────────┐
+│                 Browser (SPA)                  │
+│   React 19 (resources/js/Pages/*) + Inertia    │
+│            Tailwind v4 · Chart.js              │
+└───────────────────────┬───────────────────────┘
+                        │ Inertia (XHR + JSON props)
+┌───────────────────────▼───────────────────────┐
+│                Laravel Application             │
+│  Routes (web) → Middleware(auth,               │
+│     EnsureMenuAccess, HandleInertiaRequests)   │
+│  Controllers → Inertia::render(Page, props)    │
+│  Eloquent Models → SQLite                       │
+│  DomPDF (report) · ExchangeRate (kurs)          │
+└────────────────────────────────────────────────┘
 ```
 
-**Pola yang dipakai:**
-- **Service/Action layer** — logika bisnis dikeluarkan dari controller (mis. `CreateTaskAction`).
-- **Policy-based authorization** — setiap resource punya Policy.
-- **Event-driven** — perubahan penting memicu Event → Listener (notifikasi, log).
-- **Queue** — pekerjaan berat diproses async lewat DB queue (`php artisan queue:listen`).
+**Pola yang dipakai (nyata, tanpa over-engineering):**
+- **Inertia** — controller mengembalikan `Inertia::render('Page', $props)`; React merender tanpa REST terpisah. Redirect Laravel biasa (`->back()`) memicu reload props.
+- **Otorisasi dua lapis** di middleware `EnsureMenuAccess`: (1) akses menu per peran, (2) route mutasi butuh `canManage()`. Bukan Policy per-model.
+- **Shared props** via `HandleInertiaRequests`: `auth.user` (id, role, canManage, peta menu) & `flash.status`.
+- **Fetch langsung** (non-Inertia) hanya untuk aksi drag-drop & todo (PATCH JSON, optimistic UI).
+
+> Tidak memakai queue, events/listeners, Policies, Actions/Services layer, atau broadcasting — sengaja dijaga sederhana.
 
 ---
 
-## 3. Model Data (ERD Ringkas)
-
-Satu baris pipeline = satu entri endorsement (mengikuti sheet "PIPELINE FK-AI PRENEUR", kolom A–L sampai *NOTES*). Spesifikasi lengkap: [PRD.md](PRD.md) §4.
+## 2. Model Data
 
 ```
-users ──< activity_logs >── pipelines ──< pipeline_output (pivot) >── outputs
-                                │
-                                └── (created_by / updated_by → users)
+users ──< pipelines (assigned_to, created_by/updated_by)
+categories (board) 1──n board_columns (kolom kanban, key=progress)
+pipelines ──< pipeline_output (pivot) >── outputs
+pipelines 1──n pipeline_comments >── users
+pipelines 1──n pipeline_attachments >── users
+transactions · inventories        (modul pembukuan, berdiri sendiri)
 ```
 
-### Tabel Inti
+### Tabel inti
 
-**users**
-| kolom | tipe | catatan |
-|-------|------|---------|
-| id | bigint PK | |
-| name | string | |
-| email | string unique | |
-| password | string | hashed |
-| role | enum | admin, manager, produksi |
-| avatar | string nullable | |
+**users** — `id, name, email, password, role`
+Peran: `super_admin, it, admin, editor, staff`. Method domain: `canSee($menu)`, `canManage()`, `homeRoute()`.
 
-**pipelines** — tabel utama endorsement
-| kolom | tipe | header sheet | nilai |
-|-------|------|--------------|-------|
-| id | bigint PK | | |
-| account | enum | ACCOUNT | `fk`, `ai_preneur` |
-| coaching | string nullable | COACHING | |
-| speaker | string nullable | SPEAKER | |
-| endorse | string | ENDORSE | nama produk |
-| progress | enum | PROGRESS | `editing`, `progress`, `done` |
-| tanggal_posting | date nullable | TANGGAL POSTING | |
-| tanggal_payment | date nullable | TANGGAL PAYMENT | |
-| payment_status | enum | SUDAH/BELUM PAYMENT | `belum`, `dp`, `lunas` |
-| amount_idr | decimal(15,2) nullable | JUMLAH PAYMENT IDR | |
-| amount_usd | decimal(12,2) nullable | JUMLAH PAYMENT USD | |
-| notes | text nullable | NOTES | |
-| created_by / updated_by | FK users nullable | | audit |
-| deleted_at | timestamp nullable | | soft delete |
+**pipelines** — kartu/entri utama
+`account`(fk/ai_preneur), `assigned_to`(FK users), `endorse`, `description`, `progress`(= key kolom board, string dinamis), `category`(= key board), `tanggal_posting/payment`, `deadline`, `payment_status`(belum/dp/lunas), `amount_idr/usd`, `notes`, `link`, `todos`(json), `labels`(json), `ke_gilang`, `catatan`, `archived_at`, `created_by/updated_by`, `deleted_at`(soft delete).
 
-**outputs** — master jenis output (`Youtube`, `Reels/TikTok`, `Agency`, `Foto`, `Video`)
-| id | bigint PK |
-| name | string |
-| color | string |
+**categories** — board dinamis: `key`, `name`.
+**board_columns** — kolom kanban per board: `board_key`, `key`, `name`, `color`, `position` (unik `[board_key,key]`).
+**outputs** + **output_pipeline** (pivot) — tag output multi.
+**pipeline_comments** — `pipeline_id, user_id, body`.
+**pipeline_attachments** — `pipeline_id, user_id, path, name, mime, size` (disk `public`).
+**transactions** — `type`(pemasukan/pengeluaran), `category`, `amount_idr`, `date`.
+**inventories** — `name, qty, unit_value_idr, month`.
 
-**pipeline_output** (pivot) — `pipeline_id FK`, `output_id FK` (OUTPUT bisa lebih dari satu tag)
-
-**activity_logs** — `id, user_id, subject_type, subject_id, action, changes(json), created_at`
-**notifications** — tabel bawaan Laravel notifications
-
-> Kolom `coaching` & `speaker` untuk sekarang hanya teks (lihat Non-Goals di PRD §8).
+> `progress` & `category` sengaja string (bukan enum) agar board/kolom dinamis. Kartu dgn kolom terhapus jatuh ke kolom pertama.
 
 ---
 
-## 4. Struktur Direktori (Laravel)
+## 3. Struktur Direktori
 
 ```
 app/
-├── Actions/           # CreateTaskAction, MoveTaskAction, ...
-├── Http/
-│   ├── Controllers/   # ProjectController, TaskController, ...
-│   ├── Requests/      # StoreTaskRequest, UpdateProjectRequest
-│   └── Middleware/
-├── Models/            # User, Project, Task, Comment, ...
-├── Policies/          # ProjectPolicy, TaskPolicy
-├── Services/          # NotificationService, ReportService
-├── Events/ Listeners/ # TaskAssigned → SendAssignmentNotification
-└── Support/           # ExchangeRate, helper domain
+├── Http/Controllers/     # Pipeline, Board, Column, Comment, Attachment,
+│                         # Dashboard, Pembukuan, User, Auth
+├── Http/Middleware/       # EnsureMenuAccess, HandleInertiaRequests
+├── Models/                # Pipeline, Category, BoardColumn, Output,
+│                         # PipelineComment, PipelineAttachment,
+│                         # Transaction, Inventory, User
+└── Support/               # ExchangeRate (kurs USD→IDR, cache 12 jam)
 resources/
-├── views/             # Blade + Tailwind (pipelines/, users/, partials/)
-├── css/ js/           # Tailwind entry, Alpine
-database/
-├── migrations/ factories/ seeders/
-tests/
-├── Feature/ Unit/
+├── js/
+│   ├── app.jsx            # entry Inertia
+│   ├── Layout.jsx  Sidebar.jsx
+│   ├── Pages/             # Login, Dashboard, Kanban, Pipelines/Index,
+│   │                     # Pembukuan, Script, Users
+│   └── scripts/components # komponen Chart.js pembukuan
+├── css/app.css            # Tailwind v4 + palet brand + safelist warna dinamis
+└── views/                 # app.blade.php (root Inertia) + *.report (PDF)
+database/migrations · seeders
 ```
 
 ---
 
-## 5. Rute Utama (contoh)
+## 4. Rute Utama
 
 ```php
-// Proyek
-GET    /projects                 index
-POST   /projects                 store
-GET    /projects/{project}       show (board)
-PUT    /projects/{project}       update
+// Halaman (Inertia::render)
+GET  /dashboard  /pipelines  /pipelines/kanban  /script  /pembukuan  /users
 
-// Task
-POST   /projects/{project}/tasks store
-PUT    /tasks/{task}             update
-PATCH  /tasks/{task}/move        pindah kolom (kanban)
-DELETE /tasks/{task}             destroy
+// Pipeline / kartu
+POST/PUT/DELETE /pipelines[/{id}]
+PATCH /pipelines/{id}/progress   // drag-drop (JSON)
+PATCH /pipelines/{id}/todos      // checklist (JSON)
+PATCH /pipelines/{id}/archive    // arsip (manage)
 
-// Komentar
-POST   /tasks/{task}/comments    store
+// Board & kolom dinamis (manage)
+POST/PUT/DELETE /boards[/{board}]
+POST/PUT/DELETE /columns[/{column}]
+
+// Kolaborasi
+POST   /pipelines/{id}/comments      // semua peran kanban (incl. staff ditugasi)
+DELETE /comments/{comment}           // penulis atau manager
+POST   /pipelines/{id}/attachments   // manage
+DELETE /attachments/{attachment}     // manage
+
+// Report PDF
+GET /pipelines/report   /pembukuan/report
 ```
 
 ---
 
-## 6. Otorisasi (RBAC)
+## 5. Otorisasi (per peran, bukan per-model)
 
-| Aksi | Admin | Manager | Member (project) | Viewer |
-|------|:-----:|:-------:|:----------------:|:------:|
-| Kelola user | ✅ | ❌ | ❌ | ❌ |
-| Buat proyek | ✅ | ✅ | ❌ | ❌ |
-| Edit proyek | ✅ | ✅ (miliknya) | ❌ | ❌ |
-| Buat/edit task | ✅ | ✅ | ✅ | ❌ |
-| Komentar | ✅ | ✅ | ✅ | ❌ |
-| Lihat proyek | ✅ | ✅ | ✅ | ✅ |
+`EnsureMenuAccess` mengecek tiap request:
+1. **Route mutasi** (store/update/destroy/archive/board/column/attachment) → butuh `canManage()` (super_admin/it). Komentar **dikecualikan** agar staff/editor bisa berkomentar.
+2. **Akses menu** → route dipetakan ke menu (dashboard/pipeline/kanban/script/pembukuan/user); user harus `canSee()` menu itu.
 
-Diterapkan via **Policies** + Gate, dicek di controller (`$this->authorize()`) dan view (`@can`).
+UI menyembunyikan aksi terlarang; server tetap membalas **403** bila dilanggar.
 
 ---
 
-## 7. Keputusan Teknis
+## 6. Keputusan Teknis
 
-- **Alpine.js** dipilih untuk interaktivitas (kanban drag-drop, modal) — ringan, tanpa build SPA terpisah, tanpa Livewire.
-- **Tailwind v4** untuk styling utility-first; partial Blade reusable (mis. `partials/sidebar`).
-- **Soft deletes** opsional pada data penting untuk recovery.
-- **Queue (DB)** untuk pekerjaan async agar request tetap cepat.
-- **Broadcasting (Laravel Echo + Pusher/Reverb)** — opsional untuk update board realtime.
+- **Inertia + React** menggantikan Blade+Alpine — satu SPA, komponen per halaman, tanpa REST API terpisah.
+- **SQLite (WAL)** untuk dev; deploy via import file `.sql`. `busy_timeout` & `synchronous=NORMAL` diset di `config/database.php`.
+- **Progress = key kolom** — reuse kolom `progress` sebagai referensi kolom dinamis (hindari FK column_id + backfill).
+- **Safelist Tailwind** (`@source inline(...)`) untuk warna kolom/label yang datang dari DB (tak terbaca scanner).
+- **Soft delete** pada pipeline untuk recovery.
 
----
-
-## 8. Rencana Rilis (Milestone)
-
-1. **M1 — Fondasi**: auth, RBAC, CRUD proyek & task, seeding.
-2. **M2 — Kolaborasi**: kanban board, komentar, aktivitas, notifikasi.
-3. **M3 — Insight**: dashboard, laporan, lampiran, filter & search.
-4. **M4 — Polish**: realtime, mobile-responsive, ekspor, hardening.
-
-> Detail kapabilitas per peran ada di [SKILLS.md](SKILLS.md).
-> Peran/agent pembangun sistem ada di [AGENTS.md](AGENTS.md).
+> Detail kapabilitas per peran: [SKILLS.md](SKILLS.md). Peran pembangun: [AGENTS.md](AGENTS.md).
