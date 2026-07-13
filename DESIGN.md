@@ -2,7 +2,7 @@
 
 Dokumen arsitektur dan desain teknis untuk aplikasi manajemen proyek/task.
 
-- **Stack**: Laravel 11 (PHP 8.2+), Blade + Tailwind CSS, Livewire/Alpine.js untuk interaksi, MySQL/PostgreSQL, Redis (queue & cache).
+- **Stack**: Laravel 13 (PHP 8.3+), Blade + Tailwind v4, Alpine.js untuk interaksi (tanpa Livewire), Vite. SQLite (lokal) / MySQL (produksi). Queue driver database.
 - **Tujuan**: Mengelola proyek, task, tim, deadline, dan progress secara terpusat.
 
 ---
@@ -27,7 +27,7 @@ Dokumen arsitektur dan desain teknis untuk aplikasi manajemen proyek/task.
 ```
 ┌─────────────────────────────────────────────┐
 │                 Browser (SPA-lite)           │
-│      Blade + Tailwind + Livewire/Alpine      │
+│         Blade + Tailwind + Alpine.js         │
 └───────────────────────┬─────────────────────┘
                         │ HTTP / WebSocket
 ┌───────────────────────▼─────────────────────┐
@@ -39,8 +39,8 @@ Dokumen arsitektur dan desain teknis untuk aplikasi manajemen proyek/task.
 └───────────┬───────────────────────┬──────────┘
             │                       │
    ┌────────▼────────┐     ┌────────▼────────┐
-   │  MySQL/Postgres │     │  Redis (Queue,  │
-   │   (data utama)  │     │   Cache, Session)│
+   │  SQLite / MySQL │     │  DB queue,      │
+   │   (data utama)  │     │  cache, session │
    └─────────────────┘     └─────────────────┘
 ```
 
@@ -48,7 +48,7 @@ Dokumen arsitektur dan desain teknis untuk aplikasi manajemen proyek/task.
 - **Service/Action layer** — logika bisnis dikeluarkan dari controller (mis. `CreateTaskAction`).
 - **Policy-based authorization** — setiap resource punya Policy.
 - **Event-driven** — perubahan penting memicu Event → Listener (notifikasi, log).
-- **Queue** — email & notifikasi berat diproses async lewat Redis queue.
+- **Queue** — pekerjaan berat diproses async lewat DB queue (`php artisan queue:listen`).
 
 ---
 
@@ -119,9 +119,9 @@ app/
 ├── Policies/          # ProjectPolicy, TaskPolicy
 ├── Services/          # NotificationService, ReportService
 ├── Events/ Listeners/ # TaskAssigned → SendAssignmentNotification
-└── Livewire/          # KanbanBoard, TaskModal, ...
+└── Support/           # ExchangeRate, helper domain
 resources/
-├── views/             # Blade + Tailwind
+├── views/             # Blade + Tailwind (pipelines/, users/, partials/)
 ├── css/ js/           # Tailwind entry, Alpine
 database/
 ├── migrations/ factories/ seeders/
@@ -169,10 +169,10 @@ Diterapkan via **Policies** + Gate, dicek di controller (`$this->authorize()`) d
 
 ## 7. Keputusan Teknis
 
-- **Livewire** dipilih untuk interaktivitas (kanban, modal, komentar realtime) agar tetap dalam ekosistem Laravel tanpa SPA terpisah.
-- **Tailwind** untuk styling utility-first; komponen UI reusable via Blade components.
-- **Soft deletes** pada projects & tasks untuk recovery.
-- **Queue (Redis)** untuk notifikasi & email agar request tetap cepat.
+- **Alpine.js** dipilih untuk interaktivitas (kanban drag-drop, modal) — ringan, tanpa build SPA terpisah, tanpa Livewire.
+- **Tailwind v4** untuk styling utility-first; partial Blade reusable (mis. `partials/sidebar`).
+- **Soft deletes** opsional pada data penting untuk recovery.
+- **Queue (DB)** untuk pekerjaan async agar request tetap cepat.
 - **Broadcasting (Laravel Echo + Pusher/Reverb)** — opsional untuk update board realtime.
 
 ---

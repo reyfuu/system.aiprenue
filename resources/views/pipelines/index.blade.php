@@ -9,9 +9,11 @@
 </head>
 <body class="bg-brand-50 text-slate-800 min-h-screen" x-data="pipelineApp()">
 
+@include('partials.sidebar')
+
 {{-- Top bar --}}
-<header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg">
-    <div class="max-w-[1400px] mx-auto px-6 py-5 flex items-center justify-between">
+<header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg md:ml-56">
+    <div class="max-w-[1600px] px-6 py-5 flex items-center justify-between">
         <div>
             <h1 class="text-2xl font-bold tracking-tight">PIPELINE FK-AI PRENEUR</h1>
             <p class="text-brand-100 text-sm">Manajemen endorsement &amp; pembayaran</p>
@@ -40,7 +42,7 @@
         </div>
     </div>
     {{-- Tabs kategori --}}
-    <div class="max-w-[1400px] mx-auto px-6 flex gap-1">
+    <div class="max-w-[1600px] px-6 flex gap-1">
         @foreach (\App\Models\Pipeline::CATEGORIES as $ck => $cv)
             <a href="{{ route('pipelines.index', ['category' => $ck]) }}"
                class="px-5 py-2.5 text-sm font-semibold rounded-t-xl transition {{ $category === $ck ? 'bg-brand-50 text-brand-700' : 'text-brand-100 hover:bg-brand-800/30' }}">
@@ -50,7 +52,7 @@
     </div>
 </header>
 
-<div class="max-w-[1400px] mx-auto px-6 py-6">
+<div class="max-w-[1600px] px-6 py-6 md:ml-56">
 
     @if (session('status'))
         <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 4000)"
@@ -72,7 +74,7 @@
     </div>
 
     {{-- Summary cards --}}
-    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+    <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
             <p class="text-xs text-slate-500 font-medium">Omzet IDR</p>
             <p class="text-lg font-bold text-brand-700 mt-1">Rp {{ number_format($summary['total_idr'], 0, ',', '.') }}</p>
@@ -175,9 +177,8 @@
                                 'script'   => 'bg-purple-600 text-white',
                                 'editing'  => 'bg-brand-100 text-brand-700',
                                 'progress' => 'bg-brand-600 text-white',
-                                'done'     => 'bg-emerald-600 text-white',
                                 'pending'  => 'bg-amber-400 text-amber-900',
-                                'tentatif' => 'bg-slate-300 text-slate-700',
+                                'done'     => 'bg-emerald-600 text-white',
                             ][$p->progress]; @endphp
                             <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full {{ $pc }}">{{ \App\Models\Pipeline::PROGRESS[$p->progress] }}</span>
                         </td>

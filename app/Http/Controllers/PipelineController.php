@@ -65,6 +65,35 @@ class PipelineController extends Controller
         ]);
     }
 
+    public function kanban(Request $request)
+    {
+        $categories = array_keys(Pipeline::CATEGORIES);
+        $category = in_array($request->category, $categories) ? $request->category : 'endorse';
+
+        $pipelines = Pipeline::where('category', $category)->with(['outputs', 'assignee'])->orderBy('id')->get();
+
+        $counts = Pipeline::selectRaw('category, COUNT(*) as total')
+            ->groupBy('category')->pluck('total', 'category')->toArray();
+        $counts = array_merge(array_fill_keys($categories, 0), $counts);
+
+        return view('pipelines.kanban', [
+            'category'  => $category,
+            'counts'    => $counts,
+            'pipelines' => $pipelines,
+            'staff'     => \App\Models\User::orderBy('name')->get(['id', 'name', 'role']),
+        ]);
+    }
+
+    public function updateProgress(Request $request, Pipeline $pipeline)
+    {
+        $data = $request->validate([
+            'progress' => 'required|in:script,editing,progress,pending,done',
+        ]);
+        $pipeline->update($data);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function report(Request $request)
     {
         $category = in_array($request->category, array_keys(Pipeline::CATEGORIES)) ? $request->category : null;
@@ -110,7 +139,7 @@ class PipelineController extends Controller
         $pipeline = Pipeline::create($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
-        return redirect()->route('pipelines.index')->with('status', 'Entri ditambahkan.');
+        return redirect()->back()->with('status', 'Entri ditambahkan.');
     }
 
     public function update(Request $request, Pipeline $pipeline)
@@ -134,10 +163,12 @@ class PipelineController extends Controller
         return $request->validate([
             'category'        => 'required|in:endorse,agensi,coaching,speaker',
             'account'         => 'required|in:fk,ai_preneur',
+            'assigned_to'     => 'nullable|exists:users,id',
+            'link'            => 'nullable|url|max:2048',
             'coaching'        => 'nullable|string|max:255',
             'speaker'         => 'nullable|string|max:255',
             'endorse'         => 'required|string|max:255',
-            'progress'        => 'required|in:script,editing,progress,done,pending,tentatif',
+            'progress'        => 'required|in:script,editing,progress,pending,done',
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
             'payment_status'  => 'required|in:belum,dp,lunas',

@@ -52,7 +52,7 @@
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "resources/css/app.css": {
-    "file": "assets/app-CQ1LSXeF.css",
+    "file": "assets/app-BU5nxmIl.css",
     "name": "app",
     "names": [
       "app.css"
@@ -64,6 +64,12 @@
     "file": "assets/app-tUMsq8Mz.js",
     "name": "app",
     "src": "resources/js/app.js",
+    "isEntry": true
+  },
+  "resources/js/scripts/pembukuan.jsx": {
+    "file": "assets/pembukuan-C3mVXKax.js",
+    "name": "pembukuan",
+    "src": "resources/js/scripts/pembukuan.jsx",
     "isEntry": true
   }
 }

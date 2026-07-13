@@ -25,7 +25,26 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Admin',
                 'password' => Hash::make('password123'),
+                'role' => 'super_admin',
             ]
         );
+
+        // Beberapa staff/editor untuk penanggung jawab kanban
+        foreach ([
+            ['name' => 'Rani Staff', 'email' => 'rani@example.com', 'role' => 'staff'],
+            ['name' => 'Dimas Editor', 'email' => 'dimas@example.com', 'role' => 'editor'],
+            ['name' => 'Putri Staff', 'email' => 'putri@example.com', 'role' => 'staff'],
+        ] as $u) {
+            User::updateOrCreate(['email' => $u['email']], [
+                'name' => $u['name'],
+                'password' => Hash::make('password123'),
+                'role' => $u['role'],
+            ]);
+        }
+
+        $this->call([
+            PipelineSeeder::class,
+            PembukuanSeeder::class,
+        ]);
     }
 }
