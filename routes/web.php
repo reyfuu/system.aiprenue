@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -12,15 +13,16 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-Route::get('/', fn () => redirect()->route('dashboard'));
+Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->homeRoute() : 'login'));
 
-// Pipeline (butuh login)
-Route::middleware('auth')->group(function () {
+// Pipeline (butuh login) + batasan akses per role
+Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/pipelines', [PipelineController::class, 'index'])->name('pipelines.index');
     Route::get('/pipelines/kanban', [PipelineController::class, 'kanban'])->name('pipelines.kanban');
     Route::patch('/pipelines/{pipeline}/progress', [PipelineController::class, 'updateProgress'])->name('pipelines.progress');
+    Route::patch('/pipelines/{pipeline}/todos', [PipelineController::class, 'updateTodos'])->name('pipelines.todos');
     Route::get('/pipelines/report', [PipelineController::class, 'report'])->name('pipelines.report');
     Route::post('/pipelines', [PipelineController::class, 'store'])->name('pipelines.store');
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');

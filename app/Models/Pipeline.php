@@ -14,7 +14,7 @@ class Pipeline extends Model
     protected $fillable = [
         'category', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'progress',
         'tanggal_posting', 'tanggal_payment', 'payment_status',
-        'amount_idr', 'amount_usd', 'notes', 'link', 'ke_gilang', 'catatan',
+        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'ke_gilang', 'catatan',
         'created_by', 'updated_by',
     ];
 
@@ -23,6 +23,7 @@ class Pipeline extends Model
         'tanggal_payment' => 'date',
         'amount_idr' => 'decimal:2',
         'amount_usd' => 'decimal:2',
+        'todos' => 'array',
     ];
 
     public function outputs(): BelongsToMany

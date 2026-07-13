@@ -84,6 +84,18 @@ class PipelineController extends Controller
         ]);
     }
 
+    public function updateTodos(Request $request, Pipeline $pipeline)
+    {
+        $data = $request->validate([
+            'todos'          => 'present|array',
+            'todos.*.text'   => 'required|string|max:255',
+            'todos.*.done'   => 'required|boolean',
+        ]);
+        $pipeline->update(['todos' => $data['todos']]);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function updateProgress(Request $request, Pipeline $pipeline)
     {
         $data = $request->validate([

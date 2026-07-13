@@ -32,3 +32,7 @@ Thumbs.db
 
 # Docs setup lokal — tidak untuk repo public
 /docs
+
+# Tooling lokal — tidak untuk repo
+/.github
+/.claude

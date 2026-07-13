@@ -20,6 +20,37 @@ class User extends Authenticatable
     public const ROLES = ['super_admin' => 'Super Admin', 'admin' => 'Admin', 'it' => 'IT', 'staff' => 'Staff', 'editor' => 'Editor'];
 
     /**
+     * Menu yang boleh diakses tiap role. '*' = semua.
+     * Menu: dashboard, pipeline, kanban, script, pembukuan, user.
+     */
+    public const MENU_ACCESS = [
+        'super_admin' => ['*'],
+        'it'          => ['*'],           // IT setara super admin
+        'admin'       => ['script', 'kanban'],
+        'editor'      => ['kanban'],
+        'staff'       => ['kanban'],      // default (tidak disebut eksplisit)
+    ];
+
+    /** Apakah role user boleh melihat menu tertentu. */
+    public function canSee(string $menu): bool
+    {
+        $allowed = self::MENU_ACCESS[$this->role] ?? [];
+
+        return in_array('*', $allowed, true) || in_array($menu, $allowed, true);
+    }
+
+    /** Route landing pertama yang boleh diakses user. */
+    public function homeRoute(): string
+    {
+        return match (true) {
+            $this->canSee('dashboard') => 'dashboard',
+            $this->canSee('script')    => 'script.index',
+            $this->canSee('kanban')    => 'pipelines.kanban',
+            default                    => 'pipelines.kanban',
+        };
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

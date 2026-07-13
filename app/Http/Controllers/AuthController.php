@@ -10,7 +10,7 @@ class AuthController extends Controller
     public function showLogin()
     {
         if (Auth::check()) {
-            return redirect()->route('pipelines.index');
+            return redirect()->route(Auth::user()->homeRoute());
         }
 
         return view('auth.login');
@@ -26,7 +26,7 @@ class AuthController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended(route('pipelines.index'));
+            return redirect()->intended(route(Auth::user()->homeRoute()));
         }
 
         return back()

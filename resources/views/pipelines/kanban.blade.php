@@ -26,6 +26,7 @@
             'amount_usd'    => $p->amount_usd,
             'assignee'      => $p->assignee?->name,
             'link'          => $p->link,
+            'todos'         => $p->todos ?? [],
             'time'          => $p->updated_at?->diffForHumans(null, true).' lalu',
         ];
     }
@@ -106,6 +107,18 @@
                                         <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200" x-text="o"></span>
                                     </template>
                                 </div>
+
+                                {{-- Checklist / todolist --}}
+                                <button type="button" @click.stop="openTodo(card)" @dragstart.stop
+                                        class="w-full flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-brand-700 mb-2 group/todo">
+                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l2 2 4-4"/></svg>
+                                    <span class="font-medium tabular-nums" x-text="card.todos.length ? todoDone(card)+'/'+card.todos.length : 'checklist'"></span>
+                                    <span class="flex-1 h-1 rounded-full bg-brand-50 overflow-hidden" x-show="card.todos.length">
+                                        <span class="block h-full bg-emerald-500 transition-all" :style="'width:'+(card.todos.length ? Math.round(todoDone(card)/card.todos.length*100) : 0)+'%'"></span>
+                                    </span>
+                                    <span class="text-brand-400 opacity-0 group-hover/todo:opacity-100 transition" x-show="!card.todos.length">+ tambah</span>
+                                </button>
+
                                 <div class="flex items-center justify-between text-[10px] mb-1.5">
                                     <div class="flex items-center gap-1.5">
                                         <span class="font-semibold px-2 py-0.5 rounded-full" :class="card.account_color" x-text="card.account"></span>
@@ -183,6 +196,45 @@
     </div>
 </div>
 
+{{-- Modal checklist / todolist --}}
+<div x-show="todoOpen" x-cloak style="display:none"
+     class="fixed inset-0 bg-brand-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border-t-4 border-brand-600" @click.outside="todoOpen=false">
+        <div class="flex items-start justify-between mb-1">
+            <h2 class="text-lg font-bold text-brand-800">Checklist</h2>
+            <button type="button" @click="todoOpen=false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        </div>
+        <p class="text-sm text-slate-500 mb-4 truncate" x-text="todoCard?.endorse"></p>
+
+        <div class="flex items-center gap-2 mb-3" x-show="todoCard && todoCard.todos.length">
+            <div class="flex-1 h-2 rounded-full bg-brand-50 overflow-hidden">
+                <div class="h-full bg-emerald-500 transition-all"
+                     :style="'width:'+(todoCard && todoCard.todos.length ? Math.round(todoDone(todoCard)/todoCard.todos.length*100) : 0)+'%'"></div>
+            </div>
+            <span class="text-xs font-semibold text-slate-500 tabular-nums"
+                  x-text="todoCard ? todoDone(todoCard)+'/'+todoCard.todos.length : ''"></span>
+        </div>
+
+        <div class="space-y-1.5 max-h-64 overflow-y-auto mb-3">
+            <template x-for="(t, i) in (todoCard?.todos || [])" :key="i">
+                <div class="flex items-center gap-2 group/item rounded-lg px-2 py-1.5 hover:bg-brand-50">
+                    <input type="checkbox" :checked="t.done" @change="toggleTodo(i)" class="accent-emerald-600 w-4 h-4 flex-shrink-0">
+                    <span class="flex-1 text-sm" :class="t.done ? 'line-through text-slate-400' : 'text-slate-700'" x-text="t.text"></span>
+                    <button type="button" @click="removeTodo(i)"
+                            class="text-slate-300 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition text-lg leading-none">&times;</button>
+                </div>
+            </template>
+            <p x-show="todoCard && !todoCard.todos.length" class="text-center text-sm text-slate-400 py-4">Belum ada item.</p>
+        </div>
+
+        <form @submit.prevent="addTodo()" class="flex gap-2">
+            <input x-model="newTodo" placeholder="Tambah item…" required
+                   class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-brand-400 outline-none">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition">Tambah</button>
+        </form>
+    </div>
+</div>
+
 <script>
 function kanbanBoard() {
     const labels = @json(Pipeline::PROGRESS);
@@ -196,6 +248,9 @@ function kanbanBoard() {
         addTitle: '',
         addAssignee: '',
         addLink: '',
+        todoOpen: false,
+        todoCard: null,
+        newTodo: '',
         get addLabel() { return labels[this.addProgress] ?? ''; },
         openAdd(progress) {
             this.addProgress = progress;
@@ -203,6 +258,41 @@ function kanbanBoard() {
             this.addAssignee = '';
             this.addLink = '';
             this.addOpen = true;
+        },
+        openTodo(card) {
+            if (!Array.isArray(card.todos)) card.todos = [];
+            this.todoCard = card;
+            this.newTodo = '';
+            this.todoOpen = true;
+        },
+        todoDone(card) {
+            return (card.todos || []).filter(t => t.done).length;
+        },
+        toggleTodo(i) {
+            this.todoCard.todos[i].done = !this.todoCard.todos[i].done;
+            this.saveTodos();
+        },
+        addTodo() {
+            const t = this.newTodo.trim();
+            if (!t) return;
+            this.todoCard.todos.push({ text: t, done: false });
+            this.newTodo = '';
+            this.saveTodos();
+        },
+        removeTodo(i) {
+            this.todoCard.todos.splice(i, 1);
+            this.saveTodos();
+        },
+        saveTodos() {
+            const card = this.todoCard;
+            fetch(`/pipelines/${card.id}/todos`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                },
+                body: JSON.stringify({ todos: card.todos }),
+            }).catch(() => {}); // ponytail: silent; state lokal sudah update
         },
         filtered(col) {
             const s = this.q.trim().toLowerCase();

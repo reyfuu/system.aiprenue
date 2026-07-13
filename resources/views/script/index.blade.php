@@ -1,9 +1,9 @@
 @php
-    // ponytail: placeholder template — data folder asli dikirim oleh Hermes agent nanti.
+    // ponytail: placeholder template — isi file dikirim oleh Hermes agent ke public/scripts/*.
     $folders = [
-        ['name' => 'Script Freedie Kashawan', 'count' => null],
-        ['name' => 'Script Rave Tailor', 'count' => null],
-        ['name' => 'Script Raveloux', 'count' => null],
+        ['name' => 'Script FK', 'path' => 'scripts/fk', 'count' => null],
+        ['name' => 'Script Rave Tailor', 'path' => 'scripts/rave-tailor', 'count' => null],
+        ['name' => 'Script Raveloux', 'path' => 'scripts/raveloux', 'count' => null],
     ];
 @endphp
 <!DOCTYPE html>
