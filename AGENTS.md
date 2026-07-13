@@ -1,115 +1,79 @@
-# AGENTS — Sistem AI Preneur
+# AGENTS — System AI Preneur
 
-Dokumen ini mendefinisikan **sistem AI Preneur** dan **agent/peran** (manusia maupun AI-assisted) yang membangun serta memeliharanya.
+Konvensi proyek untuk coding agent (Claude Code dsb.) + peran pembangun sistem.
 
-**AI Preneur** adalah sistem manajemen bisnis endorsement/konten untuk ekosistem FK-AI Preneur, terdiri dari 4 modul: **Dashboard**, **Kanban**, **Pembukuan**, dan **Pipeline**.
+**System AI Preneur** = aplikasi manajemen bisnis untuk ekosistem AI Preneur: **Dashboard, Pipeline, Kanban, Pembukuan, Script, User** — dengan hak akses per peran.
 
-Referensi: [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md)
-
-> Format ini juga kompatibel sebagai `AGENTS.md` — dibaca oleh coding agent (Claude Code dsb.) untuk memahami konvensi proyek.
+Referensi: [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md) · [PRD.md](PRD.md)
 
 ---
 
-## Modul Sistem
+## Stack (WAJIB dipatuhi agent)
 
-| Modul | Route/Menu | Status | Deskripsi |
-|-------|-----------|--------|-----------|
-| **Dashboard** | `pipelines.index` (menu "Dashboard") | ✅ berjalan | Tabel entri + summary omzet (IDR/USD, kurs), filter kategori/account/progress/payment, CRUD entri via modal. |
-| **Kanban** | `pipelines.kanban` | ✅ berjalan | Board per kolom Progress (Script → Editing → Progress → Pending → Done). Drag-drop ubah status, tambah task per kolom, filter cards. |
-| **Pembukuan** | *(belum)* | 🔜 rencana | Pencatatan keuangan: pemasukan/pengeluaran, laporan omzet, rekap per periode/account. Kemungkinan pakai data `Pipeline.amount_idr/usd` sebagai sumber. |
-| **Pipeline** | model `Pipeline` | ✅ inti data | Entitas utama: entri endorsement (account, endorse, outputs, progress, payment, tanggal, jumlah). Dipakai lintas modul di atas. |
+- **Backend**: Laravel 13, PHP 8.5. SQLite (WAL) untuk dev; deploy via import `.sql`.
+- **Frontend**: **Inertia.js + Vue 3** (SPA), Tailwind v4, Vite. Grafik: **Chart.js** via `vue-chartjs` (khusus Pembukuan).
+- **Tanpa**: React, Livewire, Alpine, queue, events/listeners, Policies, layer Actions/Services, broadcasting. Dijaga sederhana.
 
-**Konsep lintas modul:**
-- **Kategori** (`Pipeline::CATEGORIES`): endorse, agensi, coaching, speaker — berfungsi sebagai "board".
-- **Kurs USD→IDR**: via `App\Support\ExchangeRate` (ada fallback bila API gagal).
-- **Auth**: seluruh modul di belakang middleware `auth`. Belum ada sistem role — semua user = admin.
+> **Kenapa Vue, bukan React?** Produksi di shared hosting; tim memilih Vue sebagai adapter Inertia. Aset tetap di-build di laptop (`npm run build`) lalu di-upload — server tak pernah menjalankan Node.
+
+---
+
+## Modul
+
+| Modul | Route | Status |
+|-------|-------|:------:|
+| Dashboard | `/dashboard` | ✅ |
+| Pipeline (tabel + report PDF) | `/pipelines` | ✅ |
+| Kanban (board/kolom dinamis, kartu lengkap) | `/pipelines/kanban` | ✅ |
+| Pembukuan (Chart.js) | `/pembukuan` | ✅ |
+| Script (template folder) | `/script` | ✅ |
+| User management | `/users` | ✅ |
+
+Peran: `super_admin`, `it` (penuh) · `admin` (Script+Kanban, lihat) · `editor`, `staff` (Kanban, lihat + komentar). Lihat matriks di [PRD.md](PRD.md) §3.
 
 ---
 
 ## Konvensi Proyek (untuk coding agent)
 
-- **Stack**: Laravel 13, PHP 8.3+ (backend/API) + **React + Chart.js** (frontend interaktif) di atas Vite, Tailwind v4. SQLite (lokal) / MySQL (produksi). **Tanpa Livewire.**
-- **Frontend**: UI kaya & chart pakai **React** (komponen) + **Chart.js** (grafik pembukuan/dashboard). Blade dipakai sebagai shell/entry yang me-mount komponen React. Alpine hanya untuk interaksi ringan yang belum dimigrasi.
-- **Gaya kode**: ikuti PSR-12; jalankan `./vendor/bin/pint` sebelum commit.
-- **Test**: gunakan Pest/PHPUnit — `php artisan test`. Setiap fitur wajib punya Feature test.
-- **Logika bisnis**: taruh di `app/Actions` atau `app/Services`, bukan di controller.
-- **Otorisasi**: selalu lewat Policy; jangan cek role secara manual di controller.
-- **Migrasi**: satu perubahan skema = satu migrasi baru; jangan edit migrasi lama yang sudah rilis.
-- **Commit**: pesan singkat & imperatif (mis. `add task move action`).
+**Backend**
+- Controller mengembalikan `Inertia::render('Page', $props)` (bukan Blade/JSON), kecuali report PDF (DomPDF) & aksi drag/todo (JSON).
+- Otorisasi lewat middleware **`EnsureMenuAccess`** (akses menu) + **`User::canManage()`** (route mutasi). **Jangan** buat Policy per-model atau cek role manual di controller — pakai helper peran yang ada.
+- Validasi via `$request->validate()`. `progress`/`category` string dinamis (Rule::in dari `board_columns`/`categories`).
+- Migrasi: satu perubahan = satu file baru; jangan edit migrasi lama.
+- Mass-assignment lewat `$fillable`; hormati soft delete pada `Pipeline`.
+
+**Frontend**
+- Komponen halaman = **Vue 3 SFC** `<script setup>` di `resources/js/Pages/*.vue`. Resolusi nama halaman di `resources/js/app.js` (glob `.vue`).
+- Bungkus halaman ber-sidebar dengan `<Layout title="…">`; modal pakai `ModalWrap.vue`.
+- **Inertia Vue**: `useForm` (field top-level, `v-model="form.x"`, `form.post/put`, `form.errors`, `form.processing`), `router` (get/patch/delete + `preserveScroll/State`), `<Link>`, `usePage()`.
+- Kelas dinamis dari DB (warna kolom/label) **wajib** ada di safelist `resources/css/app.css` (`@source inline(...)`).
+- **Komentar kode**: Bahasa Indonesia, rinci (script logika + tiap seksi template).
+
+**Umum**
+- Gaya kode PHP: PSR-12, jalankan `./vendor/bin/pint`.
+- Build: `npm run build` sebelum commit bila mengubah frontend.
+- Commit: pesan singkat & imperatif.
+- Deploy butuh `php artisan storage:link` (lampiran kartu).
 
 ---
 
-## Daftar Agent / Peran
+## Daftar Peran (agent / manusia)
 
-### 1. Architect Agent
-**Tanggung jawab**: struktur aplikasi, keputusan teknis, ERD, kontrak antar-layer.
-- Menjaga [DESIGN.md](DESIGN.md) tetap akurat.
-- Menyetujui perubahan skema DB & dependency baru.
-- **Output**: diagram, ADR (Architecture Decision Record), review desain.
-
-### 2. Backend Agent
-**Tanggung jawab**: model, migrasi, action/service, policy, queue, event.
-- Membangun API/route dan logika bisnis.
-- Menulis Unit & Feature test untuk logika.
-- **Skill kunci**: Eloquent, Policies, Jobs, Events (lihat SKILLS.md §A.1).
-
-### 3. Frontend Agent
-**Tanggung jawab**: komponen React, grafik Chart.js, styling Tailwind, Blade shell.
-- Membangun UI: board kanban, modal task, form, dashboard, pembukuan (chart).
-- Grafik (omzet, tren) memakai **Chart.js** via wrapper React.
-- Memastikan responsif, aksesibel, konsisten dengan design system.
-- **Skill kunci**: React, Chart.js, Tailwind v4, Vite, Blade shell (lihat SKILLS.md §A.2).
-
-### 4. Database Agent
-**Tanggung jawab**: skema, index, optimasi query, integritas data.
-- Review migrasi & relasi.
-- Mendeteksi N+1 dan menambah index/eager loading.
-
-### 5. QA / Test Agent
-**Tanggung jawab**: kualitas & regresi.
-- Menulis/menjaga test suite, cek Definition of Done (SKILLS.md §D).
-- Menjalankan `php artisan test` di CI sebelum merge.
-
-### 6. Security Agent
-**Tanggung jawab**: keamanan aplikasi.
-- Audit otorisasi (Policy), validasi input, mass-assignment (`$fillable`).
-- Cek CSRF, XSS, SQL injection, file upload aman.
-
-### 7. DevOps Agent
-**Tanggung jawab**: deployment & operasional.
-- Konfigurasi env, queue worker (Supervisor), scheduler, migrasi produksi.
-- Pipeline CI/CD, monitoring, backup.
-
----
-
-## Alur Kerja Antar-Agent (per fitur)
-
-```
-Architect  →  desain & kontrak (DESIGN.md)
-    │
-    ├──►  Backend Agent   ─┐
-    │                      ├─►  QA Agent  ─►  Security Agent  ─►  DevOps Agent
-    ├──►  Frontend Agent  ─┘        │                                  │
-    └──►  Database Agent  ─────────►│                              deploy
-                                    │
-                              (Definition of Done tercapai?)
-```
-
-1. **Architect** mendefinisikan kontrak & skema untuk fitur.
-2. **Backend + Frontend + Database** membangun secara paralel.
-3. **QA** memverifikasi DoD; **Security** audit; **DevOps** rilis.
+1. **Architect** — struktur, keputusan teknis, ERD; jaga [DESIGN.md](DESIGN.md).
+2. **Backend** — model, migrasi, controller Inertia, middleware otorisasi, validasi.
+3. **Frontend** — komponen Vue (Pages, Layout, modal), Chart.js (Pembukuan), Tailwind, UX (optimistic drag-drop, modal, empty/loading state).
+4. **Database** — skema, index, optimasi query, integritas, deteksi N+1.
+5. **QA / Test** — verifikasi DoD (SKILLS.md §D), smoke test HTTP per peran.
+6. **Security** — audit otorisasi (menu + canManage), validasi, mass-assignment, CSRF/XSS, upload aman.
+7. **DevOps** — `.env` produksi, build asset, import SQL, `storage:link`, backup.
 
 ---
 
 ## Penggunaan Coding Agent (Claude Code)
 
-Saat meminta bantuan agent AI, sebutkan peran yang relevan, contoh:
+Contoh instruksi:
+- *"Sebagai Backend Agent, tambah fitur X: migrasi + model + controller `Inertia::render` + otorisasi via EnsureMenuAccess."*
+- *"Sebagai Frontend Agent, buat halaman/komponen Vue SFC (`<script setup>`) sesuai konvensi, komentar Bahasa Indonesia."*
+- *"Sebagai QA Agent, smoke test route sebagai super_admin & editor (cek 200 dan 403 yang benar)."*
 
-- *"Sebagai Backend Agent, buat modul Pembukuan: model `Ledger` + migrasi + service rekap omzet."*
-- *"Sebagai Frontend Agent, buat halaman Pembukuan (Blade + Alpine) dengan tabel transaksi & ringkasan per periode."*
-- *"Sebagai QA Agent, tulis Feature test untuk pembuatan & pemindahan task di Kanban."*
-
-Agent harus selalu:
-1. Mengikuti **Konvensi Proyek** di atas.
-2. Merujuk DESIGN.md untuk struktur & SKILLS.md untuk standar DoD.
-3. Menyertakan/menjalankan test setelah perubahan non-trivial.
+Agent harus selalu: (1) patuhi **Konvensi Proyek**, (2) rujuk DESIGN.md/SKILLS.md, (3) verifikasi (build + smoke test) setelah perubahan non-trivial.
