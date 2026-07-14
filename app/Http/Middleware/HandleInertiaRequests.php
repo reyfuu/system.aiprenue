@@ -37,6 +37,7 @@ class HandleInertiaRequests extends Middleware
                         'dashboard' => $user->canSee('dashboard'),
                         'pipeline'  => $user->canSee('pipeline'),
                         'kanban'    => $user->canSee('kanban'),
+                        'mindmap'   => $user->canSee('mindmap'),
                         'script'    => $user->canSee('script'),
                         'pembukuan' => $user->canSee('pembukuan'),
                         'user'      => $user->canSee('user'),

@@ -3,6 +3,12 @@
 import { ref, reactive, computed } from 'vue';                    // state lokal (ref/reactive) & computed
 import { Link, useForm, router, usePage } from '@inertiajs/vue3'; // helper navigasi & form Inertia
 import Layout from '../../Layout.vue';                            // layout bersama (sidebar + toast)
+import ModalWrap from '../../ModalWrap.vue';                      // pembungkus modal
+
+// Buat board PIPELINE (terpisah dari board kanban)
+const boardOpen = ref(false);
+const boardForm = useForm({ name: '', section: '', type: 'pipeline' });
+const submitBoard = () => boardForm.post('/boards', { onSuccess: () => (boardOpen.value = false) });
 
 // Props dari controller (bentuk sama persis dengan versi React)
 const props = defineProps({
@@ -34,6 +40,9 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-dig
 const ACCOUNT_COLORS = {
     fk: 'bg-brand-600 text-white',            // FK → brand
     ai_preneur: 'bg-violet-600 text-white',   // AI Preneur → violet
+    raveloux: 'bg-rose-600 text-white',       // Raveloux → rose
+    ravetailor: 'bg-amber-600 text-white',    // Ravetailor → amber
+    audi: 'bg-zinc-700 text-white',           // Audi → zinc
 };
 
 // Warna badge per progress (samakan dengan blade $pc)
@@ -202,6 +211,8 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                       :class="'px-5 py-2.5 text-sm font-semibold rounded-t-xl transition ' + (category === ck ? 'bg-brand-50 text-brand-700' : 'text-brand-100 hover:bg-brand-800/30')">
                     {{ cv }} <span class="ml-1 text-xs opacity-70">({{ counts[ck] }})</span>
                 </Link>
+                <button v-if="page.props.auth.user?.canManage" @click="boardForm.reset(); boardOpen = true" title="Board pipeline baru"
+                        class="px-3 py-2.5 text-sm font-semibold rounded-t-xl text-brand-100 hover:bg-brand-800/30 transition">+ Board</button>
             </div>
         </header>
 
@@ -484,5 +495,22 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                 </form>
             </div>
         </div>
+
+        <!-- Modal buat board pipeline -->
+        <ModalWrap v-if="boardOpen" width="max-w-sm" @close="boardOpen = false">
+            <h2 class="text-lg font-bold text-brand-800 mb-4">Board Pipeline Baru</h2>
+            <form @submit.prevent="submitBoard" class="space-y-3 text-sm">
+                <label class="block font-medium text-slate-600">Nama board
+                    <input v-model="boardForm.name" required autofocus placeholder="mis. Endorse" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                </label>
+                <label class="block font-medium text-slate-600">Section / Grup (opsional)
+                    <input v-model="boardForm.section" placeholder="mis. Q1 2026" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                </label>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" @click="boardOpen = false" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
+                    <button type="submit" :disabled="boardForm.processing" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold disabled:opacity-60">Simpan</button>
+                </div>
+            </form>
+        </ModalWrap>
     </Layout>
 </template>

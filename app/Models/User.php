@@ -17,18 +17,18 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['super_admin' => 'Super Admin', 'admin' => 'Admin', 'it' => 'IT', 'staff' => 'Staff', 'editor' => 'Editor'];
+    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT'];
 
     /**
      * Menu yang boleh diakses tiap role. '*' = semua.
      * Menu: dashboard, pipeline, kanban, script, pembukuan, user.
+     * - owner & it = akses penuh (termasuk manajemen user).
+     * - manager = kelola board+task+operasional, TAPI tak boleh menu 'user'.
      */
     public const MENU_ACCESS = [
-        'super_admin' => ['*'],
-        'it'          => ['*'],           // IT setara super admin
-        'admin'       => ['script', 'kanban'],
-        'editor'      => ['kanban'],
-        'staff'       => ['kanban'],      // default (tidak disebut eksplisit)
+        'owner'   => ['*'],
+        'it'      => ['*'],           // IT = akses penuh teknis
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'mindmap', 'script', 'pembukuan'],
     ];
 
     /** Apakah role user boleh melihat menu tertentu. */
@@ -39,10 +39,10 @@ class User extends Authenticatable
         return in_array('*', $allowed, true) || in_array($menu, $allowed, true);
     }
 
-    /** Boleh CRUD / kelola (kanban board, tasks). Hanya super admin & IT. */
+    /** Boleh CRUD / kelola (kanban board, tasks). Ketiga role = tim manajemen. */
     public function canManage(): bool
     {
-        return in_array($this->role, ['super_admin', 'it'], true);
+        return in_array($this->role, ['owner', 'manager', 'it'], true);
     }
 
     /** Route landing pertama yang boleh diakses user. */

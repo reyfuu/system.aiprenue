@@ -11,7 +11,8 @@ class DashboardController extends Controller
     public function index()
     {
         $rate = ExchangeRate::usdToIdr();
-        $all = Pipeline::all();
+        // Dashboard = ringkasan bisnis pipeline saja (task kanban tak dihitung)
+        $all = Pipeline::whereIn('category', array_keys(Pipeline::categories('pipeline')))->get();
 
         $totalIdr = (float) $all->sum('amount_idr');
         $totalUsd = (float) $all->sum('amount_usd');
@@ -29,7 +30,7 @@ class DashboardController extends Controller
             'done'        => $all->where('progress', 'done')->count(),
             'perCategory' => $countBy('category'),   // Pipeline
             'perProgress' => $countBy('progress'),    // Kanban
-            'categories'  => Pipeline::categories(),  // key => nama board
+            'categories'  => Pipeline::categories('pipeline'),  // board pipeline saja
             'progresses'  => Pipeline::PROGRESS,      // key => label progress
         ]);
     }

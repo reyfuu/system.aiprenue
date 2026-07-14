@@ -25,15 +25,15 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Admin',
                 'password' => Hash::make('password123'),
-                'role' => 'super_admin',
+                'role' => 'owner',
             ]
         );
 
-        // Beberapa staff/editor untuk penanggung jawab kanban
+        // Contoh anggota tim: manager & it (penanggung jawab kanban)
         foreach ([
-            ['name' => 'Rani Staff', 'email' => 'rani@example.com', 'role' => 'staff'],
-            ['name' => 'Dimas Editor', 'email' => 'dimas@example.com', 'role' => 'editor'],
-            ['name' => 'Putri Staff', 'email' => 'putri@example.com', 'role' => 'staff'],
+            ['name' => 'Rani Manager', 'email' => 'rani@example.com', 'role' => 'manager'],
+            ['name' => 'Dimas Manager', 'email' => 'dimas@example.com', 'role' => 'manager'],
+            ['name' => 'Audi IT', 'email' => 'audi@example.com', 'role' => 'it'],
         ] as $u) {
             User::updateOrCreate(['email' => $u['email']], [
                 'name' => $u['name'],

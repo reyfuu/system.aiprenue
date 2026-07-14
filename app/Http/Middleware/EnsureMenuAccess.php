@@ -67,6 +67,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'comments.') => ['kanban'],     // komentar: cukup akses kanban
             str_starts_with($name, 'attachments.') => ['kanban'],  // lampiran (manage dicek terpisah)
             str_starts_with($name, 'pipelines.') => ['pipeline'],
+            str_starts_with($name, 'mindmaps.') => ['mindmap'],
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],

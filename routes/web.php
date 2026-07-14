@@ -54,6 +54,13 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');
     Route::delete('/pipelines/{pipeline}', [PipelineController::class, 'destroy'])->name('pipelines.destroy');
 
+    // Mindmap (mind-elixir) — galeri + editor + simpan/hapus
+    Route::get('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'index'])->name('mindmaps.index');
+    Route::post('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'store'])->name('mindmaps.store');
+    Route::get('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'show'])->name('mindmaps.show');
+    Route::put('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'update'])->name('mindmaps.update');
+    Route::delete('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'destroy'])->name('mindmaps.destroy');
+
     // Script (template dulu — data dikirim Hermes agent nanti)
     Route::get('/script', fn () => Inertia::render('Script'))->name('script.index');
 

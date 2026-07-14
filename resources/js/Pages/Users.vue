@@ -28,7 +28,7 @@ const form = useForm({                                  // inisialisasi useForm
     name: '',                                           // field nama
     email: '',                                          // field email
     password: '',                                       // field password
-    role: 'staff',                                      // default role staff
+    role: 'manager',                                    // default role manager
 });                                                     // akhir useForm
 
 // Buka modal untuk tambah user baru

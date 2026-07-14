@@ -2,7 +2,7 @@
 // Halaman Kanban (Vue) — kolom dinamis, drag-drop, label, + fitur kartu:
 // deadline, arsip, deskripsi, attachment, komentar (staff yg ditugasi pun bisa komentar).
 import { ref, computed, watch } from 'vue';                       // reaktivitas Vue
-import { router, useForm, usePage } from '@inertiajs/vue3';        // Inertia: navigasi, form, props
+import { router, useForm, usePage, Link } from '@inertiajs/vue3';  // Inertia: navigasi, form, props, Link
 import Layout from '../Layout.vue';                                // kerangka + sidebar
 import ModalWrap from '../ModalWrap.vue';                          // pembungkus modal
 import draggable from 'vuedraggable';                              // drag-drop kartu (SortableJS) ala Trello
@@ -11,7 +11,7 @@ import draggable from 'vuedraggable';                              // drag-drop 
 const props = defineProps({
     category: String, counts: Object, categories: Object, board: Object, columns: Array,
     staff: Array, outputs: Array, canManage: Boolean, currentBoard: Object,
-    showArchived: Boolean, archivedCount: Number,
+    showArchived: Boolean, archivedCount: Number, accounts: Object,
 });
 
 // Preset label warna (Urgent = penanda mendesak)
@@ -37,18 +37,12 @@ const cloneBoard = (b) => Object.fromEntries(Object.entries(b || {}).map(([k, v]
 const cols = ref(cloneBoard(props.board));
 watch(() => props.board, (b) => { cols.value = cloneBoard(b); }); // sinkron ulang saat Inertia kirim board baru
 
-const q = ref('');                                                 // teks filter
 const colMenu = ref(null);                                         // kolom yg menunya terbuka
 const colNames = computed(() => Object.fromEntries(props.columns.map((c) => [c.key, c.name]))); // key→nama kolom
 const isTodolist = computed(() => props.category === 'todolist'); // board todolist: sembunyikan nominal IDR/USD & payment
 
-// Kartu cocok dgn pencarian? (dipakai v-show; drag tetap pakai list asli)
-const matches = (card) => {
-    const s = q.value.trim().toLowerCase();
-    return !s || card.endorse.toLowerCase().includes(s) || card.code.toLowerCase().includes(s);
-};
-const visibleCount = (key) => (cols.value[key] || []).filter(matches).length; // jml kartu tampil per kolom
-const dragDisabled = computed(() => !props.canManage || props.showArchived || !!q.value.trim()); // nonaktif saat view-only/arsip/mencari
+const cardCount = (key) => (cols.value[key] || []).length;         // jml kartu per kolom
+const dragDisabled = computed(() => !props.canManage || props.showArchived); // nonaktif saat view-only / mode arsip
 
 // ---- Drag & drop (vuedraggable) — pindah antar kolom → simpan progress ----
 // vuedraggable memutasi cols.value[key] langsung. @change memicu 'added' HANYA
@@ -185,6 +179,11 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
         <div class="p-6">
             <!-- Toolbar board -->
             <div class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex items-center gap-3">
+                <!-- Balik ke galeri (kanban luar) -->
+                <Link href="/pipelines/kanban" title="Semua board" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 mt-5 pr-2 border-r border-slate-200">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                    Galeri
+                </Link>
                 <div>
                     <p class="text-[10px] uppercase tracking-widest text-slate-400 mb-1">Board</p>
                     <select :value="category" @change="switchBoard" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-brand-400 outline-none">
@@ -222,19 +221,18 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                 </span>
             </div>
 
-            <!-- Search -->
-            <div class="flex items-center gap-3 mb-5">
-                <div>
-                    <p class="text-[10px] uppercase tracking-widest text-slate-400 mb-1">Search</p>
-                    <input v-model="q" placeholder="Filter cards…" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm w-64 text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-brand-400 outline-none" />
-                </div>
-                <div class="flex items-center gap-2 mt-5 ml-auto">
-                    <button @click="q = ''" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-sm px-4 py-2 rounded-lg transition">Clear filters</button>
-                    <button @click="router.reload()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 text-sm px-4 py-2 rounded-lg transition">Refresh</button>
-                </div>
+            <!-- Pembeda mode: Task Aktif (hijau) vs Mode Arsip (amber) -->
+            <div :class="['flex items-center gap-2.5 rounded-xl border px-4 py-2.5 mb-5', showArchived ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200']">
+                <!-- ikon: kotak arsip / papan aktif -->
+                <svg v-if="showArchived" class="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4" /></svg>
+                <svg v-else class="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10" /></svg>
+                <span :class="['font-bold text-sm', showArchived ? 'text-amber-800' : 'text-emerald-800']">{{ showArchived ? 'Mode Arsip' : 'Task Aktif' }}</span>
+                <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : `${counts[category] ?? 0} kartu aktif di board ini` }}</span>
+                <button @click="router.reload()" title="Muat ulang" class="ml-auto inline-flex items-center gap-1 bg-white/70 hover:bg-white border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Refresh
+                </button>
             </div>
-
-            <p v-if="showArchived" class="text-sm text-slate-500 mb-3">Menampilkan kartu yang diarsipkan. Buka kartu untuk mengembalikan.</p>
 
             <!-- Kolom -->
             <div class="overflow-x-auto pb-4">
@@ -245,7 +243,7 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                             <div class="flex items-center gap-2">
                                 <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
                                 <h2 class="text-sm font-bold text-slate-700">{{ col.name }}</h2>
-                                <span class="text-xs text-slate-400">{{ visibleCount(col.key) }}</span>
+                                <span class="text-xs text-slate-400">{{ cardCount(col.key) }}</span>
                             </div>
                             <div v-if="canManage && !showArchived" class="flex items-center gap-0.5">
                                 <button @click="openAdd(col.key)" title="Tambah task" class="w-6 h-6 flex items-center justify-center rounded-md bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold leading-none transition">+</button>
@@ -275,7 +273,6 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                             >
                                 <template #item="{ element: card }">
                                     <div
-                                        v-show="matches(card)"
                                         @click="openDetail(card)"
                                         :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', card.done ? 'bg-emerald-50/50 border-emerald-200 ring-1 ring-emerald-100' : isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
                                     >
@@ -345,7 +342,7 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                                     </div>
                                 </template>
                             </draggable>
-                            <p v-if="visibleCount(col.key) === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
+                            <p v-if="cardCount(col.key) === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
                         </div>
                     </div>
 
@@ -403,8 +400,7 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                 </label>
                 <label class="block font-medium text-slate-600">Account
                     <select v-model="editForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                        <option value="fk">FK</option>
-                        <option value="ai_preneur">AI Preneur</option>
+                        <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                     </select>
                 </label>
                 <label class="block font-medium text-slate-600">Penanggung Jawab
@@ -529,8 +525,7 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                 </label>
                 <label class="block font-medium text-slate-600">Account
                     <select v-model="addForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                        <option value="fk">FK</option>
-                        <option value="ai_preneur">AI Preneur</option>
+                        <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                     </select>
                 </label>
                 <label class="block font-medium text-slate-600">Penanggung Jawab (Staff)
