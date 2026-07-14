@@ -14,7 +14,7 @@ Dokumen terkait: [PRD.md](PRD.md) · [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILL
 | **Pipeline** | Tabel lengkap per board: account, endorse, output, progress, tanggal, payment, jumlah IDR/USD, notes, dll. Filter + CRUD via modal + report PDF. |
 | **Kanban** | Papan bergaya Trello. Board & kolom **dinamis** (bukan enum tetap), drag-drop kartu, label warna. Lihat detail fitur kartu di bawah. |
 | **Script** | Grid folder naskah (template; data dikirim Hermes agent ke `public/scripts/*`). |
-| **Pembukuan** | Rekap keuangan React + **Chart.js**: pemasukan/pengeluaran per bulan, laba, inventaris, report PDF. |
+| **Pembukuan** | Rekap keuangan Vue + **Chart.js**: pemasukan/pengeluaran per bulan, laba, inventaris, report PDF. |
 | **User** | CRUD user + peran (super_admin, it, admin, editor, staff). |
 
 ### Fitur kartu Kanban
@@ -45,7 +45,7 @@ Otorisasi dua lapis: `EnsureMenuAccess` (akses menu) + cek `canManage()` untuk r
 | Lapisan | Teknologi |
 |---------|-----------|
 | Backend | Laravel 13, PHP 8.5 |
-| Frontend | **Inertia.js + React 19** (SPA), Tailwind CSS v4, Vite |
+| Frontend | **Inertia.js + Vue 3** (SPA), Tailwind CSS v4, Vite |
 | Grafik | Chart.js (khusus modul Pembukuan) |
 | Database | **SQLite** (mode WAL) |
 | PDF | barryvdh/laravel-dompdf (report Pipeline & Pembukuan) |

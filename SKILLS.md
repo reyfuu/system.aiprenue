@@ -1,6 +1,6 @@
 # SKILLS — Kapabilitas Sistem & Tim
 
-Kapabilitas untuk **membangun** dan **mengoperasikan** System AI Preneur (Laravel + Inertia + React).
+Kapabilitas untuk **membangun** dan **mengoperasikan** System AI Preneur (Laravel + Inertia + Vue).
 
 Referensi arsitektur: [DESIGN.md](DESIGN.md) · Peran pembangun: [AGENTS.md](AGENTS.md)
 
@@ -18,12 +18,12 @@ Referensi arsitektur: [DESIGN.md](DESIGN.md) · Peran pembangun: [AGENTS.md](AGE
 - **File storage**: disk `public` + `storage:link` untuk lampiran.
 - **PDF**: barryvdh/laravel-dompdf (blade report → PDF).
 
-### 2. Frontend — Inertia + React + Chart.js + Tailwind
-- **React 19**: komponen fungsional, hooks (`useState`/`useEffect`), props dari Inertia.
-- **Inertia (client)**: `useForm` (submit + errors + file upload `forceFormData`), `router` (get/patch/delete, `preserveScroll/State`), `<Link>`, `usePage()` (shared props).
-- **Chart.js** (`react-chartjs-2`): bar/line/pie untuk pembukuan (omzet per bulan, komposisi).
+### 2. Frontend — Inertia + Vue 3 + Chart.js + Tailwind
+- **Vue 3 (`<script setup>`)**: SFC, `ref`/`computed`/`watch`, `defineProps`, `v-model`/`v-for`/`v-if`, slot (`ModalWrap`).
+- **Inertia (client, `@inertiajs/vue3`)**: `useForm` (field **top-level** `form.x` + `v-model`, submit + `form.errors` + upload `forceFormData`), `router` (get/patch/delete, `preserveScroll/State`), `<Link>`, `usePage()` (shared props).
+- **Chart.js** (`vue-chartjs`): `<Bar>`/`<Doughnut>` untuk pembukuan (omzet per bulan, komposisi); registrasi elemen di `lib/charts.js`.
 - **Tailwind v4**: utility classes, responsive, `@source inline(...)` untuk safelist warna dinamis dari DB.
-- **Vite**: entry `app.jsx`, `import.meta.glob` untuk resolusi halaman Inertia.
+- **Vite**: entry `app.js` + `@vitejs/plugin-vue`, `import.meta.glob('./Pages/**/*.vue')` untuk resolusi halaman Inertia.
 - **UX**: modal, optimistic UI (drag-drop), loading/empty state, toast flash.
 
 ### 3. Database & Infrastruktur
@@ -64,7 +64,7 @@ Lihat matriks lengkap di [PRD.md](PRD.md) §3.
 - [ ] Migrasi + model + relasi dibuat.
 - [ ] Otorisasi (menu + `canManage`) diterapkan & diuji (super_admin vs editor/staff → 403 yang benar).
 - [ ] Validasi input lengkap.
-- [ ] Halaman/komponen React responsif; `className`, bukan Blade.
+- [ ] Halaman/komponen Vue SFC responsif; `class`, `v-model`/`v-for`, bukan Blade.
 - [ ] Tidak ada N+1 (eager loading dicek).
 - [ ] `npm run build` sukses; warna dinamis ter-safelist.
 - [ ] Verifikasi jalan (smoke test HTTP / self-check).
@@ -77,7 +77,7 @@ Lihat matriks lengkap di [PRD.md](PRD.md) §3.
 | Milestone | Skill dominan |
 |-----------|---------------|
 | M1 Fondasi | Eloquent, migrasi, auth, middleware peran, validasi |
-| M2 Modul | React + Chart.js (pembukuan), kanban dinamis, user CRUD |
-| M3 SPA | Inertia (server & client), resolusi halaman, shared props |
+| M2 Modul | Vue + Chart.js (pembukuan), kanban dinamis, user CRUD |
+| M3 SPA | Inertia + Vue (server & client), resolusi halaman, shared props |
 | M4 Kartu | file storage, komentar/otorisasi, useForm upload, optimistic UI |
 | M5 Deploy | build asset, import SQL, `storage:link`, hardening |

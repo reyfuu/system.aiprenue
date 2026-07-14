@@ -17,6 +17,24 @@ class BoardController extends Controller
         $key = $this->uniqueKey($request->name);
         Category::create(['key' => $key, 'name' => trim($request->name)]);
 
+        // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task)
+        $defaults = [
+            ['key' => 'script', 'name' => 'Script', 'color' => 'bg-purple-500'],
+            ['key' => 'editing', 'name' => 'Editing', 'color' => 'bg-sky-500'],
+            ['key' => 'progress', 'name' => 'Progress', 'color' => 'bg-brand-600'],
+            ['key' => 'pending', 'name' => 'Pending', 'color' => 'bg-amber-500'],
+            ['key' => 'done', 'name' => 'Done', 'color' => 'bg-emerald-500'],
+        ];
+        foreach ($defaults as $i => $col) {
+            \App\Models\BoardColumn::create([
+                'board_key' => $key,
+                'key' => $col['key'],
+                'name' => $col['name'],
+                'color' => $col['color'],
+                'position' => $i,
+            ]);
+        }
+
         return redirect()->route('pipelines.kanban', ['category' => $key])
             ->with('status', 'Board ditambahkan.');
     }

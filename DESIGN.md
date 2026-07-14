@@ -2,7 +2,7 @@
 
 Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
 
-- **Stack**: Laravel 13 (PHP 8.5), **Inertia.js + React 19** (SPA), Tailwind v4, Vite. SQLite (mode WAL). PDF via DomPDF. Grafik via Chart.js (modul Pembukuan).
+- **Stack**: Laravel 13 (PHP 8.5), **Inertia.js + Vue 3** (SPA), Tailwind v4, Vite. SQLite (mode WAL). PDF via DomPDF. Grafik via Chart.js/vue-chartjs (modul Pembukuan).
 - **Tujuan**: mengelola pipeline endorsement, alur produksi Kanban, pembukuan, script, dan user secara terpusat dengan hak akses per peran.
 
 ---
@@ -12,7 +12,7 @@ Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
 ```
 ┌───────────────────────────────────────────────┐
 │                 Browser (SPA)                  │
-│   React 19 (resources/js/Pages/*) + Inertia    │
+│   Vue 3 (resources/js/Pages/*.vue) + Inertia   │
 │            Tailwind v4 · Chart.js              │
 └───────────────────────┬───────────────────────┘
                         │ Inertia (XHR + JSON props)
@@ -27,7 +27,7 @@ Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
 ```
 
 **Pola yang dipakai (nyata, tanpa over-engineering):**
-- **Inertia** — controller mengembalikan `Inertia::render('Page', $props)`; React merender tanpa REST terpisah. Redirect Laravel biasa (`->back()`) memicu reload props.
+- **Inertia** — controller mengembalikan `Inertia::render('Page', $props)`; Vue merender tanpa REST terpisah. Redirect Laravel biasa (`->back()`) memicu reload props.
 - **Otorisasi dua lapis** di middleware `EnsureMenuAccess`: (1) akses menu per peran, (2) route mutasi butuh `canManage()`. Bukan Policy per-model.
 - **Shared props** via `HandleInertiaRequests`: `auth.user` (id, role, canManage, peta menu) & `flash.status`.
 - **Fetch langsung** (non-Inertia) hanya untuk aksi drag-drop & todo (PATCH JSON, optimistic UI).
@@ -80,8 +80,8 @@ app/
 └── Support/               # ExchangeRate (kurs USD→IDR, cache 12 jam)
 resources/
 ├── js/
-│   ├── app.jsx            # entry Inertia
-│   ├── Layout.jsx  Sidebar.jsx
+│   ├── app.js             # entry Inertia (Vue)
+│   ├── Layout.vue  Sidebar.vue  ModalWrap.vue
 │   ├── Pages/             # Login, Dashboard, Kanban, Pipelines/Index,
 │   │                     # Pembukuan, Script, Users
 │   └── scripts/components # komponen Chart.js pembukuan
@@ -132,7 +132,7 @@ UI menyembunyikan aksi terlarang; server tetap membalas **403** bila dilanggar.
 
 ## 6. Keputusan Teknis
 
-- **Inertia + React** menggantikan Blade+Alpine — satu SPA, komponen per halaman, tanpa REST API terpisah.
+- **Inertia + Vue** menggantikan Blade+Alpine — satu SPA, komponen per halaman, tanpa REST API terpisah. (Vue dipilih ketimbang React karena preferensi tim untuk produksi shared hosting; keduanya sama-sama di-build lokal.)
 - **SQLite (WAL)** untuk dev; deploy via import file `.sql`. `busy_timeout` & `synchronous=NORMAL` diset di `config/database.php`.
 - **Progress = key kolom** — reuse kolom `progress` sebagai referensi kolom dinamis (hindari FK column_id + backfill).
 - **Safelist Tailwind** (`@source inline(...)`) untuk warna kolom/label yang datang dari DB (tak terbaca scanner).

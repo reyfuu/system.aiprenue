@@ -1,0 +1,17 @@
+# .htaccess (ROOT proyek) — untuk shared hosting (Hostinger) bila document root
+# domain mengarah ke folder proyek ini, BUKAN ke folder /public.
+#
+# Cara terbaik (tanpa file ini): di hPanel Hostinger, set "Document Root" domain
+# ke .../public — lalu file ini tidak diperlukan.
+# Kalau docroot tak bisa diubah, upload file ini di root; ia meneruskan semua
+# request ke folder public/ (tempat index.php Laravel + public/.htaccess bekerja).
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Jangan proses ulang bila sudah menunjuk ke /public (hindari loop)
+    RewriteCond %{REQUEST_URI} !^/public/
+
+    # Teruskan SEMUA request ke dalam folder public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
