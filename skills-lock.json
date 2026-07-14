@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "debug": {
+      "source": "anthropics/knowledge-work-plugins",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/debug/SKILL.md",
+      "computedHash": "2406a53ec026e905f3edabfee71004ac480649c6d153ac0d09472eaf79028996"
+    }
+  }
+}

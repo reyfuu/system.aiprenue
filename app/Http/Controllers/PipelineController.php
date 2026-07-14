@@ -114,8 +114,8 @@ class PipelineController extends Controller
                 'amount_usd'     => $p->amount_usd,
                 'assignee'       => $p->assignee?->name,
                 'link'           => $p->link,
-                'todos'          => $p->todos ?? [],
                 'labels'         => $p->labels ?? [],
+                'done'           => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
                 'time'           => $p->updated_at?->diffForHumans(null, true).' lalu',
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline'       => $p->deadline?->toDateString(),
@@ -167,24 +167,21 @@ class PipelineController extends Controller
         ]);
     }
 
-    public function updateTodos(Request $request, Pipeline $pipeline)
-    {
-        $data = $request->validate([
-            'todos'          => 'present|array',
-            'todos.*.text'   => 'required|string|max:255',
-            'todos.*.done'   => 'required|boolean',
-        ]);
-        $pipeline->update(['todos' => $data['todos']]);
-
-        return response()->json(['ok' => true]);
-    }
-
     public function updateProgress(Request $request, Pipeline $pipeline)
     {
         $validKeys = \App\Models\BoardColumn::where('board_key', $pipeline->category)->pluck('key')->all();
         $data = $request->validate([
             'progress' => ['required', \Illuminate\Validation\Rule::in($validKeys)],
         ]);
+        $pipeline->update($data);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Tandai kartu selesai / batal (flag `done`, tak memindah kolom). */
+    public function updateDone(Request $request, Pipeline $pipeline)
+    {
+        $data = $request->validate(['done' => 'required|boolean']);
         $pipeline->update($data);
 
         return response()->json(['ok' => true]);

@@ -1,10 +1,11 @@
 <script setup>
-// Halaman Kanban (Vue) — kolom dinamis, drag-drop, label, checklist, + fitur kartu:
+// Halaman Kanban (Vue) — kolom dinamis, drag-drop, label, + fitur kartu:
 // deadline, arsip, deskripsi, attachment, komentar (staff yg ditugasi pun bisa komentar).
 import { ref, computed, watch } from 'vue';                       // reaktivitas Vue
 import { router, useForm, usePage } from '@inertiajs/vue3';        // Inertia: navigasi, form, props
 import Layout from '../Layout.vue';                                // kerangka + sidebar
 import ModalWrap from '../ModalWrap.vue';                          // pembungkus modal
+import draggable from 'vuedraggable';                              // drag-drop kartu (SortableJS) ala Trello
 
 // Props dari controller
 const props = defineProps({
@@ -28,39 +29,52 @@ const todayStr = () => new Date().toISOString().slice(0, 10);      // 'YYYY-MM-D
 const isUrgent = (card) => (card.labels || []).some((l) => l.name === 'Urgent'); // kartu mendesak?
 const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'); // ukuran file
 
-// State kartu per kolom (salinan board; di-resync bila board prop berubah)
-const cols = ref({ ...props.board });
-watch(() => props.board, (b) => { cols.value = { ...b }; });      // sinkron ulang saat Inertia kirim board baru
+// State kartu per kolom (salinan board; di-resync bila board prop berubah).
+// Deep-copy tiap array kolom → cols punya array sendiri, TIDAK berbagi referensi
+// dgn prop Inertia. Wajib: SortableJS mutasi array ini via splice saat drag;
+// kalau berbagi dgn prop readonly, mutasi gagal & kartu "balik" (drag seolah mati).
+const cloneBoard = (b) => Object.fromEntries(Object.entries(b || {}).map(([k, v]) => [k, [...(v || [])]]));
+const cols = ref(cloneBoard(props.board));
+watch(() => props.board, (b) => { cols.value = cloneBoard(b); }); // sinkron ulang saat Inertia kirim board baru
 
 const q = ref('');                                                 // teks filter
-const drag = ref({ id: null, from: null });                        // state drag aktif
 const colMenu = ref(null);                                         // kolom yg menunya terbuka
 const colNames = computed(() => Object.fromEntries(props.columns.map((c) => [c.key, c.name]))); // key→nama kolom
+const isTodolist = computed(() => props.category === 'todolist'); // board todolist: sembunyikan nominal IDR/USD & payment
 
-// Filter kartu per kolom (cocokkan endorse/code)
-const filtered = (key) => {
-    const list = cols.value[key] || [];
+// Kartu cocok dgn pencarian? (dipakai v-show; drag tetap pakai list asli)
+const matches = (card) => {
     const s = q.value.trim().toLowerCase();
-    if (!s) return list;
-    return list.filter((c) => c.endorse.toLowerCase().includes(s) || c.code.toLowerCase().includes(s));
+    return !s || card.endorse.toLowerCase().includes(s) || card.code.toLowerCase().includes(s);
 };
+const visibleCount = (key) => (cols.value[key] || []).filter(matches).length; // jml kartu tampil per kolom
+const dragDisabled = computed(() => !props.canManage || props.showArchived || !!q.value.trim()); // nonaktif saat view-only/arsip/mencari
 
-// ---- Drag & drop (nonaktif di mode arsip) ----
-const onDragStart = (id, from) => { if (props.canManage && !props.showArchived) drag.value = { id, from }; };
-const onDrop = (to) => {
-    if (!props.canManage || props.showArchived) return;
-    const { id, from } = drag.value;
-    if (id === null || from === to) return;
-    const card = (cols.value[from] || []).find((c) => c.id === id);
-    if (!card) return;
-    // Pindahkan kartu antar kolom (immutable)
-    cols.value = { ...cols.value, [from]: cols.value[from].filter((c) => c.id !== id), [to]: [...cols.value[to], card] };
-    drag.value = { id: null, from: null };
-    // Simpan progress ke server (fire-and-forget; reload bila gagal)
-    fetch(`/pipelines/${id}/progress`, {
+// ---- Drag & drop (vuedraggable) — pindah antar kolom → simpan progress ----
+// vuedraggable memutasi cols.value[key] langsung. @change memicu 'added' HANYA
+// di kolom penerima → dari situ kita tahu progress baru kartu.
+const onCardChange = (evt, toKey) => {
+    if (!evt.added) return;                                        // reorder dalam kolom tak perlu disimpan (tak ada kolom urutan)
+    const card = evt.added.element;
+    fetch(`/pipelines/${card.id}/progress`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ progress: to }),
+        body: JSON.stringify({ progress: toKey }),
+    }).catch(() => router.reload());                               // gagal → reload utk sinkron ulang
+};
+
+// ---- Tandai selesai (flag `done` ala Trello; kartu tetap di kolomnya) ----
+const toggleDone = (card) => {
+    if (!props.canManage) return;
+    const next = !card.done;
+    const col = findCardCol(card.id);
+    if (!col) return;
+    // Update optimistis (immutable) lalu simpan; reload bila gagal
+    cols.value = { ...cols.value, [col]: cols.value[col].map((c) => (c.id === card.id ? { ...c, done: next } : c)) };
+    fetch(`/pipelines/${card.id}/done`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({ done: next }),
     }).catch(() => router.reload());
 };
 
@@ -144,20 +158,8 @@ const submitAttach = () => {
 };
 const deleteAttachment = (id) => router.delete(`/attachments/${id}`, { preserveScroll: true });
 
-// ---- Checklist / todo (modal terpisah) ----
-const todoTarget = ref(null);          // {col, id} kartu aktif
-const newTodo = ref('');
-const todoCard = computed(() => (todoTarget.value ? (cols.value[todoTarget.value.col] || []).find((c) => c.id === todoTarget.value.id) : null));
-const todoDone = (card) => (card?.todos || []).filter((t) => t.done).length;
+// Cari kolom tempat kartu berada (dipakai toggleDone)
 const findCardCol = (id) => Object.keys(cols.value).find((k) => cols.value[k].some((c) => c.id === id));
-const openTodo = (card) => { todoTarget.value = { col: findCardCol(card.id), id: card.id }; newTodo.value = ''; };
-const saveTodos = (col, id, todos) => {
-    cols.value = { ...cols.value, [col]: cols.value[col].map((c) => (c.id === id ? { ...c, todos } : c)) };
-    fetch(`/pipelines/${id}/todos`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() }, body: JSON.stringify({ todos }) }).catch(() => {});
-};
-const toggleTodo = (i) => { if (props.canManage && todoCard.value) saveTodos(todoTarget.value.col, todoTarget.value.id, todoCard.value.todos.map((t, idx) => (idx === i ? { ...t, done: !t.done } : t))); };
-const addTodo = () => { const t = newTodo.value.trim(); if (props.canManage && todoCard.value && t) { saveTodos(todoTarget.value.col, todoTarget.value.id, [...todoCard.value.todos, { text: t, done: false }]); newTodo.value = ''; } };
-const removeTodo = (i) => { if (props.canManage && todoCard.value) saveTodos(todoTarget.value.col, todoTarget.value.id, todoCard.value.todos.filter((_, idx) => idx !== i)); };
 
 // ---- Modal board & kolom ----
 const boardCreateOpen = ref(false);
@@ -237,13 +239,13 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
             <!-- Kolom -->
             <div class="overflow-x-auto pb-4">
                 <div class="flex gap-3 min-w-max">
-                    <div v-for="col in columns" :key="col.key" class="w-72 flex-shrink-0 bg-white border border-brand-100 rounded-2xl shadow-sm p-3" @dragover.prevent @drop="onDrop(col.key)">
+                    <div v-for="col in columns" :key="col.key" class="w-72 flex-shrink-0 bg-white border border-brand-100 rounded-2xl shadow-sm p-3">
                         <!-- Header kolom -->
                         <div class="flex items-center justify-between mb-3">
                             <div class="flex items-center gap-2">
                                 <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
                                 <h2 class="text-sm font-bold text-slate-700">{{ col.name }}</h2>
-                                <span class="text-xs text-slate-400">{{ filtered(col.key).length }}</span>
+                                <span class="text-xs text-slate-400">{{ visibleCount(col.key) }}</span>
                             </div>
                             <div v-if="canManage && !showArchived" class="flex items-center gap-0.5">
                                 <button @click="openAdd(col.key)" title="Tambah task" class="w-6 h-6 flex items-center justify-center rounded-md bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold leading-none transition">+</button>
@@ -259,28 +261,49 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                             </div>
                         </div>
 
-                        <!-- Daftar kartu -->
-                        <div class="space-y-2.5 min-h-[120px] rounded-xl p-2 bg-brand-50/60">
-                            <div
-                                v-for="card in filtered(col.key)"
-                                :key="card.id"
-                                :draggable="canManage && !showArchived"
-                                @dragstart="onDragStart(card.id, col.key)"
-                                @click="openDetail(card)"
-                                :class="['group bg-white border rounded-xl p-3 shadow-sm hover:shadow-md transition', isUrgent(card) ? 'border-red-300 ring-1 ring-red-200' : 'border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
+                        <!-- Daftar kartu (drag via vuedraggable, ala Trello) -->
+                        <div class="min-h-[120px] rounded-xl p-2 bg-brand-50/60">
+                            <draggable
+                                :list="cols[col.key]"
+                                :group="{ name: 'kanban' }"
+                                item-key="id"
+                                :disabled="dragDisabled"
+                                class="space-y-2.5 min-h-[80px]"
+                                ghost-class="drag-ghost"
+                                :animation="180"
+                                @change="onCardChange($event, col.key)"
                             >
+                                <template #item="{ element: card }">
+                                    <div
+                                        v-show="matches(card)"
+                                        @click="openDetail(card)"
+                                        :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', card.done ? 'bg-emerald-50/50 border-emerald-200 ring-1 ring-emerald-100' : isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
+                                    >
                                 <!-- Strip label -->
                                 <div v-if="card.labels && card.labels.length" class="flex flex-wrap gap-1 mb-1.5">
                                     <span v-for="(lb, li) in card.labels" :key="li" :class="['h-1.5 w-9 rounded-full', lb.color]" :title="lb.name"></span>
                                 </div>
-                                <!-- Kode + hapus -->
+                                <!-- Checkbox selesai + kode + hapus -->
                                 <div class="flex items-start justify-between mb-1">
-                                    <p class="text-[10px] text-slate-400 font-mono">{{ card.code }}</p>
+                                    <div class="flex items-center gap-2">
+                                        <!-- Checkbox bulat: klik → tandai/batal selesai (animasi pop centang) -->
+                                        <button
+                                            v-if="!showArchived"
+                                            type="button"
+                                            @click.stop="toggleDone(card)"
+                                            :disabled="!canManage"
+                                            :title="card.done ? 'Batalkan selesai' : 'Tandai selesai'"
+                                            :class="['flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition disabled:cursor-default', card.done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400 hover:text-emerald-300']"
+                                        >
+                                            <svg :class="['w-3 h-3', card.done ? 'done-pop' : '']" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                        </button>
+                                        <p class="text-[10px] text-slate-400 font-mono">{{ card.code }}</p>
+                                    </div>
                                     <button v-if="canManage" @click.stop="deleteCard(card)" title="Hapus kartu" class="text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
-                                <p class="font-semibold text-sm text-slate-700 leading-snug mb-2">{{ card.endorse }}</p>
+                                <p :class="['font-semibold text-sm leading-snug mb-2 transition', card.done ? 'line-through text-slate-400' : 'text-slate-700']">{{ card.endorse }}</p>
 
                                 <!-- Meta: urgent, deadline, deskripsi, komentar, lampiran -->
                                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
@@ -299,19 +322,11 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                                     <span v-for="o in card.outputs" :key="o" class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">{{ o }}</span>
                                 </div>
 
-                                <!-- Checklist ringkas -->
-                                <button type="button" @click.stop="openTodo(card)" class="w-full flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-brand-700 mb-2 group/todo">
-                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l2 2 4-4" /></svg>
-                                    <span class="font-medium tabular-nums">{{ card.todos.length ? todoDone(card) + '/' + card.todos.length : 'checklist' }}</span>
-                                    <span v-if="card.todos.length" class="flex-1 h-1 rounded-full bg-brand-50 overflow-hidden"><span class="block h-full bg-emerald-500 transition-all" :style="{ width: Math.round(todoDone(card) / card.todos.length * 100) + '%' }"></span></span>
-                                    <span v-else class="text-brand-400 opacity-0 group-hover/todo:opacity-100 transition">+ tambah</span>
-                                </button>
-
                                 <!-- Badge akun + pembayaran + waktu -->
                                 <div class="flex items-center justify-between text-[10px] mb-1.5">
                                     <div class="flex items-center gap-1.5">
                                         <span :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
-                                        <span :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
+                                        <span v-if="!isTodolist" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
                                     </div>
                                     <span class="text-slate-400">{{ card.time }}</span>
                                 </div>
@@ -327,8 +342,10 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                                         Link
                                     </a>
                                 </div>
-                            </div>
-                            <p v-if="filtered(col.key).length === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
+                                    </div>
+                                </template>
+                            </draggable>
+                            <p v-if="visibleCount(col.key) === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
                         </div>
                     </div>
 
@@ -348,13 +365,19 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
             <div class="flex items-start justify-between mb-4">
                 <div>
                     <p class="text-[10px] text-slate-400 font-mono">{{ detailCard.code }}</p>
-                    <h2 class="text-lg font-bold text-brand-800 flex items-center gap-2">
+                    <h2 :class="['text-lg font-bold flex items-center gap-2', detailCard.done ? 'text-slate-400 line-through' : 'text-brand-800']">
                         {{ detailCard.endorse }}
-                        <span v-if="isUrgent(detailCard)" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white">URGENT</span>
-                        <span v-if="detailCard.archived" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">ARSIP</span>
+                        <span v-if="detailCard.done" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500 text-white no-underline">SELESAI</span>
+                        <span v-if="isUrgent(detailCard)" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white no-underline">URGENT</span>
+                        <span v-if="detailCard.archived" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 no-underline">ARSIP</span>
                     </h2>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Tombol tandai selesai (animasi pop centang) -->
+                    <button v-if="canManage" @click="toggleDone(detailCard)" :class="['text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition', detailCard.done ? 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600' : 'border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-300']">
+                        <svg :class="['w-4 h-4', detailCard.done ? 'done-pop' : '']" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                        {{ detailCard.done ? 'Selesai' : 'Tandai selesai' }}
+                    </button>
                     <button v-if="canManage" @click="archiveCard(detailCard)" :title="detailCard.archived ? 'Kembalikan dari arsip' : 'Arsipkan kartu'" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
                         {{ detailCard.archived ? 'Kembalikan' : 'Arsipkan' }}
                     </button>
@@ -390,17 +413,17 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                         <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                 </label>
-                <label class="block font-medium text-slate-600">Payment
+                <label v-if="!isTodolist" class="block font-medium text-slate-600">Payment
                     <select v-model="editForm.payment_status" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option value="belum">Belum</option>
                         <option value="dp">DP</option>
                         <option value="lunas">Lunas</option>
                     </select>
                 </label>
-                <label class="block font-medium text-slate-600">Jumlah IDR
+                <label v-if="!isTodolist" class="block font-medium text-slate-600">Jumlah IDR
                     <input type="number" step="0.01" v-model="editForm.amount_idr" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
-                <label class="block font-medium text-slate-600">Jumlah USD
+                <label v-if="!isTodolist" class="block font-medium text-slate-600">Jumlah USD
                     <input type="number" step="0.01" v-model="editForm.amount_usd" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
                 <label class="col-span-2 block font-medium text-slate-600">Link Video
@@ -497,7 +520,7 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
         <!-- ===== Modal tambah task ===== -->
         <ModalWrap v-if="addOpen" width="max-w-md" @close="addOpen = false">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold text-brand-800">Tambah Task <span class="text-sm font-normal text-slate-400">· {{ colNames[addForm.progress] }}</span></h2>
+                <h2 class="text-lg font-bold text-brand-800">Tambah Task <span class="text-sm font-normal text-slate-400">· {{ colNames[addForm.progressKey] }}</span></h2>
                 <button type="button" @click="addOpen = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
             </div>
             <form @submit.prevent="submitAdd" class="space-y-3 text-sm">
@@ -523,31 +546,6 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                     <button type="button" @click="addOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
                     <button type="submit" :disabled="addForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan</button>
                 </div>
-            </form>
-        </ModalWrap>
-
-        <!-- ===== Modal checklist ===== -->
-        <ModalWrap v-if="todoTarget && todoCard" width="max-w-md" @close="todoTarget = null">
-            <div class="flex items-start justify-between mb-1">
-                <h2 class="text-lg font-bold text-brand-800">Checklist</h2>
-                <button type="button" @click="todoTarget = null" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
-            </div>
-            <p class="text-sm text-slate-500 mb-4 truncate">{{ todoCard.endorse }}</p>
-            <div v-if="todoCard.todos.length" class="flex items-center gap-2 mb-3">
-                <div class="flex-1 h-2 rounded-full bg-brand-50 overflow-hidden"><div class="h-full bg-emerald-500 transition-all" :style="{ width: Math.round(todoDone(todoCard) / todoCard.todos.length * 100) + '%' }"></div></div>
-                <span class="text-xs font-semibold text-slate-500 tabular-nums">{{ todoDone(todoCard) }}/{{ todoCard.todos.length }}</span>
-            </div>
-            <div class="space-y-1.5 max-h-64 overflow-y-auto mb-3">
-                <div v-for="(t, i) in todoCard.todos" :key="i" class="flex items-center gap-2 group/item rounded-lg px-2 py-1.5 hover:bg-brand-50">
-                    <input type="checkbox" :checked="t.done" @change="toggleTodo(i)" :disabled="!canManage" class="accent-emerald-600 w-4 h-4 flex-shrink-0 disabled:opacity-60" />
-                    <span :class="['flex-1 text-sm', t.done ? 'line-through text-slate-400' : 'text-slate-700']">{{ t.text }}</span>
-                    <button v-if="canManage" type="button" @click="removeTodo(i)" class="text-slate-300 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition text-lg leading-none">&times;</button>
-                </div>
-                <p v-if="todoCard.todos.length === 0" class="text-center text-sm text-slate-400 py-4">Belum ada item.</p>
-            </div>
-            <form v-if="canManage" @submit.prevent="addTodo" class="flex gap-2">
-                <input v-model="newTodo" placeholder="Tambah item…" class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-brand-400 outline-none" />
-                <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition">Tambah</button>
             </form>
         </ModalWrap>
 
@@ -600,3 +598,21 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
         </ModalWrap>
     </Layout>
 </template>
+
+<style scoped>
+/* Animasi centang saat kartu ditandai selesai: pop + sedikit overshoot */
+@keyframes done-pop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.4); }
+    100% { transform: scale(1); opacity: 1; }
+}
+.done-pop { animation: done-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Placeholder kartu saat di-drag (ala Trello): kotak samar bergaris putus */
+.drag-ghost {
+    opacity: 0.5;
+    border-style: dashed !important;
+    background: rgb(240 253 244) !important; /* emerald-50 */
+}
+.drag-ghost > * { visibility: hidden; }
+</style>

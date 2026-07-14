@@ -29,7 +29,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/pipelines', [PipelineController::class, 'index'])->name('pipelines.index');
     Route::get('/pipelines/kanban', [PipelineController::class, 'kanban'])->name('pipelines.kanban');
     Route::patch('/pipelines/{pipeline}/progress', [PipelineController::class, 'updateProgress'])->name('pipelines.progress');
-    Route::patch('/pipelines/{pipeline}/todos', [PipelineController::class, 'updateTodos'])->name('pipelines.todos');
+    Route::patch('/pipelines/{pipeline}/done', [PipelineController::class, 'updateDone'])->name('pipelines.done');
     Route::patch('/pipelines/{pipeline}/archive', [PipelineController::class, 'archive'])->name('pipelines.archive');
 
     // Komentar kartu — boleh semua yg akses kanban (staff yg ditugasi pun bisa)
