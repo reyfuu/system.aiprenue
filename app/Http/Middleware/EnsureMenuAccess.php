@@ -46,7 +46,9 @@ class EnsureMenuAccess
         ], true)
             || str_starts_with($name, 'boards.')
             || str_starts_with($name, 'columns.')
-            || str_starts_with($name, 'attachments.'); // komentar TIDAK di sini (staff boleh)
+            || str_starts_with($name, 'attachments.') // komentar TIDAK di sini (staff boleh)
+            || str_starts_with($name, 'transactions.')
+            || str_starts_with($name, 'inventories.');
     }
 
     /** Route name → menu terkait (array; null = bebas). */
@@ -67,6 +69,8 @@ class EnsureMenuAccess
             str_starts_with($name, 'pipelines.') => ['pipeline'],
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
+            str_starts_with($name, 'transactions.') => ['pembukuan'],
+            str_starts_with($name, 'inventories.') => ['pembukuan'],
             str_starts_with($name, 'users.') => ['user'],
             default => null,
         };

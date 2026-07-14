@@ -6,7 +6,9 @@ use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\PembukuanController;
+use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
@@ -58,6 +60,14 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');
     Route::get('/pembukuan/report', [PembukuanController::class, 'report'])->name('pembukuan.report');
+
+    // CRUD transaksi & inventaris pembukuan (super admin/IT)
+    Route::post('/transactions', [TransactionController::class, 'store'])->name('transactions.store');
+    Route::put('/transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
+    Route::delete('/transactions/{transaction}', [TransactionController::class, 'destroy'])->name('transactions.destroy');
+    Route::post('/inventories', [InventoryController::class, 'store'])->name('inventories.store');
+    Route::put('/inventories/{inventory}', [InventoryController::class, 'update'])->name('inventories.update');
+    Route::delete('/inventories/{inventory}', [InventoryController::class, 'destroy'])->name('inventories.destroy');
 
     // User management (CRUD)
     Route::get('/users', [UserController::class, 'index'])->name('users.index');

@@ -71,7 +71,27 @@ class PembukuanController extends Controller
 
     public function index()
     {
-        return Inertia::render('Pembukuan', ['payload' => $this->build()]);
+        return Inertia::render('Pembukuan', [
+            'payload' => $this->build(),
+            // Daftar mentah untuk tabel + form edit CRUD
+            'transactions' => Transaction::orderByDesc('date')->orderByDesc('id')->get()->map(fn ($t) => [
+                'id'          => $t->id,
+                'type'        => $t->type,
+                'category'    => $t->category,
+                'description' => $t->description,
+                'amount_idr'  => $t->amount_idr,
+                'date'        => $t->date?->toDateString(),
+            ]),
+            'inventories' => Inventory::orderByDesc('month')->orderBy('name')->get()->map(fn ($i) => [
+                'id'             => $i->id,
+                'name'           => $i->name,
+                'qty'            => $i->qty,
+                'unit_value_idr' => $i->unit_value_idr,
+                'month'          => $i->month?->format('Y-m'),
+                'total_value'    => $i->total_value,
+            ]),
+            'types' => Transaction::TYPES, // peta pemasukan/pengeluaran
+        ]);
     }
 
     public function report()
