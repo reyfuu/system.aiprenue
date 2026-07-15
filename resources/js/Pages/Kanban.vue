@@ -137,9 +137,11 @@ const openDetail = (card) => {
         editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
     }
 };
+// Tutup modal setelah simpan sukses (samakan dgn submitAdd/arsip/hapus & modal Order).
+// Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
 const submitEdit = () => editForm
     .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .put('/pipelines/' + detailId.value, { preserveScroll: true });
+    .put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: () => (detailId.value = null) });
 const hasLabel = (color) => editForm.labels.some((l) => l.color === color);
 const toggleLabel = (lp) => {
     const i = editForm.labels.findIndex((l) => l.color === lp.color);
