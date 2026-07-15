@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\BoardColumn;
 use App\Models\Category;
 use App\Models\Output;
 use App\Models\Pipeline;
@@ -21,8 +22,25 @@ class PipelineSeeder extends Seeder
 
         // Board pipeline harus ada dulu: halaman Pipeline hanya menampilkan
         // kategori yang punya baris di `categories` bertipe 'pipeline'.
+        $defaultCols = [
+            ['key' => 'script', 'name' => 'Script', 'color' => 'bg-purple-500'],
+            ['key' => 'editing', 'name' => 'Editing', 'color' => 'bg-sky-500'],
+            ['key' => 'progress', 'name' => 'Progress', 'color' => 'bg-brand-600'],
+            ['key' => 'pending', 'name' => 'Pending', 'color' => 'bg-amber-500'],
+            ['key' => 'done', 'name' => 'Done', 'color' => 'bg-emerald-500'],
+        ];
+
         foreach (['endorse' => 'Endorse', 'agensi' => 'Agensi', 'coaching' => 'Coaching', 'speaker' => 'Speaker'] as $key => $name) {
             Category::updateOrCreate(['key' => $key], ['name' => $name, 'type' => 'pipeline']);
+
+            // Kolom default WAJIB: PipelineController@validated memvalidasi `progress`
+            // terhadap board_columns board ini — tanpa kolom, hanya 'script' yang lolos.
+            foreach ($defaultCols as $i => $c) {
+                BoardColumn::updateOrCreate(
+                    ['board_key' => $key, 'key' => $c['key']],
+                    ['name' => $c['name'], 'color' => $c['color'], 'position' => $i],
+                );
+            }
         }
         $progress = ['script', 'editing', 'progress', 'pending', 'done'];
         $payment = ['belum', 'dp', 'lunas'];

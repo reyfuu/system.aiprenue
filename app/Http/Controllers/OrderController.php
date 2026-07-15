@@ -25,6 +25,14 @@ class OrderController extends Controller
         if ($request->filled('tipe_pembayaran')) {
             $query->where('tipe_pembayaran', $request->tipe_pembayaran);
         }
+        // Rentang tanggal deadline. Batas bawah/atas berdiri sendiri:
+        // isi salah satu saja tetap jalan (mis. "sampai 31 Agu" tanpa batas awal).
+        if ($request->filled('date_from')) {
+            $query->whereDate('tanggal_deadline', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('tanggal_deadline', '<=', $request->date_to);
+        }
         if ($request->filled('search')) {
             $s = $request->search;
             $query->where(fn ($q) => $q->where('nama_customer', 'like', "%$s%")
@@ -37,7 +45,7 @@ class OrderController extends Controller
 
         return Inertia::render('Orders/Index', [
             'orders'  => $orders,
-            'filters' => $request->only(['tipe_order', 'prioritas', 'tipe_pembayaran', 'search']),
+            'filters' => $request->only(['tipe_order', 'prioritas', 'tipe_pembayaran', 'date_from', 'date_to', 'search']),
             'summary' => [
                 'total'      => Order::count(),
                 'urgent'     => Order::whereIn('prioritas', ['urgent', 'super_urgent'])->count(),

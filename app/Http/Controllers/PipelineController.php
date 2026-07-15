@@ -292,7 +292,7 @@ class PipelineController extends Controller
     {
         $validProgress = \App\Models\BoardColumn::where('board_key', $request->category)->pluck('key')->all();
 
-        return $request->validate([
+        $data = $request->validate([
             'category'        => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::categories()))],
             'account'         => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::ACCOUNTS))],
             'assigned_to'     => 'nullable|exists:users,id',
@@ -312,10 +312,19 @@ class PipelineController extends Controller
             'amount_idr'      => 'nullable|numeric|min:0',
             'amount_usd'      => 'nullable|numeric|min:0',
             'notes'           => 'nullable|string',
-            'ke_gilang'       => 'required|in:belum,sudah,done',
+            'ke_gilang'       => 'nullable|in:belum,sudah,done',
             'catatan'         => 'nullable|string',
             'outputs'         => 'array',
             'outputs.*'       => 'exists:outputs,id',
         ]);
+
+        // ke_gilang sudah tak ada di form Pipeline (kolomnya dibuang dari tabel).
+        // Bila tak dikirim, buang dari $data — jangan kirim null ke kolom NOT NULL:
+        // create → pakai default DB ('belum'), update → nilai lama tetap utuh.
+        if (! array_key_exists('ke_gilang', $data) || $data['ke_gilang'] === null) {
+            unset($data['ke_gilang']);
+        }
+
+        return $data;
     }
 }
