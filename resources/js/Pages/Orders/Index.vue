@@ -337,7 +337,7 @@ const destroy = (o) => {
                     <div class="grid sm:grid-cols-3 gap-3">
                         <!-- Tipe order: coaching/endorse/speaker/agency -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tipe Order</label>
+                            <label class="block text-xs font-semibold text-slate-600">Tipe Order <span class="text-red-500">*</span></label>
                             <select v-model="form.tipe_order" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <option v-for="(v, k) in tipeOrder" :key="k" :value="k">{{ v }}</option>
                             </select>
@@ -345,7 +345,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Akun: order ini milik FK atau AI Preneur -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Order Dari</label>
+                            <label class="block text-xs font-semibold text-slate-600">Masuk ke Akun <span class="text-red-500">*</span></label>
                             <select v-model="form.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                             </select>
@@ -353,7 +353,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Tanggal deadline -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tanggal Deadline</label>
+                            <label class="block text-xs font-semibold text-slate-600">Tanggal Deadline <span class="text-red-500">*</span></label>
                             <input v-model="form.tanggal_deadline" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.tanggal_deadline" class="text-xs text-red-600">{{ form.errors.tanggal_deadline }}</span>
                         </div>
@@ -366,13 +366,13 @@ const destroy = (o) => {
                     <div class="grid sm:grid-cols-2 gap-3">
                         <!-- Nama (wajib) -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Nama Customer</label>
-                            <input v-model="form.nama_customer" placeholder="Nama" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <label class="block text-xs font-semibold text-slate-600">Nama Customer / Perusahaan <span class="text-red-500">*</span></label>
+                            <input v-model="form.nama_customer" placeholder="Nama orang / perusahaan" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.nama_customer" class="text-xs text-red-600">{{ form.errors.nama_customer }}</span>
                         </div>
                         <!-- Telepon -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Telepon</label>
+                            <label class="block text-xs font-semibold text-slate-600">Telepon <span class="text-red-500">*</span></label>
                             <input v-model="form.telepon" placeholder="Telepon" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.telepon" class="text-xs text-red-600">{{ form.errors.telepon }}</span>
                         </div>
@@ -385,7 +385,7 @@ const destroy = (o) => {
                         <!-- Kota/kabupaten: <datalist> = ketik untuk cari, tanpa library.
                              Daftar wilayah cuma SARAN — kota di luar dataset boleh diketik manual. -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Kota / Kabupaten</label>
+                            <label class="block text-xs font-semibold text-slate-600">Kota / Kabupaten <span class="text-red-500">*</span></label>
                             <input v-model="form.kota" list="kota-list" placeholder="Ketik untuk cari / isi manual..."
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <datalist id="kota-list">
@@ -408,7 +408,7 @@ const destroy = (o) => {
                     <div class="grid sm:grid-cols-2 gap-3">
                         <!-- Tipe pembayaran: full / dp -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran</label>
+                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran <span class="text-red-500">*</span></label>
                             <select v-model="form.tipe_pembayaran" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                             </select>
@@ -422,7 +422,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Nominal IDR -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Nominal IDR</label>
+                            <label class="block text-xs font-semibold text-slate-600">Nilai Order (IDR) <span class="text-red-500">*</span></label>
                             <input v-model="form.total_idr" type="number" min="0" step="1000" placeholder="0"
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <p class="text-[10px] text-slate-400 mt-0.5">{{ rp(form.total_idr) }}</p>
@@ -430,7 +430,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Nominal USD -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Nominal USD</label>
+                            <label class="block text-xs font-semibold text-slate-600">Nilai Order (USD)</label>
                             <input v-model="form.total_usd" type="number" min="0" step="0.01" placeholder="0"
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <p class="text-[10px] text-slate-400 mt-0.5">{{ usd(form.total_usd) }}</p>
@@ -443,7 +443,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Bukti bayar: file baru menimpa yang lama; dikosongkan = file lama dipertahankan -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Bukti Bayar <span class="font-normal text-slate-400">(dari customer)</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Bukti Transfer <span class="font-normal text-slate-400">(dari customer)</span></label>
                             <input ref="fileInput" type="file" accept=".jpg,.jpeg,.png,.pdf"
                                    @change="form.bukti_bayar = $event.target.files[0]"
                                    class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:font-semibold hover:file:bg-brand-100" />
@@ -452,7 +452,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Invoice perusahaan: berkas terpisah dari bukti bayar customer -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Invoice <span class="font-normal text-slate-400">(dari perusahaan)</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Invoice <span class="font-normal text-slate-400">(kita terbitkan ke customer)</span></label>
                             <input ref="invoiceInput" type="file" accept=".jpg,.jpeg,.png,.pdf"
                                    @change="form.invoice = $event.target.files[0]"
                                    class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold hover:file:bg-indigo-100" />
