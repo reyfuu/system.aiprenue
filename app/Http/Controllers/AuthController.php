@@ -4,16 +4,19 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class AuthController extends Controller
 {
     public function showLogin()
     {
+        // Sudah login → langsung ke halaman awal sesuai role
         if (Auth::check()) {
-            return redirect()->route('pipelines.index');
+            return redirect()->route(Auth::user()->homeRoute());
         }
 
-        return view('auth.login');
+        // Tampilkan halaman login React (tanpa sidebar)
+        return Inertia::render('Login');
     }
 
     public function login(Request $request)
@@ -26,7 +29,7 @@ class AuthController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended(route('pipelines.index'));
+            return redirect()->intended(route(Auth::user()->homeRoute()));
         }
 
         return back()

@@ -29,9 +29,9 @@
 </head>
 <body>
     <div class="header">
-        <h1>REPORT OMZET — PIPELINE FK-AI PRENEUR</h1>
+        <h1>REPORT OMZET — SYSTEM AI PRENEUR</h1>
         <p>
-            Kategori: {{ $category ? \App\Models\Pipeline::CATEGORIES[$category] : 'Semua (Endorse + Agensi)' }}
+            Kategori: {{ $category ? \App\Models\Pipeline::categories()[$category] : 'Semua (Endorse + Agensi)' }}
             &nbsp;•&nbsp; Dibuat: {{ $generated }}
             &nbsp;•&nbsp; Kurs USD→IDR: Rp {{ number_format($kurs, 0, ',', '.') }}
         </p>
@@ -92,7 +92,7 @@
             <tbody>
                 @foreach ($rows as $p)
                     <tr>
-                        <td><span class="badge">{{ \App\Models\Pipeline::CATEGORIES[$p->category] }}</span></td>
+                        <td><span class="badge">{{ \App\Models\Pipeline::categories()[$p->category] }}</span></td>
                         <td>{{ \App\Models\Pipeline::ACCOUNTS[$p->account] }}</td>
                         <td>{{ $p->endorse }}</td>
                         <td>{{ $p->outputs->pluck('name')->implode(', ') }}</td>
