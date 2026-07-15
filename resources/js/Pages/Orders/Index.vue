@@ -119,8 +119,11 @@ const submit = () => {
         onSuccess: () => { open.value = false; resetForm(); },
     };
 
+    // transform() menempel di instance form dan BERTAHAN antar submit, jadi wajib
+    // diset di kedua cabang. Kalau create tak menyetel ulang, `_method: 'put'` sisa
+    // dari edit sebelumnya ikut terkirim → POST /orders di-spoof jadi PUT → 405.
     if (mode.value === 'create') {
-        form.post('/orders', done);
+        form.transform((d) => d).post('/orders', done);
     } else {
         form.transform((d) => ({ ...d, _method: 'put' })).post('/orders/' + editId.value, done);
     }
