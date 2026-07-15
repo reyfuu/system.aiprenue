@@ -43,6 +43,8 @@ const f = reactive({
     tipe_order: props.filters.tipe_order || '',
     prioritas: props.filters.prioritas || '',
     tipe_pembayaran: props.filters.tipe_pembayaran || '',
+    date_from: props.filters.date_from || '',   // batas awal deadline
+    date_to: props.filters.date_to || '',       // batas akhir deadline
     search: props.filters.search || '',
 });
 
@@ -191,6 +193,15 @@ const destroy = (o) => {
                     <option value="">Semua Pembayaran</option>
                     <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                 </select>
+                <!-- Rentang deadline: kedua sisi opsional -->
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs text-slate-500 font-medium">Deadline</span>
+                    <input v-model="f.date_from" type="date" @change="applyFilters()" title="Deadline dari"
+                           class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <span class="text-slate-400">–</span>
+                    <input v-model="f.date_to" type="date" @change="applyFilters()" title="Deadline sampai"
+                           class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                </div>
                 <Link href="/orders" class="text-brand-600 hover:text-brand-800 px-2 font-medium">Reset</Link>
             </div>
 
