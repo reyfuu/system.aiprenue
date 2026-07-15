@@ -151,10 +151,6 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                             <span class="text-slate-500">Masih DP</span>
                             <span class="font-semibold text-amber-600">{{ order.dp }}</span>
                         </div>
-                        <div class="flex items-center justify-between text-sm">
-                            <span class="text-slate-500">Urgent</span>
-                            <span class="font-semibold text-red-600">{{ order.urgent }}</span>
-                        </div>
                     </div>
                 </Link>
 

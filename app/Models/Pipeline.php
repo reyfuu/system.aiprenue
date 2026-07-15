@@ -12,7 +12,7 @@ class Pipeline extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'category', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
+        'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
         'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'ke_gilang', 'catatan', 'done',
         'archived_at', 'created_by', 'updated_by',
@@ -59,6 +59,17 @@ class Pipeline extends Model
         return Category::when($type, fn ($q) => $q->where('type', $type))
             ->orderBy('id')->pluck('name', 'key')->all();
     }
+
+    /** Jenis deal — dulu board terpisah (endorse/coaching/agensi/speaker), kini
+     *  atribut kartu di board `sales`. String biasa (bukan enum) supaya bisa
+     *  ditambah tanpa migrasi. null = kartu board kanban (bukan deal). */
+    public const JENIS = [
+        'endorse'             => 'Endorse',
+        'coaching_1on1'       => 'Coaching 1-on-1',
+        'coaching_perusahaan' => 'Coaching Perusahaan',
+        'agensi'              => 'Agensi',
+        'speaker'             => 'Speaker',
+    ];
 
     /** Account = enum('fk','ai_preneur') di tabel pipelines.
      *  Menambah pilihan di sini WAJIB dibarengi migrasi ubah enum, kalau tidak

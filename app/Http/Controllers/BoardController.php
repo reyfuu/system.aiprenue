@@ -27,8 +27,15 @@ class BoardController extends Controller
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
         ]);
 
-        // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task)
-        $defaults = [
+        // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task).
+        // Board pipeline → stage sales; board kanban → alur produksi.
+        $defaults = $type === 'pipeline' ? [
+            ['key' => 'lead', 'name' => 'Lead', 'color' => 'bg-slate-400'],
+            ['key' => 'kontak', 'name' => 'Kontak', 'color' => 'bg-sky-500'],
+            ['key' => 'nego', 'name' => 'Nego', 'color' => 'bg-amber-500'],
+            ['key' => 'closing', 'name' => 'Closing', 'color' => 'bg-brand-600'],
+            ['key' => 'deal', 'name' => 'Deal', 'color' => 'bg-emerald-500'],
+        ] : [
             ['key' => 'script', 'name' => 'Script', 'color' => 'bg-purple-500'],
             ['key' => 'editing', 'name' => 'Editing', 'color' => 'bg-sky-500'],
             ['key' => 'progress', 'name' => 'Progress', 'color' => 'bg-brand-600'],
@@ -63,7 +70,10 @@ class BoardController extends Controller
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
         ]);
 
-        return redirect()->route('pipelines.kanban', ['category' => $board->key])
+        // Balik ke modul asal board — board pipeline tak ada di /pipelines/kanban
+        $route = $board->type === 'pipeline' ? 'pipelines.index' : 'pipelines.kanban';
+
+        return redirect()->route($route, ['category' => $board->key])
             ->with('status', 'Board diperbarui.');
     }
 

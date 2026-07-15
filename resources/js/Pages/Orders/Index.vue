@@ -9,39 +9,42 @@ import ModalWrap from '../../ModalWrap.vue';                      // pembungkus 
 const props = defineProps({
     orders: Object,          // paginator Laravel: { data, links, total, from, to, last_page }
     filters: Object,         // nilai filter aktif dari server
-    summary: Object,         // { total, urgent, nilai, dp }
+    summary: Object,         // { total, totalIdr, totalUsd, grandIdr, dp }
     tipeOrder: Object,       // peta key→label tipe order
-    prioritas: Object,       // peta key→label prioritas
+    accounts: Object,        // peta key→label akun (fk / ai_preneur)
     tipePembayaran: Object,  // peta key→label tipe pembayaran
-    kotaList: Array,         // 514 kota/kab Indonesia + Singapura/Australia/Miri City
+    kotaList: Array,         // saran kota (514 kab/kota + Singapura/Australia/Miri City)
+    rate: { type: Number, default: 0 },  // kurs USD→IDR utk total gabungan per baris
 });
 
 // User login dari shared props (untuk gating tombol CRUD)
 const page = usePage();
 const auth = computed(() => page.props.auth);
 
-// Warna badge (samakan dengan konstanta di Order model)
+// Warna badge tipe order. Kelas ditulis literal di sini (bukan dikirim server)
+// supaya terbaca scanner Tailwind — jangan pindahkan ke PHP.
 const TIPE_COLORS = {
-    coaching: 'bg-brand-600 text-white',        // coaching → brand
-    endorse: 'bg-emerald-600 text-white',       // endorse → hijau
-    speaker: 'bg-amber-600 text-white',         // speaker → amber
-    agency: 'bg-rose-600 text-white',           // agency → rose
-};
-const PRIORITAS_COLORS = {
-    normal: 'bg-slate-500 text-white',          // normal → abu-abu
-    urgent: 'bg-amber-400 text-amber-900',      // urgent → amber
-    super_urgent: 'bg-red-600 text-white',      // super urgent → merah
+    coaching_1on1: 'bg-brand-600 text-white',       // coaching 1-on-1 → brand
+    coaching_perusahaan: 'bg-indigo-500 text-white',// coaching perusahaan → indigo
+    endorse: 'bg-emerald-600 text-white',           // endorse → hijau
+    speaker: 'bg-amber-600 text-white',             // speaker → amber
+    agency: 'bg-rose-600 text-white',               // agency → rose
 };
 
 // Format Rupiah "Rp 1.234.567"
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+// Format USD "$1,250"
+const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US');
+// Total satu order dlm IDR = nominal IDR + nominal USD × kurs.
+// Turunan, bukan kolom — kalau disimpan, nilainya basi begitu kurs berubah.
+const totalOrder = (o) => Number(o.total_idr || 0) + Number(o.total_usd || 0) * props.rate;
 // Format tanggal "15 Jul 2026"; em-dash bila kosong
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 // ---- Filter ----
 const f = reactive({
     tipe_order: props.filters.tipe_order || '',
-    prioritas: props.filters.prioritas || '',
+    account: props.filters.account || '',
     tipe_pembayaran: props.filters.tipe_pembayaran || '',
     date_from: props.filters.date_from || '',   // batas awal deadline
     date_to: props.filters.date_to || '',       // batas akhir deadline
@@ -58,28 +61,35 @@ const applyFilters = (next = {}) => {
 const open = ref(false);        // modal terbuka?
 const mode = ref('create');     // 'create' | 'edit'
 const editId = ref(null);       // id order yang diedit
-const fileInput = ref(null);    // ref <input type="file"> — perlu dibersihkan manual saat reset
+// ref tiap <input type="file"> — perlu dibersihkan manual saat reset
+// (form.reset() tak menghapus nama file yang tampil di elemennya)
+const fileInput = ref(null);       // bukti bayar
+const invoiceInput = ref(null);    // invoice perusahaan
 
 // Form Inertia; field top-level (bukan form.data.x) sesuai konvensi repo
 const form = useForm({
     tipe_order: 'endorse',
-    prioritas: '',              // '' = belum dipilih → ConvertEmptyStringsToNull jadikan null
+    account: 'fk',              // order ini masuk akun mana
     tanggal_deadline: '',
     nama_customer: '',
     telepon: '',
-    kota: '',
+    email: '',
+    kota: '',                   // bebas diketik; kotaList cuma saran datalist
     alamat: '',
     tipe_pembayaran: 'full',
     tanggal_bayar: '',
-    total_pembayaran: '',
+    total_idr: '',
+    total_usd: '',
     bukti_bayar: null,          // File object; null = tak ada file baru
+    invoice: null,              // invoice dari perusahaan
 });
 
-// Kosongkan form + input file (form.reset() tak bisa menghapus tampilan nama file di <input type=file>)
+// Kosongkan form + kedua input file
 const resetForm = () => {
     form.reset();
     form.clearErrors();
     if (fileInput.value) fileInput.value.value = '';
+    if (invoiceInput.value) invoiceInput.value.value = '';
 };
 
 // Buka modal tambah: form kembali blank
@@ -94,17 +104,20 @@ const openCreate = () => {
 const openEdit = (o) => {
     resetForm();
     form.tipe_order = o.tipe_order;
-    form.prioritas = o.prioritas ?? '';
+    form.account = o.account ?? 'fk';
     // tanggal dari server berformat ISO → potong ke YYYY-MM-DD agar cocok <input type="date">
     form.tanggal_deadline = o.tanggal_deadline ? o.tanggal_deadline.substring(0, 10) : '';
     form.nama_customer = o.nama_customer;
     form.telepon = o.telepon ?? '';
+    form.email = o.email ?? '';
     form.kota = o.kota ?? '';
     form.alamat = o.alamat ?? '';
     form.tipe_pembayaran = o.tipe_pembayaran;
     form.tanggal_bayar = o.tanggal_bayar ? o.tanggal_bayar.substring(0, 10) : '';
-    form.total_pembayaran = o.total_pembayaran ?? '';
+    form.total_idr = o.total_idr ?? '';
+    form.total_usd = o.total_usd ?? '';
     form.bukti_bayar = null;    // biarkan null → file lama dipertahankan server
+    form.invoice = null;
     mode.value = 'edit';
     editId.value = o.id;
     open.value = true;
@@ -157,11 +170,21 @@ const destroy = (o) => {
 
         <div class="max-w-[1600px] px-6 py-6">
 
-            <!-- Kartu ringkasan -->
-            <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+            <!-- Kartu ringkasan. Total Pembayaran = omzet IDR + omzet USD dikonversi kurs,
+                 selalu dipajang dalam IDR. Omzet IDR/USD dipisah agar angka aslinya tetap kebaca. -->
+            <div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-6">
                 <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
                     <p class="text-xs text-brand-100 font-medium">Total Pembayaran</p>
-                    <p class="text-lg font-bold mt-1">{{ rp(summary.nilai) }}</p>
+                    <p class="text-lg font-bold mt-1">{{ rp(summary.grandIdr) }}</p>
+                    <p class="text-[10px] text-brand-100 mt-0.5">IDR + USD @ {{ rp(rate) }}</p>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                    <p class="text-xs text-slate-500 font-medium">Omzet IDR</p>
+                    <p class="text-lg font-bold text-slate-700 mt-1">{{ rp(summary.totalIdr) }}</p>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                    <p class="text-xs text-slate-500 font-medium">Omzet USD</p>
+                    <p class="text-lg font-bold text-slate-700 mt-1">{{ usd(summary.totalUsd) }}</p>
                 </div>
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Total Order</p>
@@ -171,16 +194,12 @@ const destroy = (o) => {
                     <p class="text-xs text-slate-500 font-medium">Masih DP</p>
                     <p class="text-lg font-bold text-amber-600 mt-1">{{ summary.dp }}</p>
                 </div>
-                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
-                    <p class="text-xs text-slate-500 font-medium">Urgent</p>
-                    <p class="text-lg font-bold text-red-600 mt-1">{{ summary.urgent }}</p>
-                </div>
             </div>
 
             <!-- Bar filter -->
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4 mb-5 flex flex-wrap gap-2 items-center text-sm">
                 <!-- Pencarian: terapkan saat Enter atau blur -->
-                <input v-model="f.search" placeholder="Cari nama / telepon / kota..."
+                <input v-model="f.search" placeholder="Cari nama / telepon / email / kota..."
                        @keydown.enter="applyFilters({ search: f.search })"
                        @blur="applyFilters({ search: f.search })"
                        class="border border-slate-200 rounded-xl px-3 py-2 w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
@@ -188,9 +207,9 @@ const destroy = (o) => {
                     <option value="">Semua Tipe Order</option>
                     <option v-for="(v, k) in tipeOrder" :key="k" :value="k">{{ v }}</option>
                 </select>
-                <select v-model="f.prioritas" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                    <option value="">Semua Prioritas</option>
-                    <option v-for="(v, k) in prioritas" :key="k" :value="k">{{ v }}</option>
+                <select v-model="f.account" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                    <option value="">Semua Akun</option>
+                    <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                 </select>
                 <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Pembayaran</option>
@@ -214,13 +233,13 @@ const destroy = (o) => {
                     <thead>
                         <tr class="bg-brand-700 text-white text-xs uppercase tracking-wide">
                             <th class="px-4 py-3 text-left">Customer</th>
-                            <th class="px-4 py-3 text-left">Telepon</th>
+                            <th class="px-4 py-3 text-left">Kontak</th>
                             <th class="px-4 py-3 text-left">Tipe Order</th>
-                            <th class="px-4 py-3 text-left">Prioritas</th>
+                            <th class="px-4 py-3 text-left">Akun</th>
                             <th class="px-4 py-3 text-left">Deadline</th>
                             <th class="px-4 py-3 text-left">Pembayaran</th>
                             <th class="px-4 py-3 text-right">Total</th>
-                            <th class="px-4 py-3 text-center">Bukti</th>
+                            <th class="px-4 py-3 text-center">Berkas</th>
                             <th class="px-4 py-3 text-center">Aksi</th>
                         </tr>
                     </thead>
@@ -234,19 +253,22 @@ const destroy = (o) => {
                                 <p class="font-semibold text-slate-700">{{ o.nama_customer }}</p>
                                 <p class="text-xs text-slate-400">{{ o.kota || '—' }}</p>
                             </td>
-                            <td class="px-4 py-2.5 text-slate-500">{{ o.telepon || '—' }}</td>
+                            <!-- Telepon + email -->
+                            <td class="px-4 py-2.5 text-slate-500">
+                                <p>{{ o.telepon || '—' }}</p>
+                                <p v-if="o.email" class="text-xs text-slate-400 truncate max-w-[180px]" :title="o.email">{{ o.email }}</p>
+                            </td>
                             <!-- Badge tipe order -->
                             <td class="px-4 py-2.5">
                                 <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (TIPE_COLORS[o.tipe_order] || 'bg-slate-200 text-slate-700')">
                                     {{ tipeOrder[o.tipe_order] }}
                                 </span>
                             </td>
-                            <!-- Badge prioritas -->
+                            <!-- Akun tujuan order -->
                             <td class="px-4 py-2.5">
-                                <span v-if="o.prioritas" :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (PRIORITAS_COLORS[o.prioritas] || 'bg-slate-200 text-slate-700')">
-                                    {{ prioritas[o.prioritas] }}
+                                <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (o.account === 'fk' ? 'bg-brand-600 text-white' : 'bg-slate-500 text-white')">
+                                    {{ accounts[o.account] || o.account }}
                                 </span>
-                                <span v-else class="text-slate-300">—</span>
                             </td>
                             <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{{ fmtDate(o.tanggal_deadline) }}</td>
                             <!-- Tipe pembayaran + tanggal bayar -->
@@ -256,12 +278,23 @@ const destroy = (o) => {
                                 </span>
                                 <p class="text-xs text-slate-400 mt-0.5">{{ fmtDate(o.tanggal_bayar) }}</p>
                             </td>
-                            <td class="px-4 py-2.5 text-right whitespace-nowrap font-medium">{{ rp(o.total_pembayaran) }}</td>
-                            <!-- Bukti bayar: buka file di tab baru -->
-                            <td class="px-4 py-2.5 text-center">
-                                <a v-if="o.bukti_bayar" :href="'/storage/' + o.bukti_bayar" target="_blank" rel="noreferrer"
-                                   class="text-brand-600 hover:text-brand-800 font-semibold text-xs underline">Lihat</a>
-                                <span v-else class="text-slate-300">—</span>
+                            <!-- Total = IDR + USD×kurs, selalu tampil IDR. Rincian di bawahnya
+                                 supaya angka asli tiap mata uang tetap kebaca. -->
+                            <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                <p class="font-semibold text-slate-700">{{ rp(totalOrder(o)) }}</p>
+                                <p v-if="Number(o.total_usd) > 0" class="text-[10px] text-slate-400">
+                                    {{ rp(o.total_idr) }} + {{ usd(o.total_usd) }}
+                                </p>
+                            </td>
+                            <!-- Berkas: bukti bayar customer + invoice perusahaan, buka di tab baru -->
+                            <td class="px-4 py-2.5 text-center whitespace-nowrap">
+                                <div class="flex items-center justify-center gap-2 text-xs font-semibold">
+                                    <a v-if="o.bukti_bayar" :href="'/storage/' + o.bukti_bayar" target="_blank" rel="noreferrer"
+                                       class="text-brand-600 hover:text-brand-800 underline">Bukti</a>
+                                    <a v-if="o.invoice" :href="'/storage/' + o.invoice" target="_blank" rel="noreferrer"
+                                       class="text-indigo-600 hover:text-indigo-800 underline">Invoice</a>
+                                    <span v-if="!o.bukti_bayar && !o.invoice" class="text-slate-300 font-normal">—</span>
+                                </div>
                             </td>
                             <!-- Aksi -->
                             <td class="px-4 py-2.5 text-center whitespace-nowrap">
@@ -310,14 +343,13 @@ const destroy = (o) => {
                             </select>
                             <span v-if="form.errors.tipe_order" class="text-xs text-red-600">{{ form.errors.tipe_order }}</span>
                         </div>
-                        <!-- Prioritas -->
+                        <!-- Akun: order ini milik FK atau AI Preneur -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Prioritas</label>
-                            <select v-model="form.prioritas" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                                <option value="">Pilih Prioritas</option>
-                                <option v-for="(v, k) in prioritas" :key="k" :value="k">{{ v }}</option>
+                            <label class="block text-xs font-semibold text-slate-600">Order Dari</label>
+                            <select v-model="form.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                                <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                             </select>
-                            <span v-if="form.errors.prioritas" class="text-xs text-red-600">{{ form.errors.prioritas }}</span>
+                            <span v-if="form.errors.account" class="text-xs text-red-600">{{ form.errors.account }}</span>
                         </div>
                         <!-- Tanggal deadline -->
                         <div>
@@ -344,11 +376,17 @@ const destroy = (o) => {
                             <input v-model="form.telepon" placeholder="Telepon" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.telepon" class="text-xs text-red-600">{{ form.errors.telepon }}</span>
                         </div>
+                        <!-- Email -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600">Email</label>
+                            <input v-model="form.email" type="email" placeholder="nama@email.com" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <span v-if="form.errors.email" class="text-xs text-red-600">{{ form.errors.email }}</span>
+                        </div>
                         <!-- Kota/kabupaten: <datalist> = ketik untuk cari, tanpa library.
-                             Nilai tetap divalidasi server terhadap config/wilayah.php. -->
+                             Daftar wilayah cuma SARAN — kota di luar dataset boleh diketik manual. -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Kota / Kabupaten</label>
-                            <input v-model="form.kota" list="kota-list" placeholder="Ketik untuk cari..."
+                            <input v-model="form.kota" list="kota-list" placeholder="Ketik untuk cari / isi manual..."
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <datalist id="kota-list">
                                 <option v-for="k in kotaList" :key="k" :value="k" />
@@ -382,22 +420,44 @@ const destroy = (o) => {
                             <input v-model="form.tanggal_bayar" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.tanggal_bayar" class="text-xs text-red-600">{{ form.errors.tanggal_bayar }}</span>
                         </div>
-                        <!-- Total pembayaran + estimasi terformat -->
+                        <!-- Nominal IDR -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Total Pembayaran</label>
-                            <input v-model="form.total_pembayaran" type="number" min="0" step="1000" placeholder="0"
+                            <label class="block text-xs font-semibold text-slate-600">Nominal IDR</label>
+                            <input v-model="form.total_idr" type="number" min="0" step="1000" placeholder="0"
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
-                            <p class="text-[10px] text-slate-400 mt-0.5">{{ rp(form.total_pembayaran) }}</p>
-                            <span v-if="form.errors.total_pembayaran" class="text-xs text-red-600">{{ form.errors.total_pembayaran }}</span>
+                            <p class="text-[10px] text-slate-400 mt-0.5">{{ rp(form.total_idr) }}</p>
+                            <span v-if="form.errors.total_idr" class="text-xs text-red-600">{{ form.errors.total_idr }}</span>
+                        </div>
+                        <!-- Nominal USD -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600">Nominal USD</label>
+                            <input v-model="form.total_usd" type="number" min="0" step="0.01" placeholder="0"
+                                   class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <p class="text-[10px] text-slate-400 mt-0.5">{{ usd(form.total_usd) }}</p>
+                            <span v-if="form.errors.total_usd" class="text-xs text-red-600">{{ form.errors.total_usd }}</span>
+                        </div>
+                        <!-- Total gabungan: turunan, tak disimpan. Isi dua-duanya kalau order campuran. -->
+                        <div class="sm:col-span-2 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2 flex items-center justify-between">
+                            <span class="text-xs font-semibold text-slate-600">Total Pembayaran <span class="font-normal text-slate-400">(IDR + USD @ {{ rp(rate) }})</span></span>
+                            <span class="text-base font-bold text-brand-700">{{ rp(Number(form.total_idr || 0) + Number(form.total_usd || 0) * rate) }}</span>
                         </div>
                         <!-- Bukti bayar: file baru menimpa yang lama; dikosongkan = file lama dipertahankan -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Bukti Bayar</label>
+                            <label class="block text-xs font-semibold text-slate-600">Bukti Bayar <span class="font-normal text-slate-400">(dari customer)</span></label>
                             <input ref="fileInput" type="file" accept=".jpg,.jpeg,.png,.pdf"
                                    @change="form.bukti_bayar = $event.target.files[0]"
                                    class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:font-semibold hover:file:bg-brand-100" />
                             <p class="text-[10px] text-slate-400 mt-0.5">JPG/PNG/PDF, maks 2MB. Kosongkan bila tak ingin mengganti.</p>
                             <span v-if="form.errors.bukti_bayar" class="text-xs text-red-600">{{ form.errors.bukti_bayar }}</span>
+                        </div>
+                        <!-- Invoice perusahaan: berkas terpisah dari bukti bayar customer -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600">Invoice <span class="font-normal text-slate-400">(dari perusahaan)</span></label>
+                            <input ref="invoiceInput" type="file" accept=".jpg,.jpeg,.png,.pdf"
+                                   @change="form.invoice = $event.target.files[0]"
+                                   class="mt-1 w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold hover:file:bg-indigo-100" />
+                            <p class="text-[10px] text-slate-400 mt-0.5">JPG/PNG/PDF, maks 5MB. Kosongkan bila tak ingin mengganti.</p>
+                            <span v-if="form.errors.invoice" class="text-xs text-red-600">{{ form.errors.invoice }}</span>
                         </div>
                     </div>
                 </div>

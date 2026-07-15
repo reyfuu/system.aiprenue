@@ -7,11 +7,18 @@ import Layout from '../Layout.vue';                                // kerangka +
 import ModalWrap from '../ModalWrap.vue';                          // pembungkus modal
 import draggable from 'vuedraggable';                              // drag-drop kartu (SortableJS) ala Trello
 
-// Props dari controller
+// Props dari controller.
+// baseUrl/pageTitle/showGallery membuat halaman ini dipakai dua modul:
+// '/pipelines' (Sales Pipeline, tanpa galeri) & '/pipelines/kanban' (Kanban, pakai galeri).
 const props = defineProps({
     category: String, counts: Object, categories: Object, board: Object, columns: Array,
     staff: Array, outputs: Array, canManage: Boolean, currentBoard: Object,
-    showArchived: Boolean, archivedCount: Number, accounts: Object,
+    showArchived: Boolean, archivedCount: Number, accounts: Object, jenisList: Object,
+    baseUrl: { type: String, default: '/pipelines/kanban' },
+    pageTitle: { type: String, default: 'Kanban' },
+    showGallery: { type: Boolean, default: true },
+    boardType: { type: String, default: 'kanban' },   // tipe board baru yg dibuat dari halaman ini
+    rate: { type: Number, default: 0 },               // kurs USD→IDR utk menjumlah nilai deal
 });
 
 // Preset label warna (Urgent = penanda mendesak)
@@ -27,6 +34,18 @@ const authUser = usePage().props.auth.user;                        // user login
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || ''; // token utk fetch
 const todayStr = () => new Date().toISOString().slice(0, 10);      // 'YYYY-MM-DD' hari ini
 const isUrgent = (card) => (card.labels || []).some((l) => l.name === 'Urgent'); // kartu mendesak?
+
+// PATCH JSON + sinkron ulang bila server menolak.
+// fetch() TIDAK reject pada 4xx/5xx — tanpa cek res.ok, kegagalan (403/422/500)
+// lolos diam-diam & tampilan beda dgn DB sampai halaman di-reload.
+const patchCard = (url, body) =>
+    fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify(body),
+    })
+        .then((res) => { if (!res.ok) router.reload(); })
+        .catch(() => router.reload());   // gagal jaringan
 const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'); // ukuran file
 
 // State kartu per kolom (salinan board; di-resync bila board prop berubah).
@@ -44,17 +63,24 @@ const isTodolist = computed(() => props.category === 'todolist'); // board todol
 const cardCount = (key) => (cols.value[key] || []).length;         // jml kartu per kolom
 const dragDisabled = computed(() => !props.canManage || props.showArchived); // nonaktif saat view-only / mode arsip
 
+// ---- Nilai deal (ala Pipedrive: tiap stage punya total) ----
+// Kartu bisa IDR, USD, atau dua-duanya → semua dijumlahkan dalam IDR pakai kurs.
+// amount_* datang sbg string (cast decimal:2), jadi wajib Number().
+const cardValue = (card) => Number(card.amount_idr || 0) + Number(card.amount_usd || 0) * props.rate;
+const colValue = (key) => (cols.value[key] || []).reduce((sum, c) => sum + cardValue(c), 0);
+const boardValue = computed(() => Object.values(cols.value).flat().reduce((sum, c) => sum + cardValue(c), 0));
+const boardCount = computed(() => Object.values(cols.value).flat().length);
+
+const rp = (n) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n));           // penuh: kartu
+const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n); // ringkas: header stage
+
 // ---- Drag & drop (vuedraggable) — pindah antar kolom → simpan progress ----
 // vuedraggable memutasi cols.value[key] langsung. @change memicu 'added' HANYA
 // di kolom penerima → dari situ kita tahu progress baru kartu.
 const onCardChange = (evt, toKey) => {
     if (!evt.added) return;                                        // reorder dalam kolom tak perlu disimpan (tak ada kolom urutan)
     const card = evt.added.element;
-    fetch(`/pipelines/${card.id}/progress`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ progress: toKey }),
-    }).catch(() => router.reload());                               // gagal → reload utk sinkron ulang
+    patchCard(`/pipelines/${card.id}/progress`, { progress: toKey });
 };
 
 // ---- Tandai selesai (flag `done` ala Trello; kartu tetap di kolomnya) ----
@@ -65,11 +91,7 @@ const toggleDone = (card) => {
     if (!col) return;
     // Update optimistis (immutable) lalu simpan; reload bila gagal
     cols.value = { ...cols.value, [col]: cols.value[col].map((c) => (c.id === card.id ? { ...c, done: next } : c)) };
-    fetch(`/pipelines/${card.id}/done`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ done: next }),
-    }).catch(() => router.reload());
+    patchCard(`/pipelines/${card.id}/done`, { done: next });
 };
 
 // ---- Modal tambah kartu ----
@@ -77,7 +99,7 @@ const addOpen = ref(false);
 // NB: field kolom dinamai `progressKey` (bukan `progress`) agar tak bentrok
 // dengan properti bawaan useForm (`form.progress` = progres upload). Dipetakan
 // ke `progress` saat submit lewat transform().
-const addForm = useForm({ category: props.category, progressKey: props.columns[0]?.key || 'script', endorse: '', account: 'fk', assigned_to: '', link: '', payment_status: 'belum', ke_gilang: 'belum' });
+const addForm = useForm({ category: props.category, progressKey: props.columns[0]?.key || 'script', endorse: '', jenis: '', account: 'fk', assigned_to: '', link: '', payment_status: 'belum', ke_gilang: 'belum' });
 const openAdd = (progress) => {
     if (!props.canManage) return;
     addForm.reset();                    // kembalikan ke default
@@ -93,12 +115,13 @@ const detailId = ref(null);            // id kartu dibuka
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // Form edit (khusus manager)
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm.
-const editForm = useForm({ category: props.category, endorse: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', ke_gilang: 'belum', labels: [] });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', ke_gilang: 'belum', labels: [] });
 const openDetail = (card) => {
     detailId.value = card.id;
     if (props.canManage) {             // isi form edit dari kartu
         editForm.category = props.category;
         editForm.endorse = card.endorse ?? '';
+        editForm.jenis = card.jenis ?? '';
         editForm.description = card.description ?? '';
         editForm.account = card.account_key ?? 'fk';
         editForm.progressKey = card.progress ?? 'script';
@@ -161,7 +184,7 @@ const boardEditOpen = ref(false);
 const colCreateOpen = ref(false);
 const colEditOpen = ref(false);
 const colEditId = ref(null);
-const boardForm = useForm({ name: '' });
+const boardForm = useForm({ name: '', type: props.boardType });
 const colForm = useForm({ board_key: props.category, name: '' });
 const submitBoardCreate = () => boardForm.post('/boards', { onSuccess: () => (boardCreateOpen.value = false) });
 const submitBoardEdit = () => boardForm.put('/boards/' + props.currentBoard.key, { onSuccess: () => (boardEditOpen.value = false) });
@@ -170,17 +193,17 @@ const submitColEdit = () => colForm.put('/columns/' + colEditId.value, { onSucce
 const openColEdit = (id, name) => { colEditId.value = id; colForm.name = name; colEditOpen.value = true; };
 const deleteColumn = (id) => { if (props.canManage && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
 const deleteBoard = () => { if (confirm(`Hapus board "${props.currentBoard.name}"? (hanya bila kosong)`)) router.delete('/boards/' + props.currentBoard.key); };
-const switchBoard = (e) => router.get('/pipelines/kanban', { category: e.target.value }, { preserveState: false });
-const toggleArchiveView = () => router.get('/pipelines/kanban', { category: props.category, archived: props.showArchived ? undefined : 1 }, { preserveState: false });
+const switchBoard = (e) => router.get(props.baseUrl, { category: e.target.value }, { preserveState: false });
+const toggleArchiveView = () => router.get(props.baseUrl, { category: props.category, archived: props.showArchived ? undefined : 1 }, { preserveState: false });
 </script>
 
 <template>
-    <Layout title="Kanban">
+    <Layout :title="pageTitle">
         <div class="p-6">
             <!-- Toolbar board -->
             <div class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex items-center gap-3">
-                <!-- Balik ke galeri (kanban luar) -->
-                <Link href="/pipelines/kanban" title="Semua board" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 mt-5 pr-2 border-r border-slate-200">
+                <!-- Balik ke galeri (kanban luar; Sales Pipeline tak punya galeri) -->
+                <Link v-if="showGallery" :href="baseUrl" title="Semua board" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 mt-5 pr-2 border-r border-slate-200">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
                     Galeri
                 </Link>
@@ -190,7 +213,10 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                         <option v-for="(cv, ck) in categories" :key="ck" :value="ck">{{ cv }} · {{ counts[ck] ?? 0 }}</option>
                     </select>
                 </div>
-                <span class="text-sm text-slate-400 mt-5">{{ counts[category] ?? 0 }} task</span>
+                <!-- Ringkasan board: jml + total nilai (mengembalikan angka omzet yg dulu di tabel) -->
+                <span class="text-sm text-slate-400 mt-5">
+                    {{ boardCount }} {{ isTodolist ? 'task' : 'deal' }}<template v-if="!isTodolist"> · <span class="font-semibold text-slate-600">{{ rp(boardValue) }}</span></template>
+                </span>
 
                 <!-- Aksi board (manager, mode aktif) -->
                 <div v-if="canManage && !showArchived" class="flex items-center gap-1.5 mt-5">
@@ -238,12 +264,17 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
             <div class="overflow-x-auto pb-4">
                 <div class="flex gap-3 min-w-max">
                     <div v-for="col in columns" :key="col.key" class="w-72 flex-shrink-0 bg-white border border-brand-100 rounded-2xl shadow-sm p-3">
-                        <!-- Header kolom -->
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
-                                <h2 class="text-sm font-bold text-slate-700">{{ col.name }}</h2>
-                                <span class="text-xs text-slate-400">{{ cardCount(col.key) }}</span>
+                        <!-- Header kolom: nama stage + total nilai & jml deal (ala Pipedrive) -->
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
+                                    <h2 class="text-sm font-bold text-slate-700">{{ col.name }}</h2>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5 pl-4.5">
+                                    <span v-if="!isTodolist" class="font-semibold text-slate-500">{{ rpShort(colValue(col.key)) }}</span>
+                                    <span v-if="!isTodolist"> · </span>{{ cardCount(col.key) }} {{ isTodolist ? 'task' : 'deal' }}
+                                </p>
                             </div>
                             <div v-if="canManage && !showArchived" class="flex items-center gap-0.5">
                                 <button @click="openAdd(col.key)" title="Tambah task" class="w-6 h-6 flex items-center justify-center rounded-md bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold leading-none transition">+</button>
@@ -280,23 +311,11 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                                 <div v-if="card.labels && card.labels.length" class="flex flex-wrap gap-1 mb-1.5">
                                     <span v-for="(lb, li) in card.labels" :key="li" :class="['h-1.5 w-9 rounded-full', lb.color]" :title="lb.name"></span>
                                 </div>
-                                <!-- Checkbox selesai + kode + hapus -->
-                                <div class="flex items-start justify-between mb-1">
-                                    <div class="flex items-center gap-2">
-                                        <!-- Checkbox bulat: klik → tandai/batal selesai (animasi pop centang) -->
-                                        <button
-                                            v-if="!showArchived"
-                                            type="button"
-                                            @click.stop="toggleDone(card)"
-                                            :disabled="!canManage"
-                                            :title="card.done ? 'Batalkan selesai' : 'Tandai selesai'"
-                                            :class="['flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition disabled:cursor-default', card.done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400 hover:text-emerald-300']"
-                                        >
-                                            <svg :class="['w-3 h-3', card.done ? 'done-pop' : '']" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                        </button>
-                                        <p class="text-[10px] text-slate-400 font-mono">{{ card.code }}</p>
-                                    </div>
-                                    <button v-if="canManage" @click.stop="deleteCard(card)" title="Hapus kartu" class="text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                                <!-- Hapus kartu (muncul saat hover).
+                                     Centang & kode kartu sudah tak dipajang di kartu — tandai selesai
+                                     pindah ke modal detail, kode kartu tetap ada di judul modal. -->
+                                <div v-if="canManage" class="flex justify-end mb-1">
+                                    <button @click.stop="deleteCard(card)" title="Hapus kartu" class="text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
@@ -322,22 +341,27 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                                 <!-- Badge akun + pembayaran + waktu -->
                                 <div class="flex items-center justify-between text-[10px] mb-1.5">
                                     <div class="flex items-center gap-1.5">
+                                        <!-- jenis deal: dulu board sendiri, kini atribut kartu -->
+                                        <span v-if="card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
                                         <span :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
                                         <span v-if="!isTodolist" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
                                     </div>
                                     <span class="text-slate-400">{{ card.time }}</span>
                                 </div>
-                                <!-- PJ + link -->
+                                <!-- PJ + nilai deal + link (nilai = info utama kartu, ala Pipedrive) -->
                                 <div class="flex items-center justify-between gap-2 text-[10px] pt-1.5 border-t border-brand-50">
-                                    <span v-if="card.assignee" class="flex items-center gap-1 text-slate-500 truncate">
-                                        <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    <span v-if="card.assignee" class="flex items-center gap-1.5 text-slate-500 truncate">
+                                        <span class="w-4 h-4 flex-shrink-0 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[9px] font-bold">{{ card.assignee.charAt(0).toUpperCase() }}</span>
                                         <span class="truncate font-medium">{{ card.assignee }}</span>
                                     </span>
                                     <span v-else class="text-slate-300 italic">belum ditugaskan</span>
-                                    <a v-if="card.link" :href="card.link" target="_blank" rel="noreferrer" @click.stop class="flex items-center gap-0.5 text-brand-600 hover:text-brand-800 font-medium flex-shrink-0">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                                        Link
-                                    </a>
+                                    <span class="flex items-center gap-1.5 flex-shrink-0">
+                                        <a v-if="card.link" :href="card.link" target="_blank" rel="noreferrer" @click.stop class="flex items-center gap-0.5 text-brand-600 hover:text-brand-800 font-medium">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                                            Link
+                                        </a>
+                                        <span v-if="!isTodolist" :class="['font-bold text-xs', cardValue(card) > 0 ? 'text-slate-700' : 'text-slate-300']">{{ rp(cardValue(card)) }}</span>
+                                    </span>
                                 </div>
                                     </div>
                                 </template>
@@ -401,6 +425,12 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                 <label class="block font-medium text-slate-600">Account
                     <select v-model="editForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
+                    </select>
+                </label>
+                <label v-if="boardType === 'pipeline'" class="block font-medium text-slate-600">Jenis
+                    <select v-model="editForm.jenis" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                        <option value="">— tanpa jenis —</option>
+                        <option v-for="(v, k) in jenisList" :key="k" :value="k">{{ v }}</option>
                     </select>
                 </label>
                 <label class="block font-medium text-slate-600">Penanggung Jawab
@@ -526,6 +556,12 @@ const toggleArchiveView = () => router.get('/pipelines/kanban', { category: prop
                 <label class="block font-medium text-slate-600">Account
                     <select v-model="addForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
+                    </select>
+                </label>
+                <label v-if="boardType === 'pipeline'" class="block font-medium text-slate-600">Jenis
+                    <select v-model="addForm.jenis" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                        <option value="">— tanpa jenis —</option>
+                        <option v-for="(v, k) in jenisList" :key="k" :value="k">{{ v }}</option>
                     </select>
                 </label>
                 <label class="block font-medium text-slate-600">Penanggung Jawab (Staff)

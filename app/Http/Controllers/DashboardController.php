@@ -55,8 +55,10 @@ class DashboardController extends Controller
             'pipeline' => [
                 'total'       => $pipe->count(),
                 'grandIdr'    => $grandIdr,
-                'perCategory' => $pipe->groupBy('category')->map->count(),
-                'categories'  => $pipelineBoards,
+                // Board pipeline kini cuma satu (sales) → pecah per JENIS deal,
+                // bukan per board. Dashboard.vue tetap: loop `categories`, baca `perCategory`.
+                'perCategory' => $pipe->groupBy('jenis')->map->count(),
+                'categories'  => Pipeline::JENIS,
             ],
 
             'kanban' => [
@@ -69,9 +71,9 @@ class DashboardController extends Controller
 
             'order' => [
                 'total'     => Order::count(),
-                'urgent'    => Order::whereIn('prioritas', ['urgent', 'super_urgent'])->count(),
                 'dp'        => Order::where('tipe_pembayaran', 'dp')->count(),
-                'nilai'     => (float) Order::sum('total_pembayaran'),
+                // Nilai order = IDR + USD dikonversi kurs (prioritas sudah dibuang)
+                'nilai'     => (float) Order::sum('total_idr') + (float) Order::sum('total_usd') * $rate,
                 'perTipe'   => Order::selectRaw('tipe_order, count(*) as total')->groupBy('tipe_order')->pluck('total', 'tipe_order'),
                 'tipeOrder' => Order::TIPE_ORDER,
             ],

@@ -18,7 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // `|| expectsJson()` = perilaku bawaan Laravel yang tadinya ketimpa.
+        // Tanpa ini, endpoint fetch() (drag kartu, tandai selesai) membalas 302 HTML
+        // saat validasi/otorisasi gagal — fetch mengikuti redirect & resolve 200,
+        // sehingga kegagalan lolos diam-diam. Inertia tak terpengaruh: request-nya
+        // ber-Accept text/html, jadi expectsJson() tetap false & tetap dapat redirect.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
     })->create();

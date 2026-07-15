@@ -43,6 +43,7 @@ class EnsureMenuAccess
         return in_array($name, [
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
             'pipelines.progress', 'pipelines.todos', 'pipelines.archive',
+            'pipelines.done',   // mutasi juga — sebelumnya lolos cek canManage()
         ], true)
             || str_starts_with($name, 'boards.')
             || str_starts_with($name, 'columns.')
@@ -59,14 +60,18 @@ class EnsureMenuAccess
             return null;
         }
 
+        // Sales Pipeline & Kanban kini sama-sama board (Kanban.vue) di atas model Pipeline,
+        // jadi route kartu/board/kolom dipakai KEDUA menu — cukup punya salah satunya.
         return match (true) {
             $name === 'dashboard' => ['dashboard'],
-            in_array($name, ['pipelines.kanban', 'pipelines.progress', 'pipelines.todos', 'pipelines.archive'], true) => ['kanban'],
-            $name === 'pipelines.store' => ['kanban', 'pipeline'], // dipakai kanban & tabel
-            str_starts_with($name, 'boards.') => ['kanban'],
-            str_starts_with($name, 'columns.') => ['kanban'],
-            str_starts_with($name, 'comments.') => ['kanban'],     // komentar: cukup akses kanban
-            str_starts_with($name, 'attachments.') => ['kanban'],  // lampiran (manage dicek terpisah)
+            $name === 'pipelines.kanban' => ['kanban'],
+            $name === 'pipelines.index' => ['pipeline'],
+            in_array($name, ['pipelines.progress', 'pipelines.todos', 'pipelines.archive', 'pipelines.done'], true) => ['kanban', 'pipeline'],
+            $name === 'pipelines.store' => ['kanban', 'pipeline'],
+            str_starts_with($name, 'boards.') => ['kanban', 'pipeline'],
+            str_starts_with($name, 'columns.') => ['kanban', 'pipeline'],
+            str_starts_with($name, 'comments.') => ['kanban', 'pipeline'],     // komentar kartu
+            str_starts_with($name, 'attachments.') => ['kanban', 'pipeline'],  // lampiran (manage dicek terpisah)
             str_starts_with($name, 'pipelines.') => ['pipeline'],
             str_starts_with($name, 'orders.') => ['order'],
             str_starts_with($name, 'mindmaps.') => ['mindmap'],
