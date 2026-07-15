@@ -106,9 +106,19 @@ const openAdd = (progress) => {
     addForm.progressKey = progress;     // set kolom tujuan
     addOpen.value = true;
 };
+// WAJIB reset() DI DALAM onSuccess, bukan cuma di openAdd().
+// Inertia v3 menjadikan data yang barusan dikirim sebagai `defaults` baru setelah
+// submit sukses (useForm → onSuccess → setDefaults(form.data())). Akibatnya
+// addForm.reset() di openAdd() malah mengembalikan kartu yang barusan dibuat.
+// Callback ini jalan SEBELUM setDefaults, jadi yang tertangkap = form kosong.
 const submitAdd = () => addForm
     .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .post('/pipelines', { onSuccess: () => (addOpen.value = false) });
+    .post('/pipelines', {
+        onSuccess: () => {
+            addOpen.value = false;
+            addForm.reset();
+        },
+    });
 
 // ---- Modal DETAIL kartu (klik kartu; untuk semua user) ----
 const detailId = ref(null);            // id kartu dibuka

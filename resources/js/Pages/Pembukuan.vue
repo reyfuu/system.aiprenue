@@ -17,6 +17,11 @@ const props = defineProps({
 
 // ---- Modal Transaksi ----
 const txOpen = ref(false);                           // buka/tutup modal transaksi
+// CATATAN (berlaku utk txForm & invForm): reset() WAJIB di dalam onSuccess, bukan cuma
+// di openTxCreate()/openInvCreate(). Inertia v3 menjadikan data yang barusan dikirim sbg
+// `defaults` baru setelah submit sukses — dan form ini dipakai bersama create & edit, jadi
+// tanpa reset, tombol "Tambah" setelah mengedit akan memunculkan record yang barusan diedit.
+// Callback onSuccess jalan SEBELUM Inertia menyimpan defaults barunya, jadi yg tertangkap = kosong.
 const txEditId = ref(null);                          // id transaksi yg diedit (null = create)
 const txForm = useForm({ type: 'pemasukan', category: '', description: '', amount_idr: '', date: '' });
 const openTxCreate = () => { txEditId.value = null; txForm.reset(); txForm.clearErrors(); txOpen.value = true; };
@@ -27,7 +32,7 @@ const openTxEdit = (t) => {                           // isi form dari baris
     txForm.clearErrors(); txOpen.value = true;
 };
 const submitTx = () => {
-    const done = { onSuccess: () => (txOpen.value = false), preserveScroll: true };
+    const done = { onSuccess: () => { txOpen.value = false; txForm.reset(); }, preserveScroll: true };
     if (txEditId.value) txForm.put('/transactions/' + txEditId.value, done); // update
     else txForm.post('/transactions', done);                                 // create
 };
@@ -44,7 +49,7 @@ const openInvEdit = (i) => {
     invForm.clearErrors(); invOpen.value = true;
 };
 const submitInv = () => {
-    const done = { onSuccess: () => (invOpen.value = false), preserveScroll: true };
+    const done = { onSuccess: () => { invOpen.value = false; invForm.reset(); }, preserveScroll: true };
     // input type=month → 'YYYY-MM'; server minta date → tambahkan '-01'
     invForm.transform((d) => ({ ...d, month: d.month && d.month.length === 7 ? d.month + '-01' : d.month }));
     if (invEditId.value) invForm.put('/inventories/' + invEditId.value, done); // update

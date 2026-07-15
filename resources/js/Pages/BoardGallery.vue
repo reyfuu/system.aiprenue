@@ -19,7 +19,13 @@ const grouped = computed(() => {
 const createOpen = ref(false);
 const createForm = useForm({ name: '', section: '' });
 const openCreate = () => { createForm.reset(); createOpen.value = true; };
-const submitCreate = () => createForm.post('/boards', { onSuccess: () => (createOpen.value = false) });
+// reset() WAJIB di dalam onSuccess, bukan cuma di openCreate(): Inertia v3 menjadikan
+// data yang barusan dikirim sbg `defaults` baru setelah submit sukses, jadi reset()
+// di openCreate() malah memunculkan nama board sebelumnya. Callback ini jalan SEBELUM
+// Inertia menyimpan defaults barunya, jadi yang tertangkap = form kosong.
+const submitCreate = () => createForm.post('/boards', {
+    onSuccess: () => { createOpen.value = false; createForm.reset(); },
+});
 
 // ---- Ubah board ----
 const editOpen = ref(false);
