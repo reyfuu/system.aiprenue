@@ -7,45 +7,46 @@ use Illuminate\Database\Eloquent\Model;
 class Order extends Model
 {
     protected $fillable = [
-        'tipe_order', 'prioritas', 'tanggal_deadline',
-        'nama_customer', 'telepon', 'kota', 'alamat',
-        'tipe_pembayaran', 'tanggal_bayar', 'bukti_bayar', 'total_pembayaran',
+        'tipe_order', 'account', 'tanggal_deadline',
+        'nama_customer', 'telepon', 'email', 'kota', 'alamat',
+        'tipe_pembayaran', 'tanggal_bayar', 'bukti_bayar', 'invoice',
+        'total_idr', 'total_usd',
     ];
 
     protected $casts = [
         'tanggal_deadline' => 'date',
         'tanggal_bayar'    => 'date',
-        'total_pembayaran' => 'decimal:2',
+        'total_idr'        => 'decimal:2',
+        'total_usd'        => 'decimal:2',
     ];
 
     // Peta key→label. Dipakai bersama oleh validasi, filter, dropdown form, dan badge tabel.
     public const TIPE_ORDER = [
-        'coaching' => 'Coaching',
-        'endorse'  => 'Endorse',
-        'speaker'  => 'Speaker',
-        'agency'   => 'Agency',
+        'coaching_1on1'       => 'Coaching 1-on-1',
+        'coaching_perusahaan' => 'Coaching Perusahaan',
+        'endorse'             => 'Endorse',
+        'speaker'             => 'Speaker',
+        'agency'              => 'Agency',
     ];
 
-    public const PRIORITAS = ['normal' => 'Normal', 'urgent' => 'Urgent', 'super_urgent' => 'Super Urgent'];
+    /** Akun tujuan order. Satu sumber dgn Pipeline — jangan bikin daftar kedua
+     *  yang bisa melenceng dari yang dipakai kartu sales. */
+    public const ACCOUNTS = Pipeline::ACCOUNTS;
 
     public const TIPE_PEMBAYARAN = ['full' => 'Full', 'dp' => 'DP'];
 
-    /** Warna badge per prioritas (kelas Tailwind statis — terbaca scanner). */
-    public const PRIORITAS_COLORS = [
-        'normal'       => 'bg-slate-500 text-white',
-        'urgent'       => 'bg-amber-400 text-amber-900',
-        'super_urgent' => 'bg-red-600 text-white',
-    ];
+    // NB: warna badge tipe order ada di Orders/Index.vue (TIPE_COLORS) — literal di
+    // .vue supaya kelasnya terbaca scanner Tailwind. Jangan bikin salinannya di sini.
 
-    /** Warna badge per tipe order. */
-    public const TIPE_COLORS = [
-        'coaching' => 'bg-brand-600 text-white',
-        'endorse'  => 'bg-emerald-600 text-white',
-        'speaker'  => 'bg-amber-600 text-white',
-        'agency'   => 'bg-rose-600 text-white',
-    ];
+    /** Total order dlm IDR = nominal IDR + nominal USD dikonversi kurs terkini.
+     *  Sengaja turunan (bukan kolom): kalau disimpan, nilainya basi begitu kurs berubah. */
+    public function totalIdr(float $rate): float
+    {
+        return (float) $this->total_idr + (float) $this->total_usd * $rate;
+    }
 
-    /** Daftar kota/kabupaten (514 Indonesia + Singapura/Australia/Miri City). */
+    /** Saran kota (514 Indonesia + Singapura/Australia/Miri City).
+     *  Hanya saran — kota boleh diketik manual, lihat OrderController@rules. */
     public static function kotaList(): array
     {
         return config('wilayah');

@@ -50,7 +50,6 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/columns', [ColumnController::class, 'store'])->name('columns.store');
     Route::put('/columns/{column}', [ColumnController::class, 'update'])->name('columns.update');
     Route::delete('/columns/{column}', [ColumnController::class, 'destroy'])->name('columns.destroy');
-    Route::get('/pipelines/report', [PipelineController::class, 'report'])->name('pipelines.report');
     Route::post('/pipelines', [PipelineController::class, 'store'])->name('pipelines.store');
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');
     Route::delete('/pipelines/{pipeline}', [PipelineController::class, 'destroy'])->name('pipelines.destroy');

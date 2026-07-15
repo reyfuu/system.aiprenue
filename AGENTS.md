@@ -23,7 +23,7 @@ Referensi: [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md) · [PRD.md](PRD.md)
 | Modul | Route | Status |
 |-------|-------|:------:|
 | Dashboard | `/dashboard` | ✅ |
-| Pipeline (tabel + report PDF) | `/pipelines` | ✅ |
+| Sales Pipeline (1 board `sales`, stage Lead→Deal, tanpa galeri) | `/pipelines` | ✅ |
 | Kanban (board/kolom dinamis, kartu lengkap) | `/pipelines/kanban` | ✅ |
 | Pembukuan (Chart.js) | `/pembukuan` | ✅ |
 | Script (template folder) | `/script` | ✅ |

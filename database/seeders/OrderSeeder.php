@@ -9,8 +9,8 @@ class OrderSeeder extends Seeder
 {
     public function run(): void
     {
-        $tipe = ['coaching', 'endorse', 'speaker', 'agency'];
-        $prioritas = ['normal', 'urgent', 'super_urgent', null];
+        $tipe = array_keys(Order::TIPE_ORDER);
+        $akun = array_keys(Order::ACCOUNTS);
         $bayar = ['full', 'dp'];
         $kota = ['Kota Jakarta Selatan', 'Kota Bandung', 'Kota Surabaya', 'Kota Yogyakarta',
             'Kota Semarang', 'Kota Denpasar', 'Kota Medan', 'Singapore', 'Australia', 'Johor Bahru', 'Miri'];
@@ -31,16 +31,20 @@ class OrderSeeder extends Seeder
                 ['nama_customer' => $name],
                 [
                     'tipe_order'       => $tipe[$i % count($tipe)],
-                    'prioritas'        => $prioritas[$i % count($prioritas)],
+                    'account'          => $akun[$i % count($akun)],
                     'tanggal_deadline' => $deadline->toDateString(),
                     'telepon'          => '08' . str_pad((string) (1234567890 + $i), 10, '0', STR_PAD_LEFT),
+                    'email'            => \Illuminate\Support\Str::slug($name, '.') . '@example.com',
                     'kota'             => $kota[$i % count($kota)],
                     'alamat'           => 'Jl. Contoh No. ' . ($i + 1),
                     'tipe_pembayaran'  => $tipeBayar,
                     // DP dibayar di muka; full dibayar saat deadline
                     'tanggal_bayar'    => $tipeBayar === 'dp' ? $deadline->copy()->subDays(14)->toDateString() : $deadline->toDateString(),
                     'bukti_bayar'      => null,   // file contoh tak diseed — diunggah lewat form
-                    'total_pembayaran' => 2_500_000 + ($i * 750_000),
+                    'invoice'          => null,
+                    // sebagian order USD (tiap kelipatan 5) → uji total gabungan
+                    'total_idr'        => $i % 5 === 4 ? 0 : 2_500_000 + ($i * 750_000),
+                    'total_usd'        => $i % 5 === 4 ? 250 + ($i * 25) : 0,
                 ]
             );
         }
