@@ -50,7 +50,11 @@ class EnsureMenuAccess
             || str_starts_with($name, 'attachments.') // komentar TIDAK di sini (staff boleh)
             || str_starts_with($name, 'transactions.')
             || str_starts_with($name, 'inventories.')
-            || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true);
+            || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true)
+            // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
+            // Sebelumnya mutasinya lolos: tombolnya disembunyikan di Vue lewat `canManage`,
+            // tapi request langsung tetap tembus.
+            || in_array($name, ['mindmaps.store', 'mindmaps.update', 'mindmaps.destroy'], true);
     }
 
     /** Route name → menu terkait (array; null = bebas). */
