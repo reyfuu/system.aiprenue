@@ -34,6 +34,9 @@ return new class extends Migration
             Schema::table('orders', fn (Blueprint $table) => $table->renameColumn('total_pembayaran', 'total_idr'));
         }
 
+        // NB: hanya "tambah kalau belum ada". Kolom yang SUDAH ada bentuknya belum
+        // tentu benar (server punya `email` NOT NULL dari impor .sql) — itu ditegakkan
+        // migrasi 150000, terpisah, karena migrasi ini terlanjur tercatat sukses di prod.
         Schema::table('orders', function (Blueprint $table) {
             if (! Schema::hasColumn('orders', 'total_usd')) {
                 $table->decimal('total_usd', 15, 2)->default(0)->after('total_idr');

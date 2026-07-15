@@ -34,10 +34,14 @@ class OrderTest extends TestCase
     private function payload(array $override = []): array
     {
         return array_merge([
-            'tipe_order'      => 'coaching_1on1',
-            'account'         => 'fk',
-            'nama_customer'   => 'Budi',
-            'tipe_pembayaran' => 'full',
+            'tipe_order'       => 'coaching_1on1',
+            'account'          => 'fk',
+            'nama_customer'    => 'Budi',
+            'tipe_pembayaran'  => 'full',
+            'tanggal_deadline' => '2026-08-01',
+            'telepon'          => '08123456789',
+            'kota'             => 'Kota Bandung',
+            'total_idr'        => 1_000_000,
         ], $override);
     }
 
@@ -151,6 +155,56 @@ class OrderTest extends TestCase
         $this->actingAs($this->user())->delete('/orders/'.$order->id)->assertSessionHasNoErrors();
 
         Storage::disk('public')->assertMissing([$bukti, $invoice]);
+    }
+
+    public function test_field_penting_wajib_diisi(): void
+    {
+        foreach (['tanggal_deadline', 'telepon', 'kota', 'nama_customer'] as $field) {
+            $payload = $this->payload();
+            unset($payload[$field]);
+
+            $this->actingAs($this->user())->post('/orders', $payload)
+                ->assertSessionHasErrors($field);   // NB: arg ke-3 assertSessionHasErrors = error bag, bukan pesan
+        }
+
+        $this->assertSame(0, Order::count());
+    }
+
+    /** Nilai order tak boleh kosong — tapi boleh IDR saja, USD saja, atau dua-duanya.
+     *  `required` biasa tak cukup: bagi Laravel, 0 itu "terisi". */
+    public function test_nilai_order_wajib_minimal_satu_mata_uang(): void
+    {
+        $owner = $this->user();
+
+        // dua-duanya kosong → ditolak
+        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => 0, 'total_usd' => 0]))
+            ->assertSessionHasErrors('total_idr');
+        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => null, 'total_usd' => null]))
+            ->assertSessionHasErrors('total_idr');
+        $this->assertSame(0, Order::count());
+
+        // USD saja → boleh (order luar negeri tanpa nominal rupiah)
+        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => 0, 'total_usd' => 500]))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(1, Order::count());
+
+        // IDR saja → boleh
+        $this->actingAs($owner)->post('/orders', $this->payload(['total_usd' => 0]))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(2, Order::count());
+    }
+
+    /** Wajib ditegakkan aplikasi, BUKAN NOT NULL di DB — baris order lama hasil
+     *  impor .sql banyak yang kosong & akan ditolak seluruhnya. */
+    public function test_kolom_wajib_tetap_nullable_di_database(): void
+    {
+        foreach (['tanggal_deadline', 'telepon', 'kota', 'email'] as $col) {
+            $this->assertTrue(
+                collect(\Illuminate\Support\Facades\Schema::getColumns('orders'))
+                    ->firstWhere('name', $col)['nullable'],
+                "kolom {$col} harus nullable di DB — baris lama boleh kosong"
+            );
+        }
     }
 
     public function test_staff_tak_boleh_membuat_order(): void
