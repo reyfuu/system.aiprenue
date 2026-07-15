@@ -109,7 +109,6 @@ class PipelineController extends Controller
                 'link'           => $p->link,
                 'labels'         => $p->labels ?? [],
                 'done'           => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
-                'time'           => $p->updated_at?->diffForHumans(null, true).' lalu',
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline'       => $p->deadline?->toDateString(),
                 'description'    => $p->description,

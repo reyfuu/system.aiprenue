@@ -83,17 +83,6 @@ const onCardChange = (evt, toKey) => {
     patchCard(`/pipelines/${card.id}/progress`, { progress: toKey });
 };
 
-// ---- Tandai selesai (flag `done` ala Trello; kartu tetap di kolomnya) ----
-const toggleDone = (card) => {
-    if (!props.canManage) return;
-    const next = !card.done;
-    const col = findCardCol(card.id);
-    if (!col) return;
-    // Update optimistis (immutable) lalu simpan; reload bila gagal
-    cols.value = { ...cols.value, [col]: cols.value[col].map((c) => (c.id === card.id ? { ...c, done: next } : c)) };
-    patchCard(`/pipelines/${card.id}/done`, { done: next });
-};
-
 // ---- Modal tambah kartu ----
 const addOpen = ref(false);
 // NB: field kolom dinamai `progressKey` (bukan `progress`) agar tak bentrok
@@ -186,9 +175,6 @@ const submitAttach = () => {
     attachForm.post(`/pipelines/${detailId.value}/attachments`, { forceFormData: true, preserveScroll: true, onSuccess: () => attachForm.reset('file') });
 };
 const deleteAttachment = (id) => router.delete(`/attachments/${id}`, { preserveScroll: true });
-
-// Cari kolom tempat kartu berada (dipakai toggleDone)
-const findCardCol = (id) => Object.keys(cols.value).find((k) => cols.value[k].some((c) => c.id === id));
 
 // ---- Modal board & kolom ----
 const boardCreateOpen = ref(false);
@@ -317,7 +303,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                                 <template #item="{ element: card }">
                                     <div
                                         @click="openDetail(card)"
-                                        :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', card.done ? 'bg-emerald-50/50 border-emerald-200 ring-1 ring-emerald-100' : isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
+                                        :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
                                     >
                                 <!-- Strip label -->
                                 <div v-if="card.labels && card.labels.length" class="flex flex-wrap gap-1 mb-1.5">
@@ -327,11 +313,11 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                                      Centang & kode kartu sudah tak dipajang di kartu — tandai selesai
                                      pindah ke modal detail, kode kartu tetap ada di judul modal. -->
                                 <div v-if="canManage" class="flex justify-end mb-1">
-                                    <button @click.stop="deleteCard(card)" title="Hapus kartu" class="text-slate-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                    <button @click.stop="deleteCard(card)" title="Hapus kartu" class="p-1 -m-1 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
-                                <p :class="['font-semibold text-sm leading-snug mb-2 transition', card.done ? 'line-through text-slate-400' : 'text-slate-700']">{{ card.endorse }}</p>
+                                <p class="font-semibold text-sm leading-snug mb-2 text-slate-700">{{ card.endorse }}</p>
 
                                 <!-- Meta: urgent, deadline, deskripsi, komentar, lampiran -->
                                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
@@ -350,15 +336,12 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                                     <span v-for="o in card.outputs" :key="o" class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">{{ o }}</span>
                                 </div>
 
-                                <!-- Badge akun + pembayaran + waktu -->
-                                <div class="flex items-center justify-between text-[10px] mb-1.5">
-                                    <div class="flex items-center gap-1.5">
-                                        <!-- jenis deal: dulu board sendiri, kini atribut kartu -->
-                                        <span v-if="card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
-                                        <span :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
-                                        <span v-if="!isTodolist" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
-                                    </div>
-                                    <span class="text-slate-400">{{ card.time }}</span>
+                                <!-- Badge jenis + akun + pembayaran -->
+                                <div class="flex items-center gap-1.5 text-[10px] mb-1.5">
+                                    <!-- jenis deal: dulu board sendiri, kini atribut kartu -->
+                                    <span v-if="card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
+                                    <span :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
+                                    <span v-if="!isTodolist" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
                                 </div>
                                 <!-- PJ + nilai deal + link (nilai = info utama kartu, ala Pipedrive) -->
                                 <div class="flex items-center justify-between gap-2 text-[10px] pt-1.5 border-t border-brand-50">
@@ -398,19 +381,13 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
             <div class="flex items-start justify-between mb-4">
                 <div>
                     <p class="text-[10px] text-slate-400 font-mono">{{ detailCard.code }}</p>
-                    <h2 :class="['text-lg font-bold flex items-center gap-2', detailCard.done ? 'text-slate-400 line-through' : 'text-brand-800']">
+                    <h2 class="text-lg font-bold flex items-center gap-2 text-brand-800">
                         {{ detailCard.endorse }}
-                        <span v-if="detailCard.done" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500 text-white no-underline">SELESAI</span>
                         <span v-if="isUrgent(detailCard)" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white no-underline">URGENT</span>
                         <span v-if="detailCard.archived" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 no-underline">ARSIP</span>
                     </h2>
                 </div>
                 <div class="flex items-center gap-2">
-                    <!-- Tombol tandai selesai (animasi pop centang) -->
-                    <button v-if="canManage" @click="toggleDone(detailCard)" :class="['text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition', detailCard.done ? 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600' : 'border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-300']">
-                        <svg :class="['w-4 h-4', detailCard.done ? 'done-pop' : '']" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                        {{ detailCard.done ? 'Selesai' : 'Tandai selesai' }}
-                    </button>
                     <button v-if="canManage" @click="archiveCard(detailCard)" :title="detailCard.archived ? 'Kembalikan dari arsip' : 'Arsipkan kartu'" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
                         {{ detailCard.archived ? 'Kembalikan' : 'Arsipkan' }}
                     </button>
@@ -643,14 +620,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
 </template>
 
 <style scoped>
-/* Animasi centang saat kartu ditandai selesai: pop + sedikit overshoot */
-@keyframes done-pop {
-    0% { transform: scale(0); opacity: 0; }
-    60% { transform: scale(1.4); }
-    100% { transform: scale(1); opacity: 1; }
-}
-.done-pop { animation: done-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
-
 /* Placeholder kartu saat di-drag (ala Trello): kotak samar bergaris putus */
 .drag-ghost {
     opacity: 0.5;
