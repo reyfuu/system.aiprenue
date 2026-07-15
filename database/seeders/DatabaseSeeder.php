@@ -45,6 +45,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             PipelineSeeder::class,
             PembukuanSeeder::class,
+            OrderSeeder::class,
         ]);
     }
 }

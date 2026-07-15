@@ -17,18 +17,20 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT'];
+    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'staff' => 'Staff'];
 
     /**
      * Menu yang boleh diakses tiap role. '*' = semua.
-     * Menu: dashboard, pipeline, kanban, script, pembukuan, user.
+     * Menu: dashboard, pipeline, kanban, order, mindmap, script, pembukuan, user.
      * - owner & it = akses penuh (termasuk manajemen user).
      * - manager = kelola board+task+operasional, TAPI tak boleh menu 'user'.
+     * - staff = VIEW-ONLY (lihat canManage()): tanpa menu 'user' & 'pembukuan' (keuangan).
      */
     public const MENU_ACCESS = [
         'owner'   => ['*'],
         'it'      => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'mindmap', 'script', 'pembukuan'],
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan'],
+        'staff'   => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script'],
     ];
 
     /** Apakah role user boleh melihat menu tertentu. */
@@ -39,7 +41,9 @@ class User extends Authenticatable
         return in_array('*', $allowed, true) || in_array($menu, $allowed, true);
     }
 
-    /** Boleh CRUD / kelola (kanban board, tasks). Ketiga role = tim manajemen. */
+    /** Boleh CRUD / kelola (board, task, order, pembukuan) = tim manajemen.
+     *  'staff' sengaja TIDAK di sini: view-only, tapi tetap boleh berkomentar
+     *  (route comments.* memang tak dicek canManage di EnsureMenuAccess). */
     public function canManage(): bool
     {
         return in_array($this->role, ['owner', 'manager', 'it'], true);

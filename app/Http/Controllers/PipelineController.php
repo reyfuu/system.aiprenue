@@ -36,7 +36,8 @@ class PipelineController extends Controller
                 ->orWhere('notes', 'like', "%$s%"));
         }
 
-        $pipelines = $query->orderBy('id')->get();
+        // 10 entri per halaman; withQueryString() agar filter & board ikut terbawa saat pindah halaman
+        $pipelines = $query->orderBy('id')->paginate(10)->withQueryString();
 
         $rate = ExchangeRate::usdToIdr();
         $base = Pipeline::where('category', $category);
@@ -58,7 +59,7 @@ class PipelineController extends Controller
         $counts = array_merge(array_fill_keys($categories, 0), $counts);
 
         return Inertia::render('Pipelines/Index', [
-            'pipelines'  => $pipelines->load('outputs'),
+            'pipelines'  => $pipelines,   // paginator: { data, links, total, from, to, ... }
             'category'   => $category,
             'counts'     => $counts,
             'categories' => Pipeline::categories('pipeline'),       // tab board pipeline saja

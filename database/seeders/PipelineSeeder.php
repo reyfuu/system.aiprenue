@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Category;
 use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
@@ -17,6 +18,12 @@ class PipelineSeeder extends Seeder
         $staff = User::orderBy('id')->pluck('id')->all();
 
         $categories = ['endorse', 'agensi', 'coaching', 'speaker'];
+
+        // Board pipeline harus ada dulu: halaman Pipeline hanya menampilkan
+        // kategori yang punya baris di `categories` bertipe 'pipeline'.
+        foreach (['endorse' => 'Endorse', 'agensi' => 'Agensi', 'coaching' => 'Coaching', 'speaker' => 'Speaker'] as $key => $name) {
+            Category::updateOrCreate(['key' => $key], ['name' => $name, 'type' => 'pipeline']);
+        }
         $progress = ['script', 'editing', 'progress', 'pending', 'done'];
         $payment = ['belum', 'dp', 'lunas'];
         $accounts = ['fk', 'ai_preneur'];

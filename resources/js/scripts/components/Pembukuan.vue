@@ -72,8 +72,9 @@ const doughnutOpts = {
         <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
             <StatCard label="Total Pemasukan" :value="rp(summary.totalIn)" />
             <StatCard label="Total Pengeluaran" :value="rp(summary.totalOut)" />
-            <StatCard :label="labaPositif ? 'Laba' : 'Rugi'" :value="rp(summary.laba)" accent hint="Pemasukan − Pengeluaran" />
             <StatCard :label="`Nilai Inventaris (${summary.invMonthLabel})`" :value="rp(summary.invTotal)" />
+            <!-- Laba/Rugi sengaja paling kanan -->
+            <StatCard :label="labaPositif ? 'Laba' : 'Rugi'" :value="rp(summary.laba)" accent hint="Pemasukan − Pengeluaran" />
         </div>
 
         <!-- Bar chart: pemasukan vs pengeluaran per bulan -->

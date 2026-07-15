@@ -60,18 +60,17 @@ class Pipeline extends Model
             ->orderBy('id')->pluck('name', 'key')->all();
     }
 
+    /** Account = enum('fk','ai_preneur') di tabel pipelines.
+     *  Menambah pilihan di sini WAJIB dibarengi migrasi ubah enum, kalau tidak
+     *  insert-nya ditolak MySQL. */
     public const ACCOUNTS = [
         'fk' => 'FK', 'ai_preneur' => 'AI Preneur',
-        'raveloux' => 'Raveloux', 'ravetailor' => 'Ravetailor', 'audi' => 'Audi',
     ];
 
     /** Warna badge per account (kelas Tailwind). */
     public const ACCOUNT_COLORS = [
         'fk'         => 'bg-brand-600 text-white',
-        'ai_preneur' => 'bg-violet-600 text-white',
-        'raveloux'   => 'bg-rose-600 text-white',
-        'ravetailor' => 'bg-amber-600 text-white',
-        'audi'       => 'bg-zinc-700 text-white',
+        'ai_preneur' => 'bg-slate-500 text-white',
     ];
     public const PROGRESS = [
         'script' => 'Script', 'editing' => 'Editing', 'progress' => 'Progress',

@@ -1,5 +1,5 @@
 <script setup>
-// Halaman Pipeline (versi Vue): tabel entri endorsement + filter + ringkasan + tab kategori + modal tambah/edit.
+// Halaman Pipeline (versi Vue): tabel entri endorsement + filter (termasuk pilih board) + ringkasan + modal tambah/edit.
 import { ref, reactive, computed } from 'vue';                    // state lokal (ref/reactive) & computed
 import { Link, useForm, router, usePage } from '@inertiajs/vue3'; // helper navigasi & form Inertia
 import Layout from '../../Layout.vue';                            // layout bersama (sidebar + toast)
@@ -12,9 +12,9 @@ const submitBoard = () => boardForm.post('/boards', { onSuccess: () => (boardOpe
 
 // Props dari controller (bentuk sama persis dengan versi React)
 const props = defineProps({
-    pipelines: Array,      // daftar entri pipeline yang ditampilkan
+    pipelines: Object,     // paginator Laravel: { data, links, total, from, to } — 10 entri/halaman
     category: String,      // kategori aktif
-    counts: Object,        // jumlah entri per kategori (untuk badge tab)
+    counts: Object,        // jumlah entri per kategori (angka di dropdown board)
     categories: Object,    // peta key→label kategori
     outputs: Array,        // daftar output tersedia (id, name)
     summary: Object,       // ringkasan omzet/kurs/statistik
@@ -39,10 +39,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-dig
 // Warna badge per account (samakan dengan Pipeline::ACCOUNT_COLORS)
 const ACCOUNT_COLORS = {
     fk: 'bg-brand-600 text-white',            // FK → brand
-    ai_preneur: 'bg-violet-600 text-white',   // AI Preneur → violet
-    raveloux: 'bg-rose-600 text-white',       // Raveloux → rose
-    ravetailor: 'bg-amber-600 text-white',    // Ravetailor → amber
-    audi: 'bg-zinc-700 text-white',           // Audi → zinc
+    ai_preneur: 'bg-slate-500 text-white',    // AI Preneur → abu-abu
 };
 
 // Warna badge per progress (samakan dengan blade $pc)
@@ -61,15 +58,9 @@ const PAYMENT_COLORS = {
     belum: 'bg-red-600 text-white',           // belum → merah
 };
 
-// Warna badge per ke_gilang (samakan dengan blade $gc)
-const GILANG_COLORS = {
-    done: 'bg-emerald-600 text-white',        // done → hijau
-    sudah: 'bg-brand-100 text-brand-700',     // sudah → brand muda
-    belum: 'bg-red-600 text-white',           // belum → merah
-};
-
 // State filter lokal (kontrol input sebelum navigasi), diinisialisasi dari props.filters
 const f = reactive({
+    category: props.category,                        // board/kategori aktif (dulu berupa tab)
     account: props.filters.account || '',            // filter account terpilih
     progress: props.filters.progress || '',          // filter progress terpilih
     payment_status: props.filters.payment_status || '', // filter payment terpilih
@@ -81,7 +72,7 @@ const f = reactive({
 const applyFilters = (next = {}) => {
     Object.assign(f, next);                          // gabung perubahan ke state lokal
     router.get('/pipelines',
-        { category: props.category, account: f.account, progress: f.progress, payment_status: f.payment_status, output: f.output, search: f.search },
+        { category: f.category, account: f.account, progress: f.progress, payment_status: f.payment_status, output: f.output, search: f.search },
         { preserveState: true, preserveScroll: true, replace: true }); // kirim ke server
 };
 
@@ -103,8 +94,6 @@ const form = useForm({
     amount_idr: '',               // nominal IDR
     amount_usd: '',               // nominal USD
     notes: '',                    // catatan panjang
-    ke_gilang: 'belum',           // status ke gilang
-    catatan: '',                  // catatan singkat
 });
 
 // Nilai kurs untuk estimasi konversi di modal
@@ -134,8 +123,6 @@ const openEdit = (p) => {
     form.amount_idr = p.amount_idr ?? '';                // nominal IDR
     form.amount_usd = p.amount_usd ?? '';                // nominal USD
     form.notes = p.notes ?? '';                          // notes
-    form.ke_gilang = p.ke_gilang;                        // status ke gilang
-    form.catatan = p.catatan ?? '';                      // catatan
     mode.value = 'edit';                                 // mode edit
     editId.value = p.id;                                 // simpan id
     open.value = true;                                   // tampilkan modal
@@ -182,6 +169,11 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                     <p class="text-brand-100 text-sm">Manajemen endorsement &amp; pembayaran</p>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Board pipeline baru (dulu di strip tab, sekarang di header) -->
+                    <button v-if="auth?.user?.canManage" @click="boardForm.reset(); boardOpen = true" title="Board pipeline baru"
+                            class="bg-brand-800/40 hover:bg-brand-800/60 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition">
+                        + Board
+                    </button>
                     <!-- Tautan report PDF (buka tab baru) -->
                     <a :href="'/pipelines/report?category=' + category" target="_blank" rel="noreferrer"
                        class="bg-brand-800/40 hover:bg-brand-800/60 text-white text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center gap-2 transition">
@@ -205,15 +197,6 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                     </div>
                 </div>
             </div>
-            <!-- Tab kategori (navigasi Link Inertia) -->
-            <div class="max-w-[1600px] px-6 flex gap-1">
-                <Link v-for="(cv, ck) in categories" :key="ck" :href="'/pipelines?category=' + ck"
-                      :class="'px-5 py-2.5 text-sm font-semibold rounded-t-xl transition ' + (category === ck ? 'bg-brand-50 text-brand-700' : 'text-brand-100 hover:bg-brand-800/30')">
-                    {{ cv }} <span class="ml-1 text-xs opacity-70">({{ counts[ck] }})</span>
-                </Link>
-                <button v-if="page.props.auth.user?.canManage" @click="boardForm.reset(); boardOpen = true" title="Board pipeline baru"
-                        class="px-3 py-2.5 text-sm font-semibold rounded-t-xl text-brand-100 hover:bg-brand-800/30 transition">+ Board</button>
-            </div>
         </header>
 
         <!-- Area konten utama -->
@@ -229,8 +212,14 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                 </span>
             </div>
 
-            <!-- Kartu ringkasan -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+            <!-- Kartu ringkasan (omzet & pembayaran) -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 mb-3">
+                <!-- Total omzet gabungan (IDR) — sengaja paling kiri -->
+                <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
+                    <p class="text-xs text-brand-100 font-medium">Total Omzet (IDR)</p>
+                    <p class="text-lg font-bold mt-1">{{ rp(summary.grand_idr) }}</p>
+                    <p class="text-[10px] text-brand-200 mt-0.5">USD dikonversi otomatis</p>
+                </div>
                 <!-- Omzet IDR -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Omzet IDR</p>
@@ -240,12 +229,6 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Omzet USD</p>
                     <p class="text-lg font-bold text-brand-700 mt-1">$ {{ usd(summary.total_usd) }}</p>
-                </div>
-                <!-- Total omzet gabungan (IDR) -->
-                <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
-                    <p class="text-xs text-brand-100 font-medium">Total Omzet (IDR)</p>
-                    <p class="text-lg font-bold mt-1">{{ rp(summary.grand_idr) }}</p>
-                    <p class="text-[10px] text-brand-200 mt-0.5">USD dikonversi otomatis</p>
                 </div>
                 <!-- Outstanding -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
@@ -257,7 +240,10 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                     <p class="text-xs text-slate-500 font-medium">Lunas</p>
                     <p class="text-lg font-bold text-emerald-600 mt-1">{{ summary.lunas }} / {{ summary.total }}</p>
                 </div>
-                <!-- Progress done -->
+            </div>
+
+            <!-- Progress done: baris sendiri di bawah kartu ringkasan -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Progress Done</p>
                     <p class="text-lg font-bold text-brand-700 mt-1">{{ summary.done }} / {{ summary.total }}</p>
@@ -271,6 +257,11 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                        @keydown.enter="applyFilters({ search: f.search })"
                        @blur="applyFilters({ search: f.search })"
                        class="border border-slate-200 rounded-xl px-3 py-2 w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
+                <!-- Pilih board/kategori (pengganti strip tab) -->
+                <select v-model="f.category" @change="applyFilters()"
+                        class="border border-slate-200 rounded-xl px-3 py-2 font-semibold text-brand-700 focus:ring-2 focus:ring-brand-400 outline-none">
+                    <option v-for="(cv, ck) in categories" :key="ck" :value="ck">{{ cv }} ({{ counts[ck] }})</option>
+                </select>
                 <!-- Filter account -->
                 <select v-model="f.account" @change="applyFilters()"
                         class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
@@ -295,8 +286,8 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                     <option value="">Semua Output</option>
                     <option v-for="out in outputs" :key="out.id" :value="out.id">{{ out.name }}</option>
                 </select>
-                <!-- Reset filter → kembali ke /pipelines -->
-                <Link href="/pipelines" class="text-brand-600 hover:text-brand-800 px-2 font-medium">Reset</Link>
+                <!-- Reset filter → bersihkan filter tapi tetap di board yang sama -->
+                <Link :href="'/pipelines?category=' + category" class="text-brand-600 hover:text-brand-800 px-2 font-medium">Reset</Link>
             </div>
 
             <!-- Tabel entri -->
@@ -314,16 +305,14 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                             <th class="px-4 py-3 text-right">IDR</th>
                             <th class="px-4 py-3 text-right">USD</th>
                             <th class="px-4 py-3 text-left">Notes</th>
-                            <th class="px-4 py-3 text-left">Ke Gilang</th>
-                            <th class="px-4 py-3 text-left">Catatan</th>
                             <th class="px-4 py-3 text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-brand-50">
                         <!-- Pesan kosong bila tak ada entri -->
-                        <tr v-if="pipelines.length === 0"><td colspan="13" class="px-4 py-10 text-center text-slate-400">Belum ada entri.</td></tr>
-                        <!-- Baris data -->
-                        <tr v-else v-for="p in pipelines" :key="p.id" class="hover:bg-brand-50/60 transition">
+                        <tr v-if="pipelines.data.length === 0"><td colspan="11" class="px-4 py-10 text-center text-slate-400">Belum ada entri.</td></tr>
+                        <!-- Baris data (hanya halaman aktif) -->
+                        <tr v-else v-for="p in pipelines.data" :key="p.id" class="hover:bg-brand-50/60 transition">
                             <!-- Badge account -->
                             <td class="px-4 py-2.5">
                                 <span :class="'inline-block ' + (ACCOUNT_COLORS[p.account] || 'bg-slate-200 text-slate-700') + ' text-xs font-semibold px-2.5 py-0.5 rounded-full'">
@@ -360,14 +349,6 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                             <td class="px-4 py-2.5 text-right whitespace-nowrap font-medium">{{ p.amount_usd ? '$' + usd(p.amount_usd) : '—' }}</td>
                             <!-- Notes -->
                             <td class="px-4 py-2.5 text-slate-500 max-w-[200px]">{{ p.notes || '—' }}</td>
-                            <!-- Badge ke gilang -->
-                            <td class="px-4 py-2.5">
-                                <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (GILANG_COLORS[p.ke_gilang] || 'bg-slate-200 text-slate-700')">
-                                    {{ keGilang[p.ke_gilang] }}
-                                </span>
-                            </td>
-                            <!-- Catatan -->
-                            <td class="px-4 py-2.5 text-slate-500 max-w-[160px]">{{ p.catatan || '—' }}</td>
                             <!-- Aksi edit & hapus -->
                             <td class="px-4 py-2.5 text-center whitespace-nowrap">
                                 <div class="flex items-center justify-center gap-1.5">
@@ -466,19 +447,6 @@ const usd = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigit
                         <input type="number" step="0.01" v-model="form.amount_usd" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                         <span v-if="form.amount_usd > 0" class="text-[11px] text-brand-600">{{ '≈ Rp ' + Math.round(form.amount_usd * rate).toLocaleString('id-ID') }}</span>
                         <span v-if="form.errors.amount_usd" class="text-xs text-red-600 block">{{ form.errors.amount_usd }}</span>
-                    </label>
-
-                    <!-- Ke gilang -->
-                    <label class="block font-medium text-slate-600">Ke Gilang
-                        <select v-model="form.ke_gilang" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                            <option v-for="(v, k) in keGilang" :key="k" :value="k">{{ v }}</option>
-                        </select>
-                        <span v-if="form.errors.ke_gilang" class="text-xs text-red-600">{{ form.errors.ke_gilang }}</span>
-                    </label>
-                    <!-- Catatan singkat -->
-                    <label class="block font-medium text-slate-600">Catatan
-                        <input v-model="form.catatan" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
-                        <span v-if="form.errors.catatan" class="text-xs text-red-600">{{ form.errors.catatan }}</span>
                     </label>
 
                     <!-- Notes panjang -->

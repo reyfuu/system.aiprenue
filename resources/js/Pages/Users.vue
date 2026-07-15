@@ -10,13 +10,12 @@ const props = defineProps({                             // definisi props Inerti
     roles: Object,                                      // objek key->label role
 });                                                     // akhir defineProps
 
-// Warna badge per role (mirror mapping $rc di blade)
+// Warna badge per role — key WAJIB cocok dengan User::ROLES
 const roleColors = {                                    // map role -> kelas badge
-    super_admin: 'bg-rose-600 text-white',              // super admin merah
-    admin: 'bg-brand-600 text-white',                   // admin brand
+    owner: 'bg-rose-600 text-white',                    // owner merah
+    manager: 'bg-brand-600 text-white',                 // manager brand
     it: 'bg-violet-600 text-white',                     // IT ungu
-    staff: 'bg-slate-200 text-slate-700',               // staff abu
-    editor: 'bg-amber-500 text-white',                  // editor amber
+    staff: 'bg-slate-200 text-slate-700',               // staff abu (view-only)
 };                                                      // akhir map warna
 
 const open = ref(false);                                // status modal terbuka

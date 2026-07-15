@@ -48,7 +48,8 @@ class EnsureMenuAccess
             || str_starts_with($name, 'columns.')
             || str_starts_with($name, 'attachments.') // komentar TIDAK di sini (staff boleh)
             || str_starts_with($name, 'transactions.')
-            || str_starts_with($name, 'inventories.');
+            || str_starts_with($name, 'inventories.')
+            || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true);
     }
 
     /** Route name → menu terkait (array; null = bebas). */
@@ -67,6 +68,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'comments.') => ['kanban'],     // komentar: cukup akses kanban
             str_starts_with($name, 'attachments.') => ['kanban'],  // lampiran (manage dicek terpisah)
             str_starts_with($name, 'pipelines.') => ['pipeline'],
+            str_starts_with($name, 'orders.') => ['order'],
             str_starts_with($name, 'mindmaps.') => ['mindmap'],
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
