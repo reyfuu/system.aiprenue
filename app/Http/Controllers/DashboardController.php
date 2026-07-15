@@ -2,8 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Inventory;
+use App\Models\Mindmap;
+use App\Models\Order;
 use App\Models\Pipeline;
+use App\Models\Transaction;
 use App\Support\ExchangeRate;
+use Illuminate\Support\Facades\File;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -11,26 +16,83 @@ class DashboardController extends Controller
     public function index()
     {
         $rate = ExchangeRate::usdToIdr();
-        $all = Pipeline::all();
 
-        $totalIdr = (float) $all->sum('amount_idr');
-        $totalUsd = (float) $all->sum('amount_usd');
+        $pipelineBoards = Pipeline::categories('pipeline');
+        $kanbanBoards   = Pipeline::categories('kanban');
 
-        $countBy = fn (string $col) => $all->groupBy($col)->map->count();
+        // ---- Pipeline: entri di board bertipe 'pipeline' ----
+        $pipe     = Pipeline::whereIn('category', array_keys($pipelineBoards))->get();
+        $totalIdr = (float) $pipe->sum('amount_idr');
+        $totalUsd = (float) $pipe->sum('amount_usd');
+        $grandIdr = $totalIdr + $totalUsd * $rate;
+
+        // ---- Kanban: task di board bertipe 'kanban' (BUKAN entri pipeline) ----
+        $kanban = Pipeline::whereIn('category', array_keys($kanbanBoards))->get();
+
+        // ---- Script: folder & naskah di public/scripts (dotfile spt .gitkeep diabaikan) ----
+        $scriptDir     = public_path('scripts');
+        $scriptFolders = File::isDirectory($scriptDir) ? count(File::directories($scriptDir)) : 0;
+        $scriptFiles   = File::isDirectory($scriptDir)
+            ? count(array_filter(File::allFiles($scriptDir), fn ($f) => ! str_starts_with($f->getFilename(), '.')))
+            : 0;
+
+        // ---- Pembukuan: dari transaksi & inventaris (bukan omzet pipeline) ----
+        $pemasukan   = (float) Transaction::where('type', 'pemasukan')->sum('amount_idr');
+        $pengeluaran = (float) Transaction::where('type', 'pengeluaran')->sum('amount_idr');
+        $invTotal    = Inventory::get(['qty', 'unit_value_idr'])->sum(fn ($i) => $i->qty * (float) $i->unit_value_idr);
 
         return Inertia::render('Dashboard', [
-            'rate'        => $rate,
-            'total'       => $all->count(),
-            'totalIdr'    => $totalIdr,
-            'totalUsd'    => $totalUsd,
-            'grandIdr'    => $totalIdr + $totalUsd * $rate,
-            'lunas'       => $all->where('payment_status', 'lunas')->count(),
-            'outstanding' => $all->whereIn('payment_status', ['belum', 'dp'])->count(),
-            'done'        => $all->where('progress', 'done')->count(),
-            'perCategory' => $countBy('category'),   // Pipeline
-            'perProgress' => $countBy('progress'),    // Kanban
-            'categories'  => Pipeline::categories(),  // key => nama board
-            'progresses'  => Pipeline::PROGRESS,      // key => label progress
+            'rate' => $rate,
+
+            // Ringkasan atas — angka bisnis pipeline
+            'summary' => [
+                'grandIdr'    => $grandIdr,
+                'total'       => $pipe->count(),
+                'lunas'       => $pipe->where('payment_status', 'lunas')->count(),
+                'outstanding' => $pipe->whereIn('payment_status', ['belum', 'dp'])->count(),
+            ],
+
+            'pipeline' => [
+                'total'       => $pipe->count(),
+                'grandIdr'    => $grandIdr,
+                'perCategory' => $pipe->groupBy('category')->map->count(),
+                'categories'  => $pipelineBoards,
+            ],
+
+            'kanban' => [
+                'total'       => $kanban->count(),
+                'done'        => $kanban->where('progress', 'done')->count(),
+                'boards'      => count($kanbanBoards),
+                'perProgress' => $kanban->groupBy('progress')->map->count(),
+                'progresses'  => Pipeline::PROGRESS,
+            ],
+
+            'order' => [
+                'total'     => Order::count(),
+                'urgent'    => Order::whereIn('prioritas', ['urgent', 'super_urgent'])->count(),
+                'dp'        => Order::where('tipe_pembayaran', 'dp')->count(),
+                'nilai'     => (float) Order::sum('total_pembayaran'),
+                'perTipe'   => Order::selectRaw('tipe_order, count(*) as total')->groupBy('tipe_order')->pluck('total', 'tipe_order'),
+                'tipeOrder' => Order::TIPE_ORDER,
+            ],
+
+            'mindmap' => [
+                'total'  => Mindmap::count(),
+                'latest' => Mindmap::latest('updated_at')->value('title'),
+            ],
+
+            'script' => [
+                'folders' => $scriptFolders,
+                'files'   => $scriptFiles,
+            ],
+
+            'pembukuan' => [
+                'pemasukan'   => $pemasukan,
+                'pengeluaran' => $pengeluaran,
+                'laba'        => $pemasukan - $pengeluaran,
+                'transaksi'   => Transaction::count(),
+                'invTotal'    => (float) $invTotal,
+            ],
         ]);
     }
 }

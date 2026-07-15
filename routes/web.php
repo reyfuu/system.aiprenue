@@ -7,6 +7,7 @@ use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PipelineController;
@@ -53,6 +54,19 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines', [PipelineController::class, 'store'])->name('pipelines.store');
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');
     Route::delete('/pipelines/{pipeline}', [PipelineController::class, 'destroy'])->name('pipelines.destroy');
+
+    // Order (pesanan) — tabel + CRUD modal. Mutasi dibatasi EnsureMenuAccess.
+    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
+    Route::put('/orders/{order}', [OrderController::class, 'update'])->name('orders.update');
+    Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
+
+    // Mindmap (mind-elixir) — galeri + editor + simpan/hapus
+    Route::get('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'index'])->name('mindmaps.index');
+    Route::post('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'store'])->name('mindmaps.store');
+    Route::get('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'show'])->name('mindmaps.show');
+    Route::put('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'update'])->name('mindmaps.update');
+    Route::delete('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'destroy'])->name('mindmaps.destroy');
 
     // Script (template dulu — data dikirim Hermes agent nanti)
     Route::get('/script', fn () => Inertia::render('Script'))->name('script.index');

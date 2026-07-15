@@ -52,18 +52,25 @@ class Pipeline extends Model
         return $this->hasMany(PipelineAttachment::class);
     }
 
-    /** Kategori/board dinamis dari tabel categories: ['key' => 'Name']. */
-    public static function categories(): array
+    /** Kategori/board dinamis dari tabel categories: ['key' => 'Name'].
+     *  $type = 'kanban' | 'pipeline' untuk memfilter per modul (null = semua). */
+    public static function categories(?string $type = null): array
     {
-        return Category::orderBy('id')->pluck('name', 'key')->all();
+        return Category::when($type, fn ($q) => $q->where('type', $type))
+            ->orderBy('id')->pluck('name', 'key')->all();
     }
 
-    public const ACCOUNTS = ['fk' => 'FK', 'ai_preneur' => 'AI Preneur'];
+    /** Account = enum('fk','ai_preneur') di tabel pipelines.
+     *  Menambah pilihan di sini WAJIB dibarengi migrasi ubah enum, kalau tidak
+     *  insert-nya ditolak MySQL. */
+    public const ACCOUNTS = [
+        'fk' => 'FK', 'ai_preneur' => 'AI Preneur',
+    ];
 
     /** Warna badge per account (kelas Tailwind). */
     public const ACCOUNT_COLORS = [
         'fk'         => 'bg-brand-600 text-white',
-        'ai_preneur' => 'bg-violet-600 text-white',
+        'ai_preneur' => 'bg-slate-500 text-white',
     ];
     public const PROGRESS = [
         'script' => 'Script', 'editing' => 'Editing', 'progress' => 'Progress',

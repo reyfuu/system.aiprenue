@@ -13,7 +13,7 @@ class PipelineController extends Controller
 {
     public function index(Request $request)
     {
-        $categories = array_keys(Pipeline::categories());
+        $categories = array_keys(Pipeline::categories('pipeline'));   // hanya board tipe pipeline
         $category = in_array($request->category, $categories) ? $request->category : ($categories[0] ?? 'endorse');
 
         $query = Pipeline::query()->where('category', $category)->with('outputs');
@@ -36,7 +36,8 @@ class PipelineController extends Controller
                 ->orWhere('notes', 'like', "%$s%"));
         }
 
-        $pipelines = $query->orderBy('id')->get();
+        // 10 entri per halaman; withQueryString() agar filter & board ikut terbawa saat pindah halaman
+        $pipelines = $query->orderBy('id')->paginate(10)->withQueryString();
 
         $rate = ExchangeRate::usdToIdr();
         $base = Pipeline::where('category', $category);
@@ -58,10 +59,10 @@ class PipelineController extends Controller
         $counts = array_merge(array_fill_keys($categories, 0), $counts);
 
         return Inertia::render('Pipelines/Index', [
-            'pipelines'  => $pipelines->load('outputs'),
+            'pipelines'  => $pipelines,   // paginator: { data, links, total, from, to, ... }
             'category'   => $category,
             'counts'     => $counts,
-            'categories' => Pipeline::categories(),                 // key => nama board
+            'categories' => Pipeline::categories('pipeline'),       // tab board pipeline saja
             'outputs'    => Output::orderBy('name')->get(),
             'summary'    => $summary,
             'filters'    => $request->only(['account', 'progress', 'payment_status', 'output', 'search']),
@@ -74,10 +75,37 @@ class PipelineController extends Controller
         ]);
     }
 
+    /** Kanban LUAR: galeri semua board dikelompokkan per section. */
+    private function gallery()
+    {
+        $boards = \App\Models\Category::where('type', 'kanban')->orderBy('name')->get();
+        $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
+            ->groupBy('category')->pluck('total', 'category')->toArray();
+
+        return Inertia::render('BoardGallery', [
+            'boards' => $boards->map(fn ($b) => [
+                'key'              => $b->key,
+                'name'             => $b->name,
+                'section'          => $b->section ?: 'Tanpa Grup',      // grup galeri
+                'super_admin_only' => (bool) $b->super_admin_only,
+                'count'            => $counts[$b->key] ?? 0,             // jml task aktif
+            ]),
+            'canManage' => auth()->user()->canManage(),
+        ]);
+    }
+
     public function kanban(Request $request)
     {
-        $categories = array_keys(Pipeline::categories());
-        $category = in_array($request->category, $categories) ? $request->category : ($categories[0] ?? 'endorse');
+        // Tanpa ?category → tampilkan galeri board (kanban luar)
+        if (! $request->filled('category')) {
+            return $this->gallery();
+        }
+        $categories = array_keys(Pipeline::categories('kanban'));    // hanya board tipe kanban
+        // ?category tak valid → balik ke galeri
+        if (! in_array($request->category, $categories, true)) {
+            return redirect()->route('pipelines.kanban');
+        }
+        $category = $request->category;
 
         // Tampilkan kartu aktif; bila ?archived=1 → tampilkan yg diarsipkan
         $showArchived = $request->boolean('archived');
@@ -151,7 +179,7 @@ class PipelineController extends Controller
         return Inertia::render('Kanban', [
             'category'      => $category,
             'counts'        => $counts,
-            'categories'    => Pipeline::categories(),                       // key => nama board
+            'categories'    => Pipeline::categories('kanban'),               // board select: kanban saja
             'board'         => $board,                                       // kartu tersusun per kolom
             'columns'       => $columns,                                     // kolom dinamis board ini
             'showArchived'  => $showArchived,                               // sedang lihat arsip?
@@ -189,7 +217,7 @@ class PipelineController extends Controller
 
     public function report(Request $request)
     {
-        $category = in_array($request->category, array_keys(Pipeline::categories())) ? $request->category : null;
+        $category = in_array($request->category, array_keys(Pipeline::categories('pipeline'))) ? $request->category : null;
         $kurs = (float) ($request->kurs ?: ExchangeRate::usdToIdr()); // kurs USD→IDR terkini untuk grand total
 
         $base = Pipeline::query();
@@ -266,7 +294,7 @@ class PipelineController extends Controller
 
         return $request->validate([
             'category'        => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::categories()))],
-            'account'         => 'required|in:fk,ai_preneur',
+            'account'         => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::ACCOUNTS))],
             'assigned_to'     => 'nullable|exists:users,id',
             'link'            => 'nullable|url|max:2048',
             'labels'          => 'nullable|array',

@@ -1,141 +1,102 @@
-# DESIGN — System AI Preneur
+# DESIGN.md — Design System Content Engine
 
-Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
+Arah visual: **Clean SaaS** — terinspirasi produk seperti sandcastles.ai: latar near-white, teks
+charcoal, **satu aksen** (electric blue), whitespace lega, flat & modern. Tipografi jadi bintang lewat
+display grotesk mewah. **Nol emoji di UI** — semua ikon = garis SVG (stroke) yang konsisten. Emoji
+hanya boleh muncul di dalam **konten yang di-generate** (caption sosmed), bukan chrome aplikasi.
 
-- **Stack**: Laravel 13 (PHP 8.5), **Inertia.js + Vue 3** (SPA), Tailwind v4, Vite. SQLite (mode WAL). PDF via DomPDF. Grafik via Chart.js/vue-chartjs (modul Pembukuan).
-- **Tujuan**: mengelola pipeline endorsement, alur produksi Kanban, pembukuan, script, dan user secara terpusat dengan hak akses per peran.
+Sengaja menjauh dari look "vibecoding" / template AI generik (gradien ungu, glassmorphism, emoji
+sebagai ikon, tombol offset-shadow mainan).
 
----
+Implementasi: CSS variables di `prototype/content-engine.html` (blok `:root`), disinkron ke
+`public_html/app.css` lewat `node prototype/build-app.mjs`. Landing Vue (`public_html/index.html`)
+pakai token yang sama inline.
 
-## 1. Arsitektur
+## Prinsip color theory
 
-```
-┌───────────────────────────────────────────────┐
-│                 Browser (SPA)                  │
-│   Vue 3 (resources/js/Pages/*.vue) + Inertia   │
-│            Tailwind v4 · Chart.js              │
-└───────────────────────┬───────────────────────┘
-                        │ Inertia (XHR + JSON props)
-┌───────────────────────▼───────────────────────┐
-│                Laravel Application             │
-│  Routes (web) → Middleware(auth,               │
-│     EnsureMenuAccess, HandleInertiaRequests)   │
-│  Controllers → Inertia::render(Page, props)    │
-│  Eloquent Models → SQLite                       │
-│  DomPDF (report) · ExchangeRate (kurs)          │
-└────────────────────────────────────────────────┘
-```
+- **1 hue netral + 1 aksen.** Netral = skala abu dingin (charcoal → slate → muted). Aksen tunggal =
+  **electric blue** (`#014BDF`) untuk aksi, state aktif, dan hal positif. Tidak ada warna aksen kedua
+  yang bersaing. (Token tetap bernama `--pine` demi kompatibilitas — isinya sekarang biru.)
+- **Semantik hemat.** Coral (atensi), gold (peringatan), red (destruktif) — hanya untuk makna, tidak
+  pernah dekoratif. Jangan dua warna semantik dalam satu elemen.
+- **Kontras dulu.** Teks utama pada latar ≈ AAA (>12:1). Warna tidak pernah jadi satu-satunya penanda
+  (skor selalu ada angkanya, status selalu ada label/ikon).
 
-**Pola yang dipakai (nyata, tanpa over-engineering):**
-- **Inertia** — controller mengembalikan `Inertia::render('Page', $props)`; Vue merender tanpa REST terpisah. Redirect Laravel biasa (`->back()`) memicu reload props.
-- **Otorisasi dua lapis** di middleware `EnsureMenuAccess`: (1) akses menu per peran, (2) route mutasi butuh `canManage()`. Bukan Policy per-model.
-- **Shared props** via `HandleInertiaRequests`: `auth.user` (id, role, canManage, peta menu) & `flash.status`.
-- **Fetch langsung** (non-Inertia) hanya untuk aksi drag-drop & todo (PATCH JSON, optimistic UI).
+## Warna
 
-> Tidak memakai queue, events/listeners, Policies, Actions/Services layer, atau broadcasting — sengaja dijaga sederhana.
+| Token | Hex | Pakai untuk |
+|---|---|---|
+| `--bg` | `#FBFBFA` | latar halaman (near-white) |
+| `--bg-2` | `#F3F4F2` | permukaan input / sekunder |
+| `--card` | `#FFFFFF` | kartu |
+| `--ink` | `#14181F` | teks utama (charcoal), tab/pill aktif |
+| `--ink-2` / `--ink-3` | `#5A626F` / `#8B94A1` | teks sekunder / tersier |
+| `--line` / `--line-2` | `#EAECEF` / `#DBDEE4` | garis rambut / border kontrol |
+| `--pine` | `#014BDF` | **aksen tunggal** (electric blue): CTA, aktif, skor bagus, ikon fitur |
+| `--pine-dark` / `--pine-soft` | `#0139AB` / `#E8EEFD` | hover primary / latar aksen lembut (blue tint) |
+| `--coral` (+ `-dark`/`-soft`) | `#C6553A` | semantik atensi (hemat) |
+| `--gold` (+ `-soft`) | `#B07A16` | peringatan lembut |
+| `--red` (+ `-soft`) | `#C13B36` | destruktif (hapus) |
 
----
+Meter skor: <5 coral, 5–7.5 gold, >7.5 blue (`--pine`) — **angka selalu ditampilkan**.
 
-## 2. Model Data
+## Tipografi (mewah, sans-first)
 
-```
-users ──< pipelines (assigned_to, created_by/updated_by)
-categories (board) 1──n board_columns (kolom kanban, key=progress)
-pipelines ──< pipeline_output (pivot) >── outputs
-pipelines 1──n pipeline_comments >── users
-pipelines 1──n pipeline_attachments >── users
-transactions · inventories        (modul pembukuan, berdiri sendiri)
-```
+- **Display**: `Bricolage Grotesque` (weight 700/800, opsz) — grotesk editorial yang mewah, dipakai
+  untuk h1–h4, judul hasil, nama brand, angka besar. Letter-spacing rapat (−.025 s/d −.035em).
+- **Body/UI**: `Inter` (400–800) — sans premium, legibilitas tinggi, tabular untuk angka. Body 15px/1.6,
+  letter-spacing −.006em.
+- Token: `--serif` = Bricolage (nama dipertahankan demi kompatibilitas, isinya sans), `--sans` = Inter.
+- Skala: hero `clamp(38px, 6.6vw, 66px)` w800; judul section 20px; tiny 12.5px.
+- `em.fancy` = pine + bold (bukan italic) untuk penekanan di headline.
 
-### Tabel inti
+## Bentuk & kedalaman (flat)
 
-**users** — `id, name, email, password, role`
-Peran: `super_admin, it, admin, editor, staff`. Method domain: `canSee($menu)`, `canManage()`, `homeRoute()`.
+- Radius: kartu 14px (`--r-lg`), input/kontrol/tombol 10px (`--r-md`), pill/tab/chip 999px.
+- **Flat.** Shadow dua level halus (`--sh-1` istirahat, `--sh-2` hover) berwarna ink-transparan
+  dingin. **Tidak ada** offset-shadow taktil, **tidak ada** grain overlay, **tidak ada** translateY
+  saat hover — feedback lewat perubahan warna latar/border.
+- Border = garis rambut 1px. Fokus input: ring biru `0 0 0 4px rgba(1,75,223,.14)`.
 
-**pipelines** — kartu/entri utama
-`account`(fk/ai_preneur), `assigned_to`(FK users), `endorse`, `description`, `progress`(= key kolom board, string dinamis), `category`(= key board), `tanggal_posting/payment`, `deadline`, `payment_status`(belum/dp/lunas), `amount_idr/usd`, `notes`, `link`, `todos`(json), `labels`(json), `ke_gilang`, `catatan`, `archived_at`, `created_by/updated_by`, `deleted_at`(soft delete).
+## Sistem ikon (garis SVG — WAJIB, bukan emoji)
 
-**categories** — board dinamis: `key`, `name`.
-**board_columns** — kolom kanban per board: `board_key`, `key`, `name`, `color`, `position` (unik `[board_key,key]`).
-**outputs** + **output_pipeline** (pivot) — tag output multi.
-**pipeline_comments** — `pipeline_id, user_id, body`.
-**pipeline_attachments** — `pipeline_id, user_id, path, name, mime, size` (disk `public`).
-**transactions** — `type`(pemasukan/pengeluaran), `category`, `amount_idr`, `date`.
-**inventories** — `name, qty, unit_value_idr, month`.
+- Sumber: objek `ICONS` (path Lucide-style, viewBox 24) + `svgIcon(name)` di `content-engine.html`.
+  Stroke **1.75** = kesan garis halus/mewah, `currentColor`, cap/join round. Landing Vue
+  (`public_html/index.html`) punya set kecil yang sama (fungsi `icon()` inline).
+- **Konversi otomatis**: `el()` + `iconifyStatic()` menyapu emoji di `textContent`/`html`/toast/markup
+  statis → ikon. Emoji yang **kekenal** (`EMOJI_ICON`) jadi ikon; yang tak kenal **dibuang** supaya UI
+  100% bebas emoji. Panah teks (`←` `→` `↗`) sengaja **tidak** disentuh (glyph tipografi, bukan emoji).
+- **Konten mentah dilindungi**: kelas di `RAW_EMOJI_CLASS` (`copybox`, `s-head`, `s-sub`, `quote`,
+  `day-card`, dst) dilewati → emoji di caption hasil generate tetap utuh.
+- **Tile ikon mewah**: ikon prominen (feature band, type-card, cat-card, result-head) duduk di kotak
+  tint `--pine-soft` radius 11px → kesan premium, bukan glyph telanjang.
+- Menambah ikon: tambah entri `ICONS[name]` (path) lalu map `EMOJI_ICON['🙂'] = 'name'`. Untuk landing,
+  tambah set ikon inline di `public_html/index.html`.
 
-> `progress` & `category` sengaja string (bukan enum) agar board/kolom dinamis. Kartu dgn kolom terhapus jatuh ke kolom pertama.
+## Komponen inti
 
----
+| Komponen | Ciri |
+|---|---|
+| **Tombol** | flat; default = border garis rambut + hover latar `--bg-2`; `.primary` = pine solid; radius 10px |
+| **Tab / Pill** | pill 999px; aktif = `--ink` solid teks putih; hover = border menegas |
+| **Chip / Badge** | pill kecil; badge pine/coral/gold untuk status |
+| **Type card** | tile ikon pine-soft + judul + desc; checkbox SVG (centang muncul saat aktif); aktif = border+ring pine |
+| **Meter skor** | label + bar + angka; warna ikut nilai, angka selalu tampil |
+| **Kartu hasil** | `result-head` = tile ikon + judul; konten di `copybox` (emoji konten aman) |
+| **Timeline `.beat`** | kolom waktu (badge `0–3s`) + visual/VO/teks-di-layar |
+| **Phone preview** | rasio 4:5, border garis rambut + `--sh-2` (bukan offset shadow) |
+| **Learn box** | latar gold-soft, edukasi "Biar makin jago" di tiap hasil |
 
-## 3. Struktur Direktori
+## Motion
 
-```
-app/
-├── Http/Controllers/     # Pipeline, Board, Column, Comment, Attachment,
-│                         # Dashboard, Pembukuan, User, Auth
-├── Http/Middleware/       # EnsureMenuAccess, HandleInertiaRequests
-├── Models/                # Pipeline, Category, BoardColumn, Output,
-│                         # PipelineComment, PipelineAttachment,
-│                         # Transaction, Inventory, User
-└── Support/               # ExchangeRate (kurs USD→IDR, cache 12 jam)
-resources/
-├── js/
-│   ├── app.js             # entry Inertia (Vue)
-│   ├── Layout.vue  Sidebar.vue  ModalWrap.vue
-│   ├── Pages/             # Login, Dashboard, Kanban, Pipelines/Index,
-│   │                     # Pembukuan, Script, Users
-│   └── scripts/components # komponen Chart.js pembukuan
-├── css/app.css            # Tailwind v4 + palet brand + safelist warna dinamis
-└── views/                 # app.blade.php (root Inertia) + *.report (PDF)
-database/migrations · seeders
-```
+Hemat & halus: `rise` (fade+geser 14px) saat view masuk, `pop` untuk slide/checkbox. Transisi warna
+120–150ms. Tidak ada bounce/translateY taktil pada tombol.
 
----
+## Checklist saat menambah UI
 
-## 4. Rute Utama
-
-```php
-// Halaman (Inertia::render)
-GET  /dashboard  /pipelines  /pipelines/kanban  /script  /pembukuan  /users
-
-// Pipeline / kartu
-POST/PUT/DELETE /pipelines[/{id}]
-PATCH /pipelines/{id}/progress   // drag-drop (JSON)
-PATCH /pipelines/{id}/todos      // checklist (JSON)
-PATCH /pipelines/{id}/archive    // arsip (manage)
-
-// Board & kolom dinamis (manage)
-POST/PUT/DELETE /boards[/{board}]
-POST/PUT/DELETE /columns[/{column}]
-
-// Kolaborasi
-POST   /pipelines/{id}/comments      // semua peran kanban (incl. staff ditugasi)
-DELETE /comments/{comment}           // penulis atau manager
-POST   /pipelines/{id}/attachments   // manage
-DELETE /attachments/{attachment}     // manage
-
-// Report PDF
-GET /pipelines/report   /pembukuan/report
-```
-
----
-
-## 5. Otorisasi (per peran, bukan per-model)
-
-`EnsureMenuAccess` mengecek tiap request:
-1. **Route mutasi** (store/update/destroy/archive/board/column/attachment) → butuh `canManage()` (super_admin/it). Komentar **dikecualikan** agar staff/editor bisa berkomentar.
-2. **Akses menu** → route dipetakan ke menu (dashboard/pipeline/kanban/script/pembukuan/user); user harus `canSee()` menu itu.
-
-UI menyembunyikan aksi terlarang; server tetap membalas **403** bila dilanggar.
-
----
-
-## 6. Keputusan Teknis
-
-- **Inertia + Vue** menggantikan Blade+Alpine — satu SPA, komponen per halaman, tanpa REST API terpisah. (Vue dipilih ketimbang React karena preferensi tim untuk produksi shared hosting; keduanya sama-sama di-build lokal.)
-- **SQLite (WAL)** untuk dev; deploy via import file `.sql`. `busy_timeout` & `synchronous=NORMAL` diset di `config/database.php`.
-- **Progress = key kolom** — reuse kolom `progress` sebagai referensi kolom dinamis (hindari FK column_id + backfill).
-- **Safelist Tailwind** (`@source inline(...)`) untuk warna kolom/label yang datang dari DB (tak terbaca scanner).
-- **Soft delete** pada pipeline untuk recovery.
-
-> Detail kapabilitas per peran: [SKILLS.md](SKILLS.md). Peran pembangun: [AGENTS.md](AGENTS.md).
+1. Pakai token warna (jangan hex mentah). Aksen = pine saja; coral/gold/red hanya semantik.
+2. **Jangan tulis emoji sebagai ikon.** Pakai `icon(name)` / `svgIcon(name)`, atau biarkan emoji-mu
+   otomatis dikonversi — pastikan glyph-nya ada di `EMOJI_ICON`.
+3. Display pakai `--serif` (Bricolage), teks lain `--sans` (Inter).
+4. Flat: border garis rambut, shadow halus, radius sesuai skala. Tanpa offset-shadow/grain.
+5. Setelah ubah prototype: `node prototype/build-app.mjs` untuk sinkron ke `public_html/`.

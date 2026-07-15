@@ -12,10 +12,20 @@ class BoardController extends Controller
 {
     public function store(Request $request)
     {
-        $request->validate(['name' => 'required|string|max:100']);
+        $data = $request->validate([
+            'name'    => 'required|string|max:100',
+            'section' => 'nullable|string|max:100',
+            'type'    => 'nullable|in:kanban,pipeline',
+        ]);
+        $type = $data['type'] ?? 'kanban';
 
-        $key = $this->uniqueKey($request->name);
-        Category::create(['key' => $key, 'name' => trim($request->name)]);
+        $key = $this->uniqueKey($data['name']);
+        Category::create([
+            'key'     => $key,
+            'name'    => trim($data['name']),
+            'type'    => $type,
+            'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
+        ]);
 
         // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task)
         $defaults = [
@@ -35,14 +45,23 @@ class BoardController extends Controller
             ]);
         }
 
-        return redirect()->route('pipelines.kanban', ['category' => $key])
+        // Board pipeline → ke tabel Pipeline; board kanban → ke papan kanban
+        $route = $type === 'pipeline' ? 'pipelines.index' : 'pipelines.kanban';
+
+        return redirect()->route($route, ['category' => $key])
             ->with('status', 'Board ditambahkan.');
     }
 
     public function update(Request $request, Category $board)
     {
-        $request->validate(['name' => 'required|string|max:100']);
-        $board->update(['name' => trim($request->name)]);
+        $data = $request->validate([
+            'name'    => 'required|string|max:100',
+            'section' => 'nullable|string|max:100',
+        ]);
+        $board->update([
+            'name'    => trim($data['name']),
+            'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
+        ]);
 
         return redirect()->route('pipelines.kanban', ['category' => $board->key])
             ->with('status', 'Board diperbarui.');
