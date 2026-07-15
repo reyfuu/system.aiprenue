@@ -52,11 +52,17 @@ const openEdit = (u) => {                               // handler edit
 };                                                      // akhir openEdit
 
 // Submit form: create -> POST, edit -> PUT
+// reset() WAJIB di dalam onSuccess, bukan cuma di openCreate().
+// Inertia v3 menjadikan data yang barusan dikirim sbg `defaults` baru setelah submit
+// sukses, jadi form.reset() di openCreate() malah memunculkan user sebelumnya —
+// termasuk password. Callback ini jalan SEBELUM Inertia menyimpan defaults barunya,
+// jadi yang tertangkap = form kosong.
 const submit = () => {                                  // handler submit
+    const done = { onSuccess: () => { open.value = false; form.reset(); } };
     if (mode.value === 'create') {                      // jika mode create
-        form.post('/users', { onSuccess: () => (open.value = false) }); // kirim POST
+        form.post('/users', done);                      // kirim POST
     } else {                                            // jika mode edit
-        form.put('/users/' + editId.value, { onSuccess: () => (open.value = false) }); // kirim PUT
+        form.put('/users/' + editId.value, done);       // kirim PUT
     }                                                   // akhir cabang mode
 };                                                      // akhir submit
 

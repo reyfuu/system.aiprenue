@@ -106,9 +106,19 @@ const openAdd = (progress) => {
     addForm.progressKey = progress;     // set kolom tujuan
     addOpen.value = true;
 };
+// WAJIB reset() DI DALAM onSuccess, bukan cuma di openAdd().
+// Inertia v3 menjadikan data yang barusan dikirim sebagai `defaults` baru setelah
+// submit sukses (useForm → onSuccess → setDefaults(form.data())). Akibatnya
+// addForm.reset() di openAdd() malah mengembalikan kartu yang barusan dibuat.
+// Callback ini jalan SEBELUM setDefaults, jadi yang tertangkap = form kosong.
 const submitAdd = () => addForm
     .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .post('/pipelines', { onSuccess: () => (addOpen.value = false) });
+    .post('/pipelines', {
+        onSuccess: () => {
+            addOpen.value = false;
+            addForm.reset();
+        },
+    });
 
 // ---- Modal DETAIL kartu (klik kartu; untuk semua user) ----
 const detailId = ref(null);            // id kartu dibuka
@@ -137,9 +147,11 @@ const openDetail = (card) => {
         editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
     }
 };
+// Tutup modal setelah simpan sukses (samakan dgn submitAdd/arsip/hapus & modal Order).
+// Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
 const submitEdit = () => editForm
     .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .put('/pipelines/' + detailId.value, { preserveScroll: true });
+    .put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: () => (detailId.value = null) });
 const hasLabel = (color) => editForm.labels.some((l) => l.color === color);
 const toggleLabel = (lp) => {
     const i = editForm.labels.findIndex((l) => l.color === lp.color);
