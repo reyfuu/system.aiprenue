@@ -83,64 +83,63 @@ const onCardChange = (evt, toKey) => {
     patchCard(`/pipelines/${card.id}/progress`, { progress: toKey });
 };
 
-// ---- Modal tambah kartu ----
-const addOpen = ref(false);
-// NB: field kolom dinamai `progressKey` (bukan `progress`) agar tak bentrok
-// dengan properti bawaan useForm (`form.progress` = progres upload). Dipetakan
-// ke `progress` saat submit lewat transform().
-const addForm = useForm({ category: props.category, progressKey: props.columns[0]?.key || 'script', endorse: '', jenis: '', account: 'fk', assigned_to: '', link: '', payment_status: 'belum', ke_gilang: 'belum' });
+// ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
+// Dulu ada dua modal terpisah — form tambah cuma subset form edit, jadi kartu baru
+// harus dibuat dulu lalu dibuka lagi untuk mengisi detailnya. Sekarang satu modal:
+// `creating` true = kartu baru (POST), selain itu = edit kartu `detailId` (PUT).
+const detailId = ref(null);            // id kartu yang dibuka (null saat membuat)
+const creating = ref(false);           // sedang membuat kartu baru?
+const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
+// `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
+// (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', ke_gilang: 'belum', labels: [] });
+
+// Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
+// EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
+// sebagai `defaults` baru, jadi reset() malah memunculkan kartu yang barusan dibuat.
+const fillForm = (card) => {
+    editForm.clearErrors();
+    editForm.category = props.category;
+    editForm.endorse = card.endorse ?? '';
+    editForm.jenis = card.jenis ?? '';
+    editForm.description = card.description ?? '';
+    editForm.account = card.account_key ?? 'fk';
+    editForm.progressKey = card.progress ?? props.columns[0]?.key ?? 'script';
+    editForm.assigned_to = card.assigned_to ?? '';
+    editForm.payment_status = card.payment_status ?? 'belum';
+    editForm.amount_idr = card.amount_idr ?? '';
+    editForm.amount_usd = card.amount_usd ?? '';
+    editForm.link = card.link ?? '';
+    editForm.deadline = card.deadline ?? '';
+    editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
+    editForm.notes = card.notes ?? '';
+    editForm.ke_gilang = card.ke_gilang ?? 'belum';
+    editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
+};
+
 const openAdd = (progress) => {
     if (!props.canManage) return;
-    addForm.reset();                    // kembalikan ke default
-    addForm.progressKey = progress;     // set kolom tujuan
-    addOpen.value = true;
+    fillForm({ progress });            // kosong, kecuali kolom tujuan
+    detailId.value = null;
+    creating.value = true;
 };
-// WAJIB reset() DI DALAM onSuccess, bukan cuma di openAdd().
-// Inertia v3 menjadikan data yang barusan dikirim sebagai `defaults` baru setelah
-// submit sukses (useForm → onSuccess → setDefaults(form.data())). Akibatnya
-// addForm.reset() di openAdd() malah mengembalikan kartu yang barusan dibuat.
-// Callback ini jalan SEBELUM setDefaults, jadi yang tertangkap = form kosong.
-const submitAdd = () => addForm
-    .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .post('/pipelines', {
-        onSuccess: () => {
-            addOpen.value = false;
-            addForm.reset();
-        },
-    });
-
-// ---- Modal DETAIL kartu (klik kartu; untuk semua user) ----
-const detailId = ref(null);            // id kartu dibuka
-const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
-// Form edit (khusus manager)
-// `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', ke_gilang: 'belum', labels: [] });
 const openDetail = (card) => {
+    creating.value = false;
     detailId.value = card.id;
-    if (props.canManage) {             // isi form edit dari kartu
-        editForm.category = props.category;
-        editForm.endorse = card.endorse ?? '';
-        editForm.jenis = card.jenis ?? '';
-        editForm.description = card.description ?? '';
-        editForm.account = card.account_key ?? 'fk';
-        editForm.progressKey = card.progress ?? 'script';
-        editForm.assigned_to = card.assigned_to ?? '';
-        editForm.payment_status = card.payment_status ?? 'belum';
-        editForm.amount_idr = card.amount_idr ?? '';
-        editForm.amount_usd = card.amount_usd ?? '';
-        editForm.link = card.link ?? '';
-        editForm.deadline = card.deadline ?? '';
-        editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
-        editForm.notes = card.notes ?? '';
-        editForm.ke_gilang = card.ke_gilang ?? 'belum';
-        editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
+    if (props.canManage) fillForm(card);
+};
+const closeCard = () => { detailId.value = null; creating.value = false; };
+
+// Tutup modal setelah simpan sukses (samakan dgn arsip/hapus & modal Order).
+// Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
+const submitCard = () => {
+    const form = editForm.transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey }));
+    if (creating.value) {
+        form.post('/pipelines', { preserveScroll: true, onSuccess: closeCard });
+    } else {
+        form.put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: closeCard });
     }
 };
-// Tutup modal setelah simpan sukses (samakan dgn submitAdd/arsip/hapus & modal Order).
-// Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
-const submitEdit = () => editForm
-    .transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey })) // progressKey → progress
-    .put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: () => (detailId.value = null) });
 const hasLabel = (color) => editForm.labels.some((l) => l.color === color);
 const toggleLabel = (lp) => {
     const i = editForm.labels.findIndex((l) => l.color === lp.color);
@@ -376,10 +375,14 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
             </div>
         </div>
 
-        <!-- ===== Modal DETAIL kartu ===== -->
-        <ModalWrap v-if="detailId && detailCard" width="max-w-2xl" align="items-start" @close="detailId = null">
+        <!-- ===== Modal kartu: buat kartu baru & detail/edit kartu lama ===== -->
+        <ModalWrap v-if="creating || detailCard" width="max-w-2xl" align="items-start" @close="closeCard">
             <div class="flex items-start justify-between mb-4">
-                <div>
+                <!-- Judul kartu baru: cuma nama kolom tujuan, belum ada kode/status -->
+                <div v-if="creating">
+                    <h2 class="text-lg font-bold text-brand-800">Kartu Baru <span class="text-sm font-normal text-slate-400">· {{ colNames[editForm.progressKey] }}</span></h2>
+                </div>
+                <div v-else>
                     <p class="text-[10px] text-slate-400 font-mono">{{ detailCard.code }}</p>
                     <h2 class="text-lg font-bold flex items-center gap-2 text-brand-800">
                         {{ detailCard.endorse }}
@@ -388,17 +391,18 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                     </h2>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button v-if="canManage" @click="archiveCard(detailCard)" :title="detailCard.archived ? 'Kembalikan dari arsip' : 'Arsipkan kartu'" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                    <!-- Arsip cuma untuk kartu yang sudah ada -->
+                    <button v-if="canManage && detailCard" @click="archiveCard(detailCard)" :title="detailCard.archived ? 'Kembalikan dari arsip' : 'Arsipkan kartu'" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
                         {{ detailCard.archived ? 'Kembalikan' : 'Arsipkan' }}
                     </button>
-                    <button type="button" @click="detailId = null" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+                    <button type="button" @click="closeCard" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
                 </div>
             </div>
 
-            <!-- Form edit lengkap (manager) -->
-            <form v-if="canManage" @submit.prevent="submitEdit" class="grid grid-cols-2 gap-3 text-sm mb-2">
+            <!-- Form lengkap (manager) — sama persis untuk buat & edit -->
+            <form v-if="canManage" @submit.prevent="submitCard" class="grid grid-cols-2 gap-3 text-sm mb-2">
                 <label class="col-span-2 block font-medium text-slate-600">Judul / Endorse
-                    <input v-model="editForm.endorse" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <input v-model="editForm.endorse" required :autofocus="creating" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
                 <label class="col-span-2 block font-medium text-slate-600">Deskripsi
                     <textarea v-model="editForm.description" rows="3" placeholder="Detail task…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
@@ -465,13 +469,14 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                 <label class="col-span-2 block font-medium text-slate-600">Notes
                     <textarea v-model="editForm.notes" rows="2" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
                 </label>
-                <div class="col-span-2 flex justify-end">
-                    <button type="submit" :disabled="editForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan perubahan</button>
+                <div class="col-span-2 flex justify-end gap-2">
+                    <button v-if="creating" type="button" @click="closeCard" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
+                    <button type="submit" :disabled="editForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">{{ creating ? 'Buat kartu' : 'Simpan perubahan' }}</button>
                 </div>
             </form>
 
             <!-- Ringkasan read-only (non-manager) -->
-            <div v-else class="space-y-2 text-sm mb-2">
+            <div v-else-if="detailCard" class="space-y-2 text-sm mb-2">
                 <p v-if="detailCard.deadline"><span class="font-medium text-slate-600">Deadline:</span> <span :class="detailCard.deadline < todayStr() ? 'text-red-600 font-semibold' : 'text-slate-700'">{{ detailCard.deadline }}</span></p>
                 <p v-if="detailCard.assignee"><span class="font-medium text-slate-600">PJ:</span> {{ detailCard.assignee }}</p>
                 <div v-if="detailCard.labels.length" class="flex flex-wrap gap-1.5">
@@ -484,8 +489,8 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                 <a v-if="detailCard.link" :href="detailCard.link" target="_blank" rel="noreferrer" class="text-brand-600 hover:underline text-sm">Buka link video →</a>
             </div>
 
-            <!-- Lampiran -->
-            <div class="border-t border-slate-100 pt-4 mt-2">
+            <!-- Lampiran — perlu id kartu, jadi baru muncul setelah kartunya ada -->
+            <div v-if="detailCard" class="border-t border-slate-100 pt-4 mt-2">
                 <p class="font-semibold text-slate-700 mb-2 text-sm">Lampiran ({{ detailCard.attachments.length }})</p>
                 <div class="space-y-1.5 mb-2">
                     <div v-for="a in detailCard.attachments" :key="a.id" class="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
@@ -509,8 +514,8 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                 <p v-if="attachForm.errors.file" class="text-xs text-red-600 mt-1">{{ attachForm.errors.file }}</p>
             </div>
 
-            <!-- Komentar -->
-            <div class="border-t border-slate-100 pt-4 mt-4">
+            <!-- Komentar — idem: butuh id kartu -->
+            <div v-if="detailCard" class="border-t border-slate-100 pt-4 mt-4">
                 <p class="font-semibold text-slate-700 mb-2 text-sm">Komentar ({{ detailCard.comments.length }})</p>
                 <form @submit.prevent="submitComment" class="flex gap-2 mb-3">
                     <input v-model="commentForm.body" placeholder="Tulis komentar…" class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-brand-400 outline-none" />
@@ -530,43 +535,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                     <p v-if="detailCard.comments.length === 0" class="text-xs text-slate-400">Belum ada komentar.</p>
                 </div>
             </div>
-        </ModalWrap>
-
-        <!-- ===== Modal tambah task ===== -->
-        <ModalWrap v-if="addOpen" width="max-w-md" @close="addOpen = false">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold text-brand-800">Tambah Task <span class="text-sm font-normal text-slate-400">· {{ colNames[addForm.progressKey] }}</span></h2>
-                <button type="button" @click="addOpen = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
-            </div>
-            <form @submit.prevent="submitAdd" class="space-y-3 text-sm">
-                <label class="block font-medium text-slate-600">Judul / Endorse
-                    <input v-model="addForm.endorse" required autofocus class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
-                </label>
-                <label class="block font-medium text-slate-600">Account
-                    <select v-model="addForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                        <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
-                    </select>
-                </label>
-                <label v-if="boardType === 'pipeline'" class="block font-medium text-slate-600">Jenis
-                    <select v-model="addForm.jenis" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                        <option value="">— tanpa jenis —</option>
-                        <option v-for="(v, k) in jenisList" :key="k" :value="k">{{ v }}</option>
-                    </select>
-                </label>
-                <label class="block font-medium text-slate-600">Penanggung Jawab (Staff)
-                    <select v-model="addForm.assigned_to" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                        <option value="">— belum ditugaskan —</option>
-                        <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }} ({{ s.role }})</option>
-                    </select>
-                </label>
-                <label class="block font-medium text-slate-600">Link Video (opsional)
-                    <input type="url" v-model="addForm.link" placeholder="https://…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
-                </label>
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" @click="addOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
-                    <button type="submit" :disabled="addForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan</button>
-                </div>
-            </form>
         </ModalWrap>
 
         <!-- ===== Modal board baru ===== -->
