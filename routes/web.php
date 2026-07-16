@@ -68,7 +68,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::delete('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'destroy'])->name('mindmaps.destroy');
 
     // Script (template dulu — data dikirim Hermes agent nanti)
-    Route::get('/script', fn () => Inertia::render('Script'))->name('script.index');
+    Route::get('/script', [\App\Http\Controllers\ScriptController::class, 'index'])->name('script.index');
+    Route::get('/script/{brand}', [\App\Http\Controllers\ScriptController::class, 'show'])->name('script.show');
+    Route::delete('/script/{script}', [\App\Http\Controllers\ScriptController::class, 'destroy'])->name('script.destroy');
 
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');
