@@ -99,6 +99,38 @@ class SalesPipelineTest extends TestCase
         $this->assertSame(0, Pipeline::count());
     }
 
+    /** Modal buat & edit kini satu form, jadi kartu baru dikirim lengkap dengan
+     *  detailnya sekali POST — bukan bikin dulu lalu dibuka lagi untuk diisi. */
+    public function test_kartu_baru_dibuat_lengkap_dengan_detailnya_sekali_kirim(): void
+    {
+        $pj = $this->user('staff');
+        $output = \App\Models\Output::create(['name' => 'Reels']);
+
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Deal lengkap',
+            'progress' => 'nego', 'jenis' => 'coaching_1on1', 'payment_status' => 'dp',
+            'description' => 'Detail deal', 'deadline' => '2026-09-01',
+            'assigned_to' => $pj->id, 'amount_idr' => 5_000_000, 'amount_usd' => 250,
+            'link' => 'https://example.com/video', 'notes' => 'Catatan',
+            'outputs' => [$output->id],
+            'labels' => [['name' => 'Prioritas', 'color' => 'bg-red-500']],
+        ])->assertSessionHasNoErrors();
+
+        $kartu = Pipeline::firstWhere('endorse', 'Deal lengkap');
+        $this->assertNotNull($kartu, 'kartu harus terbuat');
+        $this->assertSame('nego', $kartu->progress);
+        $this->assertSame('coaching_1on1', $kartu->jenis);
+        $this->assertSame('Detail deal', $kartu->description);
+        $this->assertSame('dp', $kartu->payment_status);
+        $this->assertSame($pj->id, $kartu->assigned_to);
+        $this->assertEquals(5_000_000, $kartu->amount_idr);
+        $this->assertEquals(250, $kartu->amount_usd);
+        $this->assertSame('2026-09-01', $kartu->deadline?->toDateString());
+        $this->assertSame('Catatan', $kartu->notes);
+        $this->assertSame([['name' => 'Prioritas', 'color' => 'bg-red-500']], $kartu->labels);
+        $this->assertSame([$output->id], $kartu->outputs->pluck('id')->all());
+    }
+
     /** Refactor renderBoard() dipakai bersama — pastikan modul Kanban tak ikut berubah. */
     public function test_kanban_masih_punya_galeri_dan_base_url_sendiri(): void
     {
