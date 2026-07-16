@@ -19,10 +19,18 @@ class RootRouteTest extends TestCase
 
     public function test_user_login_dialihkan_ke_halaman_awalnya(): void
     {
-        foreach (['owner', 'manager', 'it', 'staff'] as $role) {
+        // staff tak punya dashboard → jatuh ke menu pertama yg boleh dilihatnya
+        $tujuan = [
+            'owner'   => 'dashboard',
+            'manager' => 'dashboard',
+            'it'      => 'dashboard',
+            'staff'   => 'pipelines.kanban',
+        ];
+
+        foreach ($tujuan as $role => $route) {
             $this->actingAs(User::factory()->create(['role' => $role]))
                 ->get('/')
-                ->assertRedirect(route('dashboard'));   // semua peran punya menu dashboard
+                ->assertRedirect(route($route));
         }
     }
 

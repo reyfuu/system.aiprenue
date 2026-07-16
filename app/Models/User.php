@@ -30,7 +30,7 @@ class User extends Authenticatable
         'owner'   => ['*'],
         'it'      => ['*'],           // IT = akses penuh teknis
         'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan'],
-        'staff'   => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script'],
+        'staff'   => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
     /** Apakah role user boleh melihat menu tertentu. */
