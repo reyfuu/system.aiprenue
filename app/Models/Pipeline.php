@@ -14,8 +14,8 @@ class Pipeline extends Model
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
-        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'ke_gilang', 'catatan', 'done',
-        'archived_at', 'created_by', 'updated_by',
+        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'done',
+        'archived_at',
     ];
 
     protected $casts = [
@@ -88,5 +88,4 @@ class Pipeline extends Model
         'pending' => 'Pending', 'done' => 'Done',
     ];
     public const PAYMENT = ['belum' => 'Belum', 'dp' => 'DP', 'lunas' => 'Lunas'];
-    public const KE_GILANG = ['belum' => 'Belum', 'sudah' => 'Sudah', 'done' => 'DONE'];
 }

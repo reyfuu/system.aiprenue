@@ -72,10 +72,32 @@ class PipelineController extends Controller
     {
         // Tampilkan kartu aktif; bila ?archived=1 → tampilkan yg diarsipkan
         $showArchived = $request->boolean('archived');
+
+        // Filter jenis — bisa banyak sekaligus (?jenis[]=endorse&jenis[]=speaker).
+        // Nilai ngawur dibuang lewat intersect, BUKAN divalidasi: ?jenis ngawur jangan
+        // bikin halaman error, cukup diabaikan.
+        // Difilter di QUERY, bukan di Vue: SortableJS memutasi array kolom langsung saat
+        // drag, jadi array hasil filter di frontend akan merusak drag & drop.
+        // NB: bentuk UI-nya WAJIB chip, bukan dropdown. Versi dropdown pernah ada dan
+        // dibuang — letaknya sama dgn dropdown board lama, jadi terbaca "pindah board".
+        $jenis = array_values(array_intersect(
+            array_map('strval', (array) $request->input('jenis', [])),
+            array_keys(Pipeline::JENIS)
+        ));
+
         $pipelines = Pipeline::where('category', $category)
             ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
             ->orderBy('id')->get();
+
+        // Jumlah kartu per jenis untuk angka di chip — TIDAK ikut $jenis, kalau ikut
+        // angkanya jadi 0 begitu chip lain dipilih & tak bisa dipakai memilih.
+        // Ikut $showArchived supaya cocok dgn apa yang sedang ditampilkan.
+        $jenisCounts = Pipeline::where('category', $category)
+            ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->whereNotNull('jenis')
+            ->selectRaw('jenis, COUNT(*) as total')->groupBy('jenis')->pluck('total', 'jenis')->toArray();
 
         // Hitung kartu AKTIF per kategori (arsip tidak dihitung)
         $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
@@ -136,7 +158,6 @@ class PipelineController extends Controller
                 'progress'       => $p->progress,
                 'output_ids'     => $p->outputs->pluck('id'),
                 'notes'          => $p->notes,
-                'ke_gilang'      => $p->ke_gilang,
             ];
         }
 
@@ -155,6 +176,8 @@ class PipelineController extends Controller
             'rate'          => ExchangeRate::usdToIdr(),
             'board'         => $board,                                       // kartu tersusun per kolom
             'columns'       => $columns,                                     // kolom dinamis board ini
+            'jenis'         => $jenis,                                      // chip aktif (array; kosong = semua)
+            'jenisCounts'   => $jenisCounts,                                // angka di tiap chip
             'showArchived'  => $showArchived,                               // sedang lihat arsip?
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
             'staff'         => User::orderBy('name')->get(['id', 'name', 'role']),
@@ -165,7 +188,6 @@ class PipelineController extends Controller
             'accounts'     => Pipeline::ACCOUNTS,
             'jenisList'    => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
             'payments'     => Pipeline::PAYMENT,
-            'keGilang'     => Pipeline::KE_GILANG,
         ]);
     }
 
@@ -248,18 +270,9 @@ class PipelineController extends Controller
             'amount_idr'      => 'nullable|numeric|min:0',
             'amount_usd'      => 'nullable|numeric|min:0',
             'notes'           => 'nullable|string',
-            'ke_gilang'       => 'nullable|in:belum,sudah,done',
-            'catatan'         => 'nullable|string',
             'outputs'         => 'array',
             'outputs.*'       => 'exists:outputs,id',
         ]);
-
-        // ke_gilang sudah tak ada di form Pipeline (kolomnya dibuang dari tabel).
-        // Bila tak dikirim, buang dari $data — jangan kirim null ke kolom NOT NULL:
-        // create → pakai default DB ('belum'), update → nilai lama tetap utuh.
-        if (! array_key_exists('ke_gilang', $data) || $data['ke_gilang'] === null) {
-            unset($data['ke_gilang']);
-        }
 
         return $data;
     }

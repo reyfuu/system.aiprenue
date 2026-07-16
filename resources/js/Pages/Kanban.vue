@@ -14,10 +14,12 @@ const props = defineProps({
     category: String, counts: Object, categories: Object, board: Object, columns: Array,
     staff: Array, outputs: Array, canManage: Boolean, currentBoard: Object,
     showArchived: Boolean, archivedCount: Number, accounts: Object, jenisList: Object,
+    jenis: { type: Array, default: () => [] },   // chip jenis yang aktif (kosong = semua)
+    jenisCounts: { type: Object, default: () => ({}) },
     baseUrl: { type: String, default: '/pipelines/kanban' },
     pageTitle: { type: String, default: 'Kanban' },
     showGallery: { type: Boolean, default: true },
-    boardType: { type: String, default: 'kanban' },   // tipe board baru yg dibuat dari halaman ini
+    boardType: { type: String, default: 'kanban' },   // 'pipeline' (Sales) | 'kanban' — lihat isPipeline
     rate: { type: Number, default: 0 },               // kurs USD→IDR utk menjumlah nilai deal
 });
 
@@ -92,7 +94,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', ke_gilang: 'belum', labels: [] });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [] });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -113,7 +115,6 @@ const fillForm = (card) => {
     editForm.deadline = card.deadline ?? '';
     editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
     editForm.notes = card.notes ?? '';
-    editForm.ke_gilang = card.ke_gilang ?? 'belum';
     editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
 };
 
@@ -181,7 +182,9 @@ const boardEditOpen = ref(false);
 const colCreateOpen = ref(false);
 const colEditOpen = ref(false);
 const colEditId = ref(null);
-const boardForm = useForm({ name: '', type: props.boardType });
+// Tanpa `type`: board baru selalu kanban (ditegakkan BoardController). Board pipeline
+// cuma `sales` & tak bisa ditambah — pembeda deal di sana adalah `jenis`.
+const boardForm = useForm({ name: '' });
 const colForm = useForm({ board_key: props.category, name: '' });
 const submitBoardCreate = () => boardForm.post('/boards', { onSuccess: () => (boardCreateOpen.value = false) });
 const submitBoardEdit = () => boardForm.put('/boards/' + props.currentBoard.key, { onSuccess: () => (boardEditOpen.value = false) });
@@ -191,26 +194,61 @@ const openColEdit = (id, name) => { colEditId.value = id; colForm.name = name; c
 const deleteColumn = (id) => { if (props.canManage && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
 const deleteBoard = () => { if (confirm(`Hapus board "${props.currentBoard.name}"? (hanya bila kosong)`)) router.delete('/boards/' + props.currentBoard.key); };
 const switchBoard = (e) => router.get(props.baseUrl, { category: e.target.value }, { preserveState: false });
-const toggleArchiveView = () => router.get(props.baseUrl, { category: props.category, archived: props.showArchived ? undefined : 1 }, { preserveState: false });
+
+// Sales cuma punya SATU board (`sales`): tak ada pilih/buat/ubah/hapus board.
+const isPipeline = computed(() => props.boardType === 'pipeline');
+
+// ---- Filter jenis (chip, board sales) ----
+// WAJIB chip, JANGAN dropdown. Versi dropdown pernah ada & dibuang: letaknya sama
+// dgn dropdown board yang lama, jadi memilih jenis terbaca sbg "pindah board".
+// Chip tak punya masalah itu — bisa aktif banyak sekaligus, & "Semua" selalu terlihat.
+const jenisAktif = computed(() => new Set(props.jenis || []));
+const filterAktif = computed(() => jenisAktif.value.size > 0);
+
+// Kirim ulang halaman dgn daftar chip yang baru. Array kosong → param dibuang
+// (?jenis[]= kosong tetap terbaca array berisi '' oleh Laravel).
+const pergiKeFilter = (keys) => router.get(props.baseUrl, {
+    category: props.category,
+    jenis: keys.length ? keys : undefined,
+    archived: props.showArchived ? 1 : undefined,
+}, { preserveState: false });
+
+const toggleJenis = (key) => {
+    const next = new Set(jenisAktif.value);
+    next.has(key) ? next.delete(key) : next.add(key);
+    pergiKeFilter([...next]);
+};
+const resetJenis = () => filterAktif.value && pergiKeFilter([]);
+
+// `jenis` ikut dibawa supaya filter tak hilang saat pindah ke arsip & sebaliknya.
+const toggleArchiveView = () => router.get(props.baseUrl, {
+    category: props.category,
+    jenis: props.jenis?.length ? props.jenis : undefined,
+    archived: props.showArchived ? undefined : 1,
+}, { preserveState: false });
 </script>
 
 <template>
     <Layout :title="pageTitle">
         <div class="p-6">
-            <!-- Toolbar board -->
-            <div class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex items-center gap-3">
+            <!-- Toolbar board. Di Sales tak dirender sama sekali: isinya tinggal tombol
+                 Arsip (board tunggal → tak ada dropdown/aksi board, angka total dibuang),
+                 dan panel putih berisi satu tombol cuma jadi kotak menganga. Arsipnya
+                 pindah ke baris Filter di bawah. -->
+            <div v-if="!isPipeline" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex items-center gap-3">
                 <!-- Balik ke galeri (kanban luar; Sales Pipeline tak punya galeri) -->
                 <Link v-if="showGallery" :href="baseUrl" title="Semua board" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 mt-5 pr-2 border-r border-slate-200">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
                     Galeri
                 </Link>
+                <!-- Board: Kanban punya banyak, jadi tetap bisa dipilih -->
                 <div>
                     <p class="text-[10px] uppercase tracking-widest text-slate-400 mb-1">Board</p>
                     <select :value="category" @change="switchBoard" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option v-for="(cv, ck) in categories" :key="ck" :value="ck">{{ cv }} · {{ counts[ck] ?? 0 }}</option>
                     </select>
                 </div>
-                <!-- Ringkasan board: jml + total nilai (mengembalikan angka omzet yg dulu di tabel) -->
+                <!-- Ringkasan board: jml + total nilai -->
                 <span class="text-sm text-slate-400 mt-5">
                     {{ boardCount }} {{ isTodolist ? 'task' : 'deal' }}<template v-if="!isTodolist"> · <span class="font-semibold text-slate-600">{{ rp(boardValue) }}</span></template>
                 </span>
@@ -244,13 +282,48 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                 </span>
             </div>
 
+            <!-- Filter jenis (Sales). Sengaja BARIS SENDIRI di luar toolbar & berbentuk
+                 chip: versi dropdown di dalam toolbar terbaca sbg penukar board. -->
+            <div v-if="isPipeline" class="flex items-center gap-2 flex-wrap mb-3 px-0.5">
+                <span class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" /></svg>
+                    Filter
+                </span>
+                <!-- "Semua" = jalan pulang, selalu terlihat -->
+                <button type="button" @click="resetJenis" :aria-pressed="!filterAktif"
+                        :class="['text-xs font-semibold rounded-full px-3 py-1.5 border transition', !filterAktif ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400']">
+                    Semua
+                </button>
+                <button v-for="(label, key) in jenisList" :key="key" type="button" @click="toggleJenis(key)" :aria-pressed="jenisAktif.has(key)"
+                        :class="['inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition', jenisAktif.has(key) ? 'bg-brand-50 text-brand-700 border-brand-500' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400']">
+                    {{ label }}
+                    <span :class="['text-[10px] font-mono', jenisAktif.has(key) ? 'text-brand-600' : 'text-slate-400']">{{ jenisCounts[key] ?? 0 }}</span>
+                </button>
+
+                <!-- Arsip menumpang baris ini karena toolbar Sales sudah tak dirender.
+                     WAJIB tetap ada di suatu tempat: ini satu-satunya jalan melihat &
+                     mengembalikan kartu terarsip, sementara tombol "Arsipkan" di modal
+                     kartu masih hidup. -->
+                <button @click="toggleArchiveView" :class="['ml-auto inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition', showArchived ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50']">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4" /></svg>
+                    {{ showArchived ? 'Lihat aktif' : `Arsip (${archivedCount})` }}
+                </button>
+                <!-- Badge view-only: Sales tak punya toolbar, jadi ikut di sini -->
+                <span v-if="!canManage" class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-3 py-1.5" title="Anda hanya bisa melihat & komentar">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S5 5 12 5s9.5 7 9.5 7-2.5 7-9.5 7-9.5-7-9.5-7z" /></svg>
+                    Lihat & komentar
+                </span>
+            </div>
+
             <!-- Pembeda mode: Task Aktif (hijau) vs Mode Arsip (amber) -->
             <div :class="['flex items-center gap-2.5 rounded-xl border px-4 py-2.5 mb-5', showArchived ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200']">
                 <!-- ikon: kotak arsip / papan aktif -->
                 <svg v-if="showArchived" class="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4" /></svg>
                 <svg v-else class="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10" /></svg>
                 <span :class="['font-bold text-sm', showArchived ? 'text-amber-800' : 'text-emerald-800']">{{ showArchived ? 'Mode Arsip' : 'Task Aktif' }}</span>
-                <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : `${counts[category] ?? 0} kartu aktif di board ini` }}</span>
+                <!-- Saat filter aktif: boardCount, BUKAN counts[category]. Yang kedua tak ikut
+                     filter, jadi angkanya beda dgn kartu yang benar-benar tampil. -->
+                <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : (filterAktif ? `${boardCount} kartu tersaring dari ${counts[category] ?? 0}` : `${counts[category] ?? 0} kartu aktif di board ini`) }}</span>
                 <button @click="router.reload()" title="Muat ulang" class="ml-auto inline-flex items-center gap-1 bg-white/70 hover:bg-white border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                     Refresh
@@ -420,7 +493,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, { category: props.cate
                         <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                     </select>
                 </label>
-                <label v-if="boardType === 'pipeline'" class="block font-medium text-slate-600">Jenis
+                <label v-if="isPipeline" class="block font-medium text-slate-600">Jenis
                     <select v-model="editForm.jenis" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option value="">— tanpa jenis —</option>
                         <option v-for="(v, k) in jenisList" :key="k" :value="k">{{ v }}</option>

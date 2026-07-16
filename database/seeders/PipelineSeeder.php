@@ -13,7 +13,9 @@ class PipelineSeeder extends Seeder
 {
     public function run(): void
     {
-        $outputs = collect(['Reels', 'Story', 'Feed', 'TikTok', 'YouTube', 'Twitter/X'])
+        // NB: daftar ini cuma untuk DB dev yang baru. Produksi dapat 'Video' & 'Foto'
+        // dari migrasi 2026_07_16_100000 — seeder tak jalan di sana (dipagari).
+        $outputs = collect(['Reels', 'Story', 'Feed', 'TikTok', 'YouTube', 'Twitter/X', 'Video', 'Foto'])
             ->map(fn ($n) => Output::firstOrCreate(['name' => $n]));
 
         $staff = User::orderBy('id')->pluck('id')->all();
@@ -81,7 +83,6 @@ class PipelineSeeder extends Seeder
                     'amount_idr'      => $isUsd ? null : (1_500_000 + ($i * 350_000)),
                     'amount_usd'      => $isUsd ? (150 + $i * 20) : null,
                     'link'            => $prog !== 'lead' ? "https://youtu.be/demo{$i}" : null,
-                    'ke_gilang'       => ['belum', 'sudah', 'done'][$i % 3],
                     'notes'           => "Kampanye {$brand} — batch " . (intdiv($i, 5) + 1),
                 ]
             );

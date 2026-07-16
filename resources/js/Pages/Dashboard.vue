@@ -3,10 +3,14 @@
 import { computed } from 'vue';               // computed untuk turunan reaktif
 import { Link, usePage } from '@inertiajs/vue3'; // Link navigasi Inertia, usePage untuk shared props
 import Layout from '../Layout.vue';           // Layout sudah render sidebar + flash toast
+import '../scripts/lib/charts';               // registrasi elemen Chart.js (dipakai bareng Pembukuan)
+import { Line } from 'vue-chartjs';           // komponen chart siap pakai
 
 // Props dari DashboardController — satu objek per modul
 const props = defineProps({
     rate: [Number, String],                             // kurs USD→IDR
+    monthly: { type: Array, default: () => [] },        // omzet per bulan: { label, perAccount, total }
+    accounts: { type: Object, default: () => ({}) },    // key→label akun (urutan seri grafik)
     summary: { type: Object, default: () => ({}) },     // ringkasan atas (grandIdr, total, lunas, outstanding)
     pipeline: { type: Object, default: () => ({}) },    // { total, grandIdr, perCategory, categories }
     kanban: { type: Object, default: () => ({}) },      // { total, done, boards, perProgress, progresses }
@@ -22,6 +26,52 @@ const menus = computed(() => page.props.auth?.user?.menus ?? {});
 
 // Helper format Rupiah: 1234567 → "Rp 1.234.567"
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+// ---- Grafik omzet per bulan: satu garis per akun ----
+const adaMonthly = computed(() => props.monthly.length > 0);
+// Warna seri: samakan dgn badge akun di kartu Sales (FK brand, AI Preneur slate).
+const WARNA_AKUN = { fk: '#4f46e5', ai_preneur: '#64748b' };
+const lineData = computed(() => ({
+    labels: props.monthly.map((m) => m.label),
+    datasets: Object.entries(props.accounts).map(([key, label]) => {
+        const warna = WARNA_AKUN[key] ?? '#94a3b8';
+
+        return {
+            label,
+            data: props.monthly.map((m) => m.perAccount?.[key] ?? 0),
+            borderColor: warna,
+            backgroundColor: warna,   // warna titik & kotak legend
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.3,             // sedikit melengkung; 0 bikin patah-patah
+        };
+    }),
+}));
+const lineOpts = {
+    responsive: true,
+    maintainAspectRatio: false,   // wajib false agar chart mengikuti tinggi container
+    interaction: { mode: 'index', intersect: false },   // hover di mana saja pada bulan itu → dua garis sekaligus
+    plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, usePointStyle: true } },
+        tooltip: {
+            callbacks: {
+                label: (c) => `${c.dataset.label}: ${rp(c.parsed.y)}`,
+                // Garis tak ditumpuk, jadi total bulan tak terbaca dari tingginya —
+                // taruh di footer, karena itu justru pertanyaannya: "bulan ini berapa?"
+                footer: (items) => 'Total: ' + rp(items.reduce((s, i) => s + i.parsed.y, 0)),
+            },
+        },
+    },
+    scales: {
+        x: { grid: { display: false } },
+        y: {
+            beginAtZero: true,   // tanpa ini sumbu mulai dari nilai terendah & selisihnya terlihat berlebihan
+            ticks: { callback: (v) => 'Rp ' + Number(v).toLocaleString('id-ID') },
+            grid: { color: '#eef2ff' },
+        },
+    },
+};
 
 // Warna titik/bar per progress kanban
 const progressDot = {
@@ -62,11 +112,20 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
         <div class="px-6 py-6 space-y-6">
             <!-- ===== Ringkasan cepat (angka bisnis pipeline) ===== -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <!-- Grand omzet (sengaja paling kiri) -->
                 <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
                     <p class="text-xs text-brand-100 font-medium">Grand Omzet (IDR)</p>
                     <p class="text-2xl font-bold mt-1">{{ rp(summary.grandIdr) }}</p>
+                </div>
+                <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
+                     FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
+                     dua blok disalin — nambah akun cukup di Pipeline::ACCOUNTS. -->
+                <div v-for="(akun, key) in summary.perAccount" :key="key"
+                     class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                    <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
+                    <p class="text-xl font-bold text-brand-700 mt-1 truncate" :title="rp(akun.grandIdr)">{{ rp(akun.grandIdr) }}</p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} deal</p>
                 </div>
                 <!-- Total entri -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
@@ -83,6 +142,22 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                     <p class="text-xs text-slate-500 font-medium">Outstanding</p>
                     <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.outstanding }}</p>
                 </div>
+            </div>
+
+            <!-- ===== Grafik omzet per bulan ===== -->
+            <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
+                <div class="flex items-baseline justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">Omzet per Bulan</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Nilai deal Sales, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}</p>
+                    </div>
+                    <span class="text-xs text-slate-400 whitespace-nowrap">{{ monthly.length }} bulan</span>
+                </div>
+                <!-- h-64 + maintainAspectRatio:false → chart mengisi tinggi ini -->
+                <div v-if="adaMonthly" class="h-64">
+                    <Line :data="lineData" :options="lineOpts" />
+                </div>
+                <p v-else class="text-sm text-slate-400 py-10 text-center">Belum ada deal untuk digrafikkan.</p>
             </div>
 
             <!-- ===== Kartu ringkasan per modul ===== -->
