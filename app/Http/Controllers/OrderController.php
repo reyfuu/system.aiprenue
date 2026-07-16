@@ -27,6 +27,13 @@ class OrderController extends Controller
         if ($request->filled('tipe_pembayaran')) {
             $query->where('tipe_pembayaran', $request->tipe_pembayaran);
         }
+        // Filter output lewat pivot. whereHas, BUKAN join: join baru aman selama
+        // filternya satu output (tiap order paling banyak cocok satu baris pivot).
+        // Begitu ini menerima banyak output — spt chip jenis di Sales — join langsung
+        // menduplikat ordernya. whereHas kebal dari awal.
+        if ($request->filled('output')) {
+            $query->whereHas('outputs', fn ($q) => $q->where('outputs.id', $request->output));
+        }
         // Rentang tanggal deadline. Batas bawah/atas berdiri sendiri:
         // isi salah satu saja tetap jalan (mis. "sampai 31 Agu" tanpa batas awal).
         if ($request->filled('date_from')) {
@@ -53,7 +60,7 @@ class OrderController extends Controller
 
         return Inertia::render('Orders/Index', [
             'orders'  => $orders,
-            'filters' => $request->only(['tipe_order', 'account', 'tipe_pembayaran', 'date_from', 'date_to', 'search']),
+            'filters' => $request->only(['tipe_order', 'account', 'tipe_pembayaran', 'output', 'date_from', 'date_to', 'search']),
             'summary' => [
                 'total'    => Order::count(),
                 'totalIdr' => $totalIdr,
