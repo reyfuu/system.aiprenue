@@ -124,4 +124,19 @@ class UserCrudTest extends TestCase
 
         $this->assertSame(0, User::where('email', 'staf@example.com')->count());
     }
+
+    /** Staff cuma boleh Kanban & Mindmap. Konstanta ini menyetir dua hal sekaligus:
+     *  gerbang route (EnsureMenuAccess) & daftar menu sidebar (HandleInertiaRequests). */
+    public function test_staff_cuma_boleh_kanban_dan_mindmap(): void
+    {
+        $staff = $this->user('staff');
+
+        foreach (['kanban', 'mindmap'] as $boleh) {
+            $this->assertTrue($staff->canSee($boleh), "staff harus boleh lihat {$boleh}");
+        }
+
+        foreach (['dashboard', 'pipeline', 'order', 'script', 'pembukuan', 'user'] as $tolak) {
+            $this->assertFalse($staff->canSee($tolak), "staff tak boleh lihat {$tolak}");
+        }
+    }
 }

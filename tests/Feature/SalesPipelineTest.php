@@ -161,12 +161,14 @@ class SalesPipelineTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_staff_boleh_lihat_tapi_tak_boleh_ubah(): void
+    /** Staff cuma boleh Kanban & Mindmap — Sales Pipeline tertutup sama sekali,
+     *  termasuk mutasinya (yang lewat route bersama Kanban). */
+    public function test_staff_tak_boleh_lihat_maupun_ubah_sales_pipeline(): void
     {
         $card = $this->card('lead');
         $staff = $this->user('staff');
 
-        $this->actingAs($staff)->get('/pipelines')->assertOk();
+        $this->actingAs($staff)->get('/pipelines')->assertForbidden();
         $this->actingAs($staff)->patchJson("/pipelines/{$card->id}/progress", ['progress' => 'nego'])->assertForbidden();
         // `done` dulu lolos cek canManage() — sekarang ikut tertutup
         $this->actingAs($staff)->patchJson("/pipelines/{$card->id}/done", ['done' => true])->assertForbidden();
