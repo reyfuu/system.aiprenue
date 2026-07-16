@@ -207,6 +207,74 @@ class OrderTest extends TestCase
         }
     }
 
+    /** Output order lewat pivot `order_output`. Pilihannya = tabel `outputs`, satu
+     *  sumber dgn kartu Sales/Kanban — jangan ada daftar kedua. */
+    public function test_output_order_tersimpan_lewat_pivot(): void
+    {
+        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
+        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $this->assertNotNull($foto, "output 'Foto' harus ada dari migrasi");
+
+        $this->actingAs($this->user())
+            ->post('/orders', $this->payload(['outputs' => [$reels->id, $foto->id]]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['Foto', 'Reels'],
+            Order::first()->outputs->pluck('name')->sort()->values()->all()
+        );
+    }
+
+    /** `outputs` bukan kolom di tabel orders — kalau ikut terbawa ke Order::create(),
+     *  Eloquent melempar. Order tanpa output pun harus tetap tersimpan. */
+    public function test_order_tanpa_output_tetap_tersimpan(): void
+    {
+        $this->actingAs($this->user())->post('/orders', $this->payload())
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(1, Order::count());
+        $this->assertCount(0, Order::first()->outputs);
+    }
+
+    public function test_output_ngawur_ditolak(): void
+    {
+        $this->actingAs($this->user())
+            ->post('/orders', $this->payload(['outputs' => [999999]]))
+            ->assertSessionHasErrors('outputs.0');
+
+        $this->assertSame(0, Order::count());
+    }
+
+    /** Edit harus MENGGANTI daftar output, bukan menambahi. */
+    public function test_edit_order_mengganti_daftar_output(): void
+    {
+        $a = \App\Models\Output::create(['name' => 'Output A']);
+        $b = \App\Models\Output::create(['name' => 'Output B']);
+
+        $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$a->id]]));
+        $order = Order::first();
+        $this->assertSame([$a->id], $order->outputs->pluck('id')->all());
+
+        $this->actingAs($this->user())
+            ->put('/orders/'.$order->id, $this->payload(['outputs' => [$b->id]]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame([$b->id], $order->fresh()->outputs->pluck('id')->all());
+    }
+
+    /** Hapus order ikut membersihkan pivot — cascadeOnDelete. */
+    public function test_hapus_order_ikut_membuang_baris_pivot(): void
+    {
+        $out = \App\Models\Output::create(['name' => 'Output X']);
+        $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$out->id]]));
+        $order = Order::first();
+
+        $this->actingAs($this->user())->delete('/orders/'.$order->id)->assertSessionHasNoErrors();
+
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('order_output')->where('order_id', $order->id)->count());
+        $this->assertNotNull($out->fresh(), 'output-nya sendiri jangan ikut terhapus');
+    }
+
     public function test_staff_tak_boleh_membuat_order(): void
     {
         $this->actingAs($this->user('staff'))->post('/orders', $this->payload())->assertForbidden();

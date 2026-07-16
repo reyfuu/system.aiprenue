@@ -16,6 +16,7 @@ const props = defineProps({
     showArchived: Boolean, archivedCount: Number, accounts: Object, jenisList: Object,
     jenis: { type: Array, default: () => [] },   // chip jenis yang aktif (kosong = semua)
     jenisCounts: { type: Object, default: () => ({}) },
+    boardTotal: { type: Number, default: 0 },    // estimasi nilai SELURUH board (tak ikut filter)
     baseUrl: { type: String, default: '/pipelines/kanban' },
     pageTitle: { type: String, default: 'Kanban' },
     showGallery: { type: Boolean, default: true },
@@ -300,11 +301,18 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     <span :class="['text-[10px] font-mono', jenisAktif.has(key) ? 'text-brand-600' : 'text-slate-400']">{{ jenisCounts[key] ?? 0 }}</span>
                 </button>
 
+                <!-- Estimasi SELURUH board — pakai prop boardTotal dari server, BUKAN
+                     boardValue: yang kedua menjumlah kartu yang tampil, jadi menyusut
+                     begitu chip dipilih. Nilai tersaring ditaruh terpisah di bawahnya. -->
+                <span class="ml-auto text-xs text-slate-400 whitespace-nowrap">
+                    Estimasi board <span class="font-bold text-slate-600 text-sm">{{ rp(boardTotal) }}</span>
+                </span>
+
                 <!-- Arsip menumpang baris ini karena toolbar Sales sudah tak dirender.
                      WAJIB tetap ada di suatu tempat: ini satu-satunya jalan melihat &
                      mengembalikan kartu terarsip, sementara tombol "Arsipkan" di modal
                      kartu masih hidup. -->
-                <button @click="toggleArchiveView" :class="['ml-auto inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition', showArchived ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50']">
+                <button @click="toggleArchiveView" :class="['inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition', showArchived ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50']">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4" /></svg>
                     {{ showArchived ? 'Lihat aktif' : `Arsip (${archivedCount})` }}
                 </button>
@@ -324,6 +332,11 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 <!-- Saat filter aktif: boardCount, BUKAN counts[category]. Yang kedua tak ikut
                      filter, jadi angkanya beda dgn kartu yang benar-benar tampil. -->
                 <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : (filterAktif ? `${boardCount} kartu tersaring dari ${counts[category] ?? 0}` : `${counts[category] ?? 0} kartu aktif di board ini`) }}</span>
+                <!-- Nilai yang TERSARING — cuma saat filter aktif. Tanpa ini, "Estimasi
+                     board" yang diam saat chip dipilih terbaca seperti angka macet. -->
+                <span v-if="filterAktif && !showArchived && !isTodolist" class="text-xs font-semibold text-emerald-800">
+                    · {{ rp(boardValue) }} tersaring
+                </span>
                 <button @click="router.reload()" title="Muat ulang" class="ml-auto inline-flex items-center gap-1 bg-white/70 hover:bg-white border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                     Refresh
