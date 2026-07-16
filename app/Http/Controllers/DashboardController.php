@@ -39,6 +39,35 @@ class DashboardController extends Controller
             ];
         }
 
+        // ---- Omzet per bulan, dipecah per akun ----
+        // Tanggalnya `tanggal_posting`, mundur ke `created_at` bila kosong.
+        // BUKAN tanggal_payment: cuma terisi saat deal lunas, jadi mayoritas deal
+        // akan lenyap dari grafik tanpa jejak. `deadline` tak pernah diisi sama sekali.
+        // Mundur ke created_at supaya tak ada deal yang hilang diam-diam — total
+        // grafik tetap = Grand Omzet.
+        $perBulan = [];
+        foreach ($pipe as $p) {
+            $tgl = $p->tanggal_posting ?? $p->created_at;
+            if (! $tgl) {
+                continue;
+            }
+            $bulan = $tgl->format('Y-m');
+            $perBulan[$bulan] ??= array_fill_keys(array_keys(Pipeline::ACCOUNTS), 0.0);
+            // akun di luar daftar (data lama) tetap dihitung, jangan didiamkan hilang
+            $perBulan[$bulan][$p->account] = ($perBulan[$bulan][$p->account] ?? 0.0)
+                + (float) $p->amount_idr + (float) $p->amount_usd * $rate;
+        }
+        ksort($perBulan);   // urut kronologis; array key 'Y-m' menyortir dgn benar sbg string
+
+        $monthly = [];
+        foreach ($perBulan as $bulan => $akun) {
+            $monthly[] = [
+                'label'      => \Carbon\Carbon::createFromFormat('Y-m', $bulan)->translatedFormat('M Y'),
+                'perAccount' => array_map(fn ($v) => round($v), $akun),
+                'total'      => round(array_sum($akun)),
+            ];
+        }
+
         // ---- Kanban: task di board bertipe 'kanban' (BUKAN entri pipeline) ----
         $kanban = Pipeline::whereIn('category', array_keys($kanbanBoards))->get();
 
@@ -55,7 +84,9 @@ class DashboardController extends Controller
         $invTotal    = Inventory::get(['qty', 'unit_value_idr'])->sum(fn ($i) => $i->qty * (float) $i->unit_value_idr);
 
         return Inertia::render('Dashboard', [
-            'rate' => $rate,
+            'rate'     => $rate,
+            'monthly'  => $monthly,             // grafik omzet per bulan, per akun
+            'accounts' => Pipeline::ACCOUNTS,   // label + urutan seri grafik
 
             // Ringkasan atas — angka bisnis pipeline
             'summary' => [
