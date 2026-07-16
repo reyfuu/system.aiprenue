@@ -4,7 +4,7 @@ import { computed } from 'vue';               // computed untuk turunan reaktif
 import { Link, usePage } from '@inertiajs/vue3'; // Link navigasi Inertia, usePage untuk shared props
 import Layout from '../Layout.vue';           // Layout sudah render sidebar + flash toast
 import '../scripts/lib/charts';               // registrasi elemen Chart.js (dipakai bareng Pembukuan)
-import { Bar } from 'vue-chartjs';            // komponen chart siap pakai
+import { Line } from 'vue-chartjs';           // komponen chart siap pakai
 
 // Props dari DashboardController — satu objek per modul
 const props = defineProps({
@@ -27,39 +27,46 @@ const menus = computed(() => page.props.auth?.user?.menus ?? {});
 // Helper format Rupiah: 1234567 → "Rp 1.234.567"
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 
-// ---- Grafik omzet per bulan, ditumpuk per akun ----
-// Ditumpuk (stacked), bukan berdampingan: tinggi tiap batang = omzet bulan itu,
-// dan potongannya = sumbangan tiap akun. Berdampingan bikin total per bulan harus
-// dijumlah sendiri di kepala.
+// ---- Grafik omzet per bulan: satu garis per akun ----
 const adaMonthly = computed(() => props.monthly.length > 0);
 // Warna seri: samakan dgn badge akun di kartu Sales (FK brand, AI Preneur slate).
 const WARNA_AKUN = { fk: '#4f46e5', ai_preneur: '#64748b' };
-const barData = computed(() => ({
+const lineData = computed(() => ({
     labels: props.monthly.map((m) => m.label),
-    datasets: Object.entries(props.accounts).map(([key, label]) => ({
-        label,
-        data: props.monthly.map((m) => m.perAccount?.[key] ?? 0),
-        backgroundColor: WARNA_AKUN[key] ?? '#94a3b8',
-        borderRadius: 6,
-    })),
+    datasets: Object.entries(props.accounts).map(([key, label]) => {
+        const warna = WARNA_AKUN[key] ?? '#94a3b8';
+
+        return {
+            label,
+            data: props.monthly.map((m) => m.perAccount?.[key] ?? 0),
+            borderColor: warna,
+            backgroundColor: warna,   // warna titik & kotak legend
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.3,             // sedikit melengkung; 0 bikin patah-patah
+        };
+    }),
 }));
-const barOpts = {
+const lineOpts = {
     responsive: true,
     maintainAspectRatio: false,   // wajib false agar chart mengikuti tinggi container
+    interaction: { mode: 'index', intersect: false },   // hover di mana saja pada bulan itu → dua garis sekaligus
     plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, usePointStyle: true } },
         tooltip: {
             callbacks: {
                 label: (c) => `${c.dataset.label}: ${rp(c.parsed.y)}`,
-                // total bulan itu ikut di footer — pertanyaannya "bulan ini berapa?"
+                // Garis tak ditumpuk, jadi total bulan tak terbaca dari tingginya —
+                // taruh di footer, karena itu justru pertanyaannya: "bulan ini berapa?"
                 footer: (items) => 'Total: ' + rp(items.reduce((s, i) => s + i.parsed.y, 0)),
             },
         },
     },
     scales: {
-        x: { stacked: true, grid: { display: false } },
+        x: { grid: { display: false } },
         y: {
-            stacked: true,
+            beginAtZero: true,   // tanpa ini sumbu mulai dari nilai terendah & selisihnya terlihat berlebihan
             ticks: { callback: (v) => 'Rp ' + Number(v).toLocaleString('id-ID') },
             grid: { color: '#eef2ff' },
         },
@@ -142,13 +149,13 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <div class="flex items-baseline justify-between gap-3 mb-4">
                     <div>
                         <h2 class="text-sm font-bold text-slate-700">Omzet per Bulan</h2>
-                        <p class="text-xs text-slate-400 mt-0.5">Nilai deal Sales, ditumpuk per akun · USD dikonversi kurs {{ rp(rate) }}</p>
+                        <p class="text-xs text-slate-400 mt-0.5">Nilai deal Sales, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}</p>
                     </div>
                     <span class="text-xs text-slate-400 whitespace-nowrap">{{ monthly.length }} bulan</span>
                 </div>
                 <!-- h-64 + maintainAspectRatio:false → chart mengisi tinggi ini -->
                 <div v-if="adaMonthly" class="h-64">
-                    <Bar :data="barData" :options="barOpts" />
+                    <Line :data="lineData" :options="lineOpts" />
                 </div>
                 <p v-else class="text-sm text-slate-400 py-10 text-center">Belum ada deal untuk digrafikkan.</p>
             </div>
