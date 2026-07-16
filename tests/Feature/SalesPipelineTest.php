@@ -218,6 +218,42 @@ class SalesPipelineTest extends TestCase
             );
     }
 
+    /** "Estimasi board" = SELURUH board, jadi TIDAK boleh ikut menyusut saat chip
+     *  dipilih. Kalau ikut, itu total tersaring — bukan yang diminta. */
+    public function test_estimasi_board_tak_ikut_menyusut_saat_difilter(): void
+    {
+        Pipeline::create(['category' => 'sales', 'account' => 'fk', 'endorse' => 'A',
+            'progress' => 'lead', 'payment_status' => 'belum', 'jenis' => 'endorse',
+            'amount_idr' => 10_000_000]);
+        Pipeline::create(['category' => 'sales', 'account' => 'fk', 'endorse' => 'B',
+            'progress' => 'lead', 'payment_status' => 'belum', 'jenis' => 'speaker',
+            'amount_idr' => 4_000_000]);
+
+        $owner = $this->user('owner');
+
+        $this->actingAs($owner)->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('boardTotal', 14_000_000));
+
+        // chip endorse aktif → board tetap 14 jt, walau yang tampil cuma 10 jt
+        $this->actingAs($owner)->get('/pipelines?jenis[]=endorse')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('boardTotal', 14_000_000)
+                ->where('board.lead', fn ($k) => count($k) === 1)
+            );
+    }
+
+    /** Nilai USD ikut dikonversi — kalau tidak, deal USD dihitung nol tanpa suara. */
+    public function test_estimasi_board_mengonversi_usd_pakai_kurs(): void
+    {
+        Pipeline::create(['category' => 'sales', 'account' => 'fk', 'endorse' => 'USD',
+            'progress' => 'lead', 'payment_status' => 'belum',
+            'amount_idr' => 1_000_000, 'amount_usd' => 100]);
+
+        // 1.000.000 + 100 × 16.250,5 = 2.625.050
+        $this->actingAs($this->user('owner'))->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('boardTotal', 2_625_050));
+    }
+
     /** Refactor renderBoard() dipakai bersama — pastikan modul Kanban tak ikut berubah. */
     public function test_kanban_masih_punya_galeri_dan_base_url_sendiri(): void
     {

@@ -3,9 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Order extends Model
 {
+    /** Output yang dipesan (Reels/Story/Video/Foto/…). Daftar pilihannya = isi
+     *  tabel `outputs`, satu sumber dgn Pipeline — jangan bikin daftar kedua. */
+    public function outputs(): BelongsToMany
+    {
+        return $this->belongsToMany(Output::class);
+    }
+
     protected $fillable = [
         'tipe_order', 'account', 'tanggal_deadline',
         'nama_customer', 'telepon', 'email', 'kota', 'alamat',

@@ -99,6 +99,15 @@ class PipelineController extends Controller
             ->whereNotNull('jenis')
             ->selectRaw('jenis, COUNT(*) as total')->groupBy('jenis')->pluck('total', 'jenis')->toArray();
 
+        // Estimasi nilai SELURUH board. Sengaja dari query terpisah yang tak ikut
+        // $jenis: menjumlah kartu yang tampil (spt boardValue di Vue) bikin angkanya
+        // menyusut saat chip dipilih — itu total tersaring, bukan total board.
+        $rate = ExchangeRate::usdToIdr();
+        $nilai = Pipeline::where('category', $category)
+            ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
+            ->selectRaw('COALESCE(SUM(amount_idr),0) as idr, COALESCE(SUM(amount_usd),0) as usd')->first();
+        $boardTotal = (float) $nilai->idr + (float) $nilai->usd * $rate;
+
         // Hitung kartu AKTIF per kategori (arsip tidak dihitung)
         $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category')->toArray();
@@ -173,7 +182,8 @@ class PipelineController extends Controller
             // Board baru dari halaman ini harus bertipe sama, kalau tidak langsung hilang dari modul ini
             'boardType'     => $currentBoard?->type ?? 'kanban',
             // Kurs USD→IDR: nilai deal per stage dijumlahkan dalam IDR (kartu bisa USD).
-            'rate'          => ExchangeRate::usdToIdr(),
+            'rate'          => $rate,
+            'boardTotal'    => $boardTotal,                                 // estimasi nilai SELURUH board (tak ikut filter)
             'board'         => $board,                                       // kartu tersusun per kolom
             'columns'       => $columns,                                     // kolom dinamis board ini
             'jenis'         => $jenis,                                      // chip aktif (array; kosong = semua)

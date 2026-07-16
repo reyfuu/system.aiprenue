@@ -15,7 +15,7 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Order::query();
+        $query = Order::with('outputs');
 
         // Filter opsional (dikirim dari bar filter halaman)
         if ($request->filled('tipe_order')) {
@@ -67,6 +67,7 @@ class OrderController extends Controller
             'accounts'       => Order::ACCOUNTS,
             'tipePembayaran' => Order::TIPE_PEMBAYARAN,
             'kotaList'       => Order::kotaList(),
+            'outputList'     => \App\Models\Output::orderBy('name')->get(['id', 'name']),   // checkbox modal
         ]);
     }
 
@@ -93,6 +94,8 @@ class OrderController extends Controller
             // dua-duanya kosong/0. Cek silangnya di prepare(), lihat alasannya di sana.
             'total_idr'        => ['nullable', 'numeric', 'min:0'],
             'total_usd'        => ['nullable', 'numeric', 'min:0'],
+            'outputs'          => 'array',
+            'outputs.*'        => 'exists:outputs,id',
             'bukti_bayar'      => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
             'invoice'          => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
         ];
@@ -114,7 +117,8 @@ class OrderController extends Controller
             }
         }
 
-        Order::create($data);
+        $order = Order::create($data);
+        $order->outputs()->sync($request->input('outputs', []));
 
         return back()->with('status', 'Order ditambahkan.');
     }
@@ -137,6 +141,7 @@ class OrderController extends Controller
         }
 
         $order->update($data);
+        $order->outputs()->sync($request->input('outputs', []));
 
         return back()->with('status', 'Order diperbarui.');
     }
@@ -173,6 +178,9 @@ class OrderController extends Controller
         $data = $validator->validate();
         $data['total_idr'] = $data['total_idr'] ?? 0;
         $data['total_usd'] = $data['total_usd'] ?? 0;
+        // `outputs` bukan kolom di tabel orders — masuk lewat pivot (sync di store/update).
+        // Kalau ikut terbawa ke Order::create(), Eloquent melempar (kolom tak ada).
+        unset($data['outputs']);
 
         return $data;
     }

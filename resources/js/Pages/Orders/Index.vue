@@ -14,6 +14,7 @@ const props = defineProps({
     accounts: Object,        // peta key→label akun (fk / ai_preneur)
     tipePembayaran: Object,  // peta key→label tipe pembayaran
     kotaList: Array,         // saran kota (514 kab/kota + Singapura/Australia/Miri City)
+    outputList: { type: Array, default: () => [] },   // pilihan checkbox Output
     rate: { type: Number, default: 0 },  // kurs USD→IDR utk total gabungan per baris
 });
 
@@ -80,9 +81,16 @@ const form = useForm({
     tanggal_bayar: '',
     total_idr: '',
     total_usd: '',
+    outputs: [],                // id Output tercentang (pivot order_output)
     bukti_bayar: null,          // File object; null = tak ada file baru
     invoice: null,              // invoice dari perusahaan
 });
+
+// Centang/hapus centang satu output. Ganti array (bukan push/splice) supaya
+// Inertia melihat perubahannya.
+const toggleOutput = (id) => {
+    form.outputs = form.outputs.includes(id) ? form.outputs.filter((x) => x !== id) : [...form.outputs, id];
+};
 
 // Kosongkan form + kedua input file
 const resetForm = () => {
@@ -116,6 +124,9 @@ const openEdit = (o) => {
     form.tanggal_bayar = o.tanggal_bayar ? o.tanggal_bayar.substring(0, 10) : '';
     form.total_idr = o.total_idr ?? '';
     form.total_usd = o.total_usd ?? '';
+    // relasi outputs di-eager-load controller → ambil id-nya. Number(): id dari JSON
+    // bisa string, sementara :value checkbox membandingkan dgn id numerik prop.
+    form.outputs = Array.isArray(o.outputs) ? o.outputs.map((x) => Number(x.id)) : [];
     form.bukti_bayar = null;    // biarkan null → file lama dipertahankan server
     form.invoice = null;
     mode.value = 'edit';
@@ -440,6 +451,21 @@ const destroy = (o) => {
                         <div class="sm:col-span-2 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2 flex items-center justify-between">
                             <span class="text-xs font-semibold text-slate-600">Total Pembayaran <span class="font-normal text-slate-400">(IDR + USD @ {{ rp(rate) }})</span></span>
                             <span class="text-base font-bold text-brand-700">{{ rp(Number(form.total_idr || 0) + Number(form.total_usd || 0) * rate) }}</span>
+                        </div>
+                        <!-- Output: pilihannya = isi tabel `outputs` (satu sumber dgn kartu
+                             Sales/Kanban), jadi tambah output cukup lewat migrasi — tak ada
+                             daftar kedua di sini. -->
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Output</label>
+                            <div class="flex flex-wrap gap-2">
+                                <label v-for="out in outputList" :key="out.id"
+                                       class="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-100 rounded-lg px-3 py-1.5 text-xs cursor-pointer hover:bg-brand-100 transition">
+                                    <input type="checkbox" :checked="form.outputs.includes(out.id)" @change="toggleOutput(out.id)" class="accent-brand-600" />
+                                    {{ out.name }}
+                                </label>
+                                <p v-if="!outputList.length" class="text-xs text-slate-400">Belum ada pilihan output.</p>
+                            </div>
+                            <span v-if="form.errors.outputs" class="text-xs text-red-600">{{ form.errors.outputs }}</span>
                         </div>
                         <!-- Bukti bayar: file baru menimpa yang lama; dikosongkan = file lama dipertahankan -->
                         <div>
