@@ -328,6 +328,42 @@ class OrderTest extends TestCase
             );
     }
 
+    /** Data dummy harus benar-benar bisa dipakai menguji filter Output:
+     *  tiap pilihan dropdown wajib menghasilkan sesuatu, dan harus ada order
+     *  tanpa output supaya kasus "hilang saat difilter" ikut kelihatan. */
+    public function test_seeder_order_memberi_sebaran_output_yang_bisa_difilter(): void
+    {
+        $this->seed(\Database\Seeders\PipelineSeeder::class);   // output-nya dibuat di sini
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+
+        $this->assertGreaterThan(0, \App\Models\Output::count());
+
+        foreach (\App\Models\Output::all() as $out) {
+            $this->assertGreaterThan(
+                0,
+                Order::whereHas('outputs', fn ($q) => $q->where('outputs.id', $out->id))->count(),
+                "output '{$out->name}' tak dipakai order mana pun — filternya bakal kosong"
+            );
+        }
+
+        $this->assertGreaterThan(0, Order::doesntHave('outputs')->count(),
+            'harus ada order tanpa output — itu yang menguji em-dash & hilang saat difilter');
+    }
+
+    /** Seeder dijalankan ulang tak boleh menggandakan baris pivot. */
+    public function test_seeder_order_idempoten(): void
+    {
+        $this->seed(\Database\Seeders\PipelineSeeder::class);
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+        $pivot = \Illuminate\Support\Facades\DB::table('order_output')->count();
+        $order = Order::count();
+
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+
+        $this->assertSame($order, Order::count());
+        $this->assertSame($pivot, \Illuminate\Support\Facades\DB::table('order_output')->count());
+    }
+
     public function test_staff_tak_boleh_membuat_order(): void
     {
         $this->actingAs($this->user('staff'))->post('/orders', $this->payload())->assertForbidden();
