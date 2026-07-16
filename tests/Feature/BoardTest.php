@@ -33,16 +33,39 @@ class BoardTest extends TestCase
         );
     }
 
-    public function test_buat_board_pipeline_dapat_stage_sales(): void
+    /** Sales cuma boleh punya SATU board (`sales`) — pembeda deal di sana adalah
+     *  `jenis`, bukan board terpisah. Tombolnya sudah hilang dari Vue, tapi itu tak
+     *  cukup: request langsung harus ikut ditolak. */
+    public function test_board_pipeline_kedua_tak_bisa_dibuat_walau_type_dipaksa(): void
     {
         $this->actingAs($this->user())->post('/boards', ['name' => 'Sales B', 'type' => 'pipeline'])
             ->assertSessionHasNoErrors();
 
-        $this->assertSame('pipeline', Category::where('key', 'sales_b')->value('type'));
+        // terbuat, tapi sebagai kanban — `type` dari request diabaikan
+        $this->assertSame('kanban', Category::where('key', 'sales_b')->value('type'));
         $this->assertSame(
-            ['lead', 'kontak', 'nego', 'closing', 'deal'],
+            ['script', 'editing', 'progress', 'pending', 'done'],
             BoardColumn::where('board_key', 'sales_b')->orderBy('position')->pluck('key')->all()
         );
+
+        // board pipeline tetap satu-satunya: `sales`
+        $this->assertSame(['sales'], Category::where('type', 'pipeline')->pluck('key')->all());
+    }
+
+    /** Tanpa board sales, menu Sales Pipeline mati 404. Penjagaan "board terakhir"
+     *  tak menolong — ia menghitung SEMUA board, jadi sales tetap bisa dihapus
+     *  selama masih ada board kanban lain. */
+    public function test_board_sales_tak_bisa_dihapus(): void
+    {
+        $owner = $this->user();
+        // sales kosong & masih ada board kanban lain → dua penjagaan lama sama-sama lolos
+        \App\Models\Pipeline::where('category', 'sales')->delete();
+        $this->assertGreaterThan(1, Category::count());
+
+        $this->actingAs($owner)->delete('/boards/sales');
+
+        $this->assertNotNull(Category::where('key', 'sales')->first(), 'board sales harus tetap ada');
+        $this->actingAs($owner)->get('/pipelines')->assertOk();   // menu Sales tetap hidup
     }
 
     public function test_key_board_dibuat_unik(): void

@@ -26,6 +26,19 @@ class DashboardController extends Controller
         $totalUsd = (float) $pipe->sum('amount_usd');
         $grandIdr = $totalIdr + $totalUsd * $rate;
 
+        // ---- Omzet per akun (FK / AI Preneur) ----
+        // Pecahan dari $grandIdr, bukan angka lain: FK + AI Preneur WAJIB = Grand Omzet.
+        // Dihitung dari koleksi $pipe yang sudah di-load → tanpa query tambahan.
+        $perAccount = [];
+        foreach (Pipeline::ACCOUNTS as $key => $label) {
+            $akun = $pipe->where('account', $key);
+            $perAccount[$key] = [
+                'label'    => $label,
+                'grandIdr' => (float) $akun->sum('amount_idr') + (float) $akun->sum('amount_usd') * $rate,
+                'total'    => $akun->count(),
+            ];
+        }
+
         // ---- Kanban: task di board bertipe 'kanban' (BUKAN entri pipeline) ----
         $kanban = Pipeline::whereIn('category', array_keys($kanbanBoards))->get();
 
@@ -47,6 +60,7 @@ class DashboardController extends Controller
             // Ringkasan atas — angka bisnis pipeline
             'summary' => [
                 'grandIdr'    => $grandIdr,
+                'perAccount'  => $perAccount,   // omzet FK & AI Preneur — pecahan grandIdr
                 'total'       => $pipe->count(),
                 'lunas'       => $pipe->where('payment_status', 'lunas')->count(),
                 'outstanding' => $pipe->whereIn('payment_status', ['belum', 'dp'])->count(),

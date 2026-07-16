@@ -62,11 +62,20 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
         <div class="px-6 py-6 space-y-6">
             <!-- ===== Ringkasan cepat (angka bisnis pipeline) ===== -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <!-- Grand omzet (sengaja paling kiri) -->
                 <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
                     <p class="text-xs text-brand-100 font-medium">Grand Omzet (IDR)</p>
                     <p class="text-2xl font-bold mt-1">{{ rp(summary.grandIdr) }}</p>
+                </div>
+                <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
+                     FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
+                     dua blok disalin — nambah akun cukup di Pipeline::ACCOUNTS. -->
+                <div v-for="(akun, key) in summary.perAccount" :key="key"
+                     class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                    <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
+                    <p class="text-xl font-bold text-brand-700 mt-1 truncate" :title="rp(akun.grandIdr)">{{ rp(akun.grandIdr) }}</p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} deal</p>
                 </div>
                 <!-- Total entri -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">

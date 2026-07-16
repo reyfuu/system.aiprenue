@@ -10,32 +10,27 @@ use Illuminate\Validation\Rule;
 
 class BoardController extends Controller
 {
+    /** Board baru SELALU kanban. Sales cuma punya satu board (`sales`) — yang
+     *  membedakan deal di sana adalah `jenis`, bukan board terpisah. Ditegakkan di
+     *  sini, bukan cuma dgn menyembunyikan tombolnya di Vue: request langsung tetap
+     *  tembus kalau gerbangnya cuma di frontend. */
     public function store(Request $request)
     {
         $data = $request->validate([
             'name'    => 'required|string|max:100',
             'section' => 'nullable|string|max:100',
-            'type'    => 'nullable|in:kanban,pipeline',
         ]);
-        $type = $data['type'] ?? 'kanban';
 
         $key = $this->uniqueKey($data['name']);
         Category::create([
             'key'     => $key,
             'name'    => trim($data['name']),
-            'type'    => $type,
+            'type'    => 'kanban',
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
         ]);
 
         // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task).
-        // Board pipeline → stage sales; board kanban → alur produksi.
-        $defaults = $type === 'pipeline' ? [
-            ['key' => 'lead', 'name' => 'Lead', 'color' => 'bg-slate-400'],
-            ['key' => 'kontak', 'name' => 'Kontak', 'color' => 'bg-sky-500'],
-            ['key' => 'nego', 'name' => 'Nego', 'color' => 'bg-amber-500'],
-            ['key' => 'closing', 'name' => 'Closing', 'color' => 'bg-brand-600'],
-            ['key' => 'deal', 'name' => 'Deal', 'color' => 'bg-emerald-500'],
-        ] : [
+        $defaults = [
             ['key' => 'script', 'name' => 'Script', 'color' => 'bg-purple-500'],
             ['key' => 'editing', 'name' => 'Editing', 'color' => 'bg-sky-500'],
             ['key' => 'progress', 'name' => 'Progress', 'color' => 'bg-brand-600'],
@@ -52,10 +47,7 @@ class BoardController extends Controller
             ]);
         }
 
-        // Board pipeline → ke tabel Pipeline; board kanban → ke papan kanban
-        $route = $type === 'pipeline' ? 'pipelines.index' : 'pipelines.kanban';
-
-        return redirect()->route($route, ['category' => $key])
+        return redirect()->route('pipelines.kanban', ['category' => $key])
             ->with('status', 'Board ditambahkan.');
     }
 
@@ -79,6 +71,12 @@ class BoardController extends Controller
 
     public function destroy(Category $board)
     {
+        // Board sales tak boleh hilang: menu Sales Pipeline langsung mati (404) tanpanya.
+        // Penjagaan "board terakhir" di bawah tak menolong — ia cuma menghitung SEMUA
+        // board, jadi sales tetap bisa dihapus selama masih ada board kanban lain.
+        if ($board->type === 'pipeline') {
+            return back()->with('status', 'Board sales tak bisa dihapus — Sales Pipeline hanya punya board ini.');
+        }
         // cegah hapus bila masih ada entri, atau board terakhir
         if (Pipeline::where('category', $board->key)->exists()) {
             return back()->with('status', 'Board masih berisi task — pindahkan/hapus dulu.');

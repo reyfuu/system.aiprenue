@@ -131,6 +131,93 @@ class SalesPipelineTest extends TestCase
         $this->assertSame([$output->id], $kartu->outputs->pluck('id')->all());
     }
 
+    /** Output 'Video' & 'Foto' datang dari migrasi (bukan seeder — seeder dipagari
+     *  di produksi). Checkbox di modal kartu ikut isi tabel ini, jadi tak ada kode UI. */
+    public function test_output_video_dan_foto_tersedia_dan_bisa_dicentang(): void
+    {
+        $video = \App\Models\Output::firstWhere('name', 'Video');
+        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $this->assertNotNull($video, "output 'Video' harus ada dari migrasi");
+        $this->assertNotNull($foto, "output 'Foto' harus ada dari migrasi");
+
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Deal berfoto',
+            'progress' => 'lead', 'payment_status' => 'belum',
+            'outputs' => [$video->id, $foto->id],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['Foto', 'Video'],
+            Pipeline::firstWhere('endorse', 'Deal berfoto')->outputs->pluck('name')->sort()->values()->all()
+        );
+    }
+
+    private function deal(string $jenis, string $progress = 'lead'): Pipeline
+    {
+        return Pipeline::create([
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Deal '.$jenis,
+            'progress' => $progress, 'payment_status' => 'belum', 'jenis' => $jenis,
+        ]);
+    }
+
+    /** Filter chip: bisa banyak jenis sekaligus — justru itu yang membedakannya dari
+     *  dropdown board (yang cuma bisa satu) & bikin manager tak salah baca. */
+    public function test_filter_jenis_bisa_lebih_dari_satu_sekaligus(): void
+    {
+        $this->deal('endorse');
+        $this->deal('speaker');
+        $this->deal('agensi');
+
+        // NB: Inertia mengirim daftar kartu sbg Collection ke closure, bukan array.
+        $judul = fn ($kartu) => collect($kartu)->pluck('endorse')->sort()->values()->all();
+
+        // dua chip aktif → dua jenis itu saja
+        $this->actingAs($this->user('owner'))->get('/pipelines?jenis[]=endorse&jenis[]=speaker')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jenis', ['endorse', 'speaker'])
+                ->where('board.lead', fn ($k) => $judul($k) === ['Deal endorse', 'Deal speaker'])
+            );
+
+        // tanpa chip → semua
+        $this->actingAs($this->user('owner'))->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jenis', [])
+                ->where('board.lead', fn ($k) => count($k) === 3)
+            );
+    }
+
+    /** ?jenis ngawur jangan bikin board kosong tanpa sebab — dibuang, tampilkan semua. */
+    public function test_jenis_ngawur_di_filter_diabaikan_bukan_error(): void
+    {
+        $this->deal('endorse');
+
+        $this->actingAs($this->user('owner'))->get('/pipelines?jenis[]=ngawur')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jenis', [])
+                ->where('board.lead', fn ($k) => count($k) === 1)
+            );
+
+        // campur valid + ngawur → yang ngawur dibuang, yang valid tetap jalan
+        $this->actingAs($this->user('owner'))->get('/pipelines?jenis[]=ngawur&jenis[]=endorse')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('jenis', ['endorse']));
+    }
+
+    /** Angka di chip TIDAK boleh ikut filter — kalau ikut, semua chip lain jadi 0
+     *  begitu satu chip dipilih, dan angkanya tak bisa lagi dipakai memilih. */
+    public function test_angka_chip_tak_ikut_menyusut_saat_difilter(): void
+    {
+        $this->deal('endorse');
+        $this->deal('endorse');
+        $this->deal('speaker');
+
+        $this->actingAs($this->user('owner'))->get('/pipelines?jenis[]=endorse')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jenisCounts.endorse', 2)
+                ->where('jenisCounts.speaker', 1)   // tetap 1 walau sedang disaring ke endorse
+                ->where('board.lead', fn ($k) => count($k) === 2)
+            );
+    }
+
     /** Refactor renderBoard() dipakai bersama — pastikan modul Kanban tak ikut berubah. */
     public function test_kanban_masih_punya_galeri_dan_base_url_sendiri(): void
     {
