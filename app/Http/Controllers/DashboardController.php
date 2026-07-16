@@ -20,42 +20,48 @@ class DashboardController extends Controller
         $pipelineBoards = Pipeline::categories('pipeline');
         $kanbanBoards   = Pipeline::categories('kanban');
 
-        // ---- Pipeline: entri di board bertipe 'pipeline' ----
-        $pipe     = Pipeline::whereIn('category', array_keys($pipelineBoards))->get();
-        $totalIdr = (float) $pipe->sum('amount_idr');
-        $totalUsd = (float) $pipe->sum('amount_usd');
+        // ---- Ringkasan atas & grafik: dari ORDER, bukan Sales ----
+        // Sales = corong prospek (nilainya estimasi & bisa batal); Order = transaksi
+        // yang benar-benar jadi. Jadi semua angka omzet di dashboard bersumber Order.
+        // Alur bisnisnya: sales → order → kanban.
+        $orders   = Order::all();
+        $totalIdr = (float) $orders->sum('total_idr');
+        $totalUsd = (float) $orders->sum('total_usd');
         $grandIdr = $totalIdr + $totalUsd * $rate;
+
+        // Kartu modul Sales di bawah tetap pakai angkanya sendiri — di sana yang
+        // ditanya "berapa nilai pipeline saya", dan itu memang estimasi.
+        $pipe          = Pipeline::whereIn('category', array_keys($pipelineBoards))->get();
+        $pipeEstimasi  = (float) $pipe->sum('amount_idr') + (float) $pipe->sum('amount_usd') * $rate;
 
         // ---- Omzet per akun (FK / AI Preneur) ----
         // Pecahan dari $grandIdr, bukan angka lain: FK + AI Preneur WAJIB = Grand Omzet.
-        // Dihitung dari koleksi $pipe yang sudah di-load → tanpa query tambahan.
+        // Dihitung dari koleksi $orders yang sudah di-load → tanpa query tambahan.
         $perAccount = [];
-        foreach (Pipeline::ACCOUNTS as $key => $label) {
-            $akun = $pipe->where('account', $key);
+        foreach (Order::ACCOUNTS as $key => $label) {
+            $akun = $orders->where('account', $key);
             $perAccount[$key] = [
                 'label'    => $label,
-                'grandIdr' => (float) $akun->sum('amount_idr') + (float) $akun->sum('amount_usd') * $rate,
+                'grandIdr' => (float) $akun->sum('total_idr') + (float) $akun->sum('total_usd') * $rate,
                 'total'    => $akun->count(),
             ];
         }
 
         // ---- Omzet per bulan, dipecah per akun ----
-        // Tanggalnya `tanggal_posting`, mundur ke `created_at` bila kosong.
-        // BUKAN tanggal_payment: cuma terisi saat deal lunas, jadi mayoritas deal
-        // akan lenyap dari grafik tanpa jejak. `deadline` tak pernah diisi sama sekali.
-        // Mundur ke created_at supaya tak ada deal yang hilang diam-diam — total
-        // grafik tetap = Grand Omzet.
+        // Tanggalnya `tanggal_bayar` = kapan uang benar-benar masuk; itu arti "omzet
+        // per bulan". Mundur ke `created_at` bila kosong supaya tak ada order yang
+        // lenyap dari grafik tanpa jejak — jumlah semua bulan tetap = Grand Omzet.
         $perBulan = [];
-        foreach ($pipe as $p) {
-            $tgl = $p->tanggal_posting ?? $p->created_at;
+        foreach ($orders as $o) {
+            $tgl = $o->tanggal_bayar ?? $o->created_at;
             if (! $tgl) {
                 continue;
             }
             $bulan = $tgl->format('Y-m');
-            $perBulan[$bulan] ??= array_fill_keys(array_keys(Pipeline::ACCOUNTS), 0.0);
+            $perBulan[$bulan] ??= array_fill_keys(array_keys(Order::ACCOUNTS), 0.0);
             // akun di luar daftar (data lama) tetap dihitung, jangan didiamkan hilang
-            $perBulan[$bulan][$p->account] = ($perBulan[$bulan][$p->account] ?? 0.0)
-                + (float) $p->amount_idr + (float) $p->amount_usd * $rate;
+            $perBulan[$bulan][$o->account] = ($perBulan[$bulan][$o->account] ?? 0.0)
+                + (float) $o->total_idr + (float) $o->total_usd * $rate;
         }
         ksort($perBulan);   // urut kronologis; array key 'Y-m' menyortir dgn benar sbg string
 
@@ -85,21 +91,24 @@ class DashboardController extends Controller
 
         return Inertia::render('Dashboard', [
             'rate'     => $rate,
-            'monthly'  => $monthly,             // grafik omzet per bulan, per akun
-            'accounts' => Pipeline::ACCOUNTS,   // label + urutan seri grafik
+            'monthly'  => $monthly,          // grafik omzet per bulan, per akun
+            'accounts' => Order::ACCOUNTS,   // label + urutan seri grafik
 
-            // Ringkasan atas — angka bisnis pipeline
+            // Ringkasan atas — SEMUA dari Order (omzet nyata), bukan Sales (estimasi).
+            // Satu baris = satu sumber; mencampur keduanya bikin angkanya tak bisa
+            // dibandingkan satu sama lain.
             'summary' => [
                 'grandIdr'    => $grandIdr,
                 'perAccount'  => $perAccount,   // omzet FK & AI Preneur — pecahan grandIdr
-                'total'       => $pipe->count(),
-                'lunas'       => $pipe->where('payment_status', 'lunas')->count(),
-                'outstanding' => $pipe->whereIn('payment_status', ['belum', 'dp'])->count(),
+                'total'       => $orders->count(),
+                // Order cuma kenal full/dp — tak ada 'belum' spt kartu Sales.
+                'lunas'       => $orders->where('tipe_pembayaran', 'full')->count(),
+                'outstanding' => $orders->where('tipe_pembayaran', 'dp')->count(),
             ],
 
             'pipeline' => [
                 'total'       => $pipe->count(),
-                'grandIdr'    => $grandIdr,
+                'grandIdr'    => $pipeEstimasi,   // estimasi Sales, BUKAN omzet Order
                 // Board pipeline kini cuma satu (sales) → pecah per JENIS deal,
                 // bukan per board. Dashboard.vue tetap: loop `categories`, baca `perCategory`.
                 'perCategory' => $pipe->groupBy('jenis')->map->count(),

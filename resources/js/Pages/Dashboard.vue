@@ -111,7 +111,8 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
         </header>
 
         <div class="px-6 py-6 space-y-6">
-            <!-- ===== Ringkasan cepat (angka bisnis pipeline) ===== -->
+            <!-- ===== Ringkasan cepat: SEMUA dari Order (omzet nyata), bukan Sales.
+                 Sales = corong prospek yang nilainya masih estimasi & bisa batal. ===== -->
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <!-- Grand omzet (sengaja paling kiri) -->
                 <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
@@ -120,26 +121,26 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </div>
                 <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
                      FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
-                     dua blok disalin — nambah akun cukup di Pipeline::ACCOUNTS. -->
+                     dua blok disalin — nambah akun cukup di Order::ACCOUNTS. -->
                 <div v-for="(akun, key) in summary.perAccount" :key="key"
                      class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
                     <p class="text-xl font-bold text-brand-700 mt-1 truncate" :title="rp(akun.grandIdr)">{{ rp(akun.grandIdr) }}</p>
-                    <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} deal</p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} order</p>
                 </div>
-                <!-- Total entri -->
+                <!-- Total order -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
-                    <p class="text-xs text-slate-500 font-medium">Total Entri</p>
+                    <p class="text-xs text-slate-500 font-medium">Total Order</p>
                     <p class="text-2xl font-bold text-brand-700 mt-1">{{ summary.total }}</p>
                 </div>
-                <!-- Lunas -->
+                <!-- Lunas = tipe pembayaran Full (Order tak kenal status 'belum') -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
-                    <p class="text-xs text-slate-500 font-medium">Lunas</p>
+                    <p class="text-xs text-slate-500 font-medium">Lunas (Full)</p>
                     <p class="text-2xl font-bold text-emerald-600 mt-1">{{ summary.lunas }}<span class="text-sm text-slate-400 font-medium"> / {{ summary.total }}</span></p>
                 </div>
-                <!-- Outstanding -->
+                <!-- Outstanding = order yang baru DP -->
                 <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
-                    <p class="text-xs text-slate-500 font-medium">Outstanding</p>
+                    <p class="text-xs text-slate-500 font-medium">Outstanding (DP)</p>
                     <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.outstanding }}</p>
                 </div>
             </div>
@@ -149,7 +150,7 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <div class="flex items-baseline justify-between gap-3 mb-4">
                     <div>
                         <h2 class="text-sm font-bold text-slate-700">Omzet per Bulan</h2>
-                        <p class="text-xs text-slate-400 mt-0.5">Nilai deal Sales, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}</p>
+                        <p class="text-xs text-slate-400 mt-0.5">Order per tanggal bayar, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}</p>
                     </div>
                     <span class="text-xs text-slate-400 whitespace-nowrap">{{ monthly.length }} bulan</span>
                 </div>
@@ -157,7 +158,7 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <div v-if="adaMonthly" class="h-64">
                     <Line :data="lineData" :options="lineOpts" />
                 </div>
-                <p v-else class="text-sm text-slate-400 py-10 text-center">Belum ada deal untuk digrafikkan.</p>
+                <p v-else class="text-sm text-slate-400 py-10 text-center">Belum ada order untuk digrafikkan.</p>
             </div>
 
             <!-- ===== Kartu ringkasan per modul ===== -->
@@ -170,7 +171,10 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
                     <p class="text-3xl font-bold text-brand-700">{{ pipeline.total }} <span class="text-sm text-slate-400 font-medium">entri</span></p>
-                    <p class="text-xs text-slate-400 mt-1">Omzet {{ rp(pipeline.grandIdr) }}</p>
+                    <!-- "Estimasi", bukan "Omzet": ini nilai corong Sales & bisa batal.
+                         Omzet nyata = Order (ringkasan atas). Dua-duanya bernama Omzet
+                         bikin angkanya terlihat saling bertentangan. -->
+                    <p class="text-xs text-slate-400 mt-1">Estimasi {{ rp(pipeline.grandIdr) }}</p>
                     <div class="mt-4 space-y-2">
                         <!-- Loop board pipeline (label cv, key ck) -->
                         <div v-for="(cv, ck) in pipeline.categories" :key="ck" class="flex items-center justify-between text-sm">
