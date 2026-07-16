@@ -275,6 +275,95 @@ class OrderTest extends TestCase
         $this->assertNotNull($out->fresh(), 'output-nya sendiri jangan ikut terhapus');
     }
 
+    /** Filter kolom Output lewat pivot. */
+    public function test_filter_output_menyaring_order(): void
+    {
+        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
+        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $owner = $this->user();
+
+        $this->actingAs($owner)->post('/orders', $this->payload(['nama_customer' => 'Pakai Reels', 'outputs' => [$reels->id]]));
+        $this->actingAs($owner)->post('/orders', $this->payload(['nama_customer' => 'Pakai Foto', 'outputs' => [$foto->id]]));
+        $this->actingAs($owner)->post('/orders', $this->payload(['nama_customer' => 'Tanpa Output']));
+
+        $this->actingAs($owner)->get('/orders?output='.$reels->id)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.output', (string) $reels->id)
+                ->where('orders.data', fn ($rows) => collect($rows)->pluck('nama_customer')->all() === ['Pakai Reels'])
+            );
+
+        // tanpa filter → ketiganya
+        $this->actingAs($owner)->get('/orders')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.data', fn ($rows) => count($rows) === 3));
+    }
+
+    /** Order dgn banyak output tetap muncul SEKALI saat disaring.
+     *  NB: tes ini juga lolos dgn join — selama filternya satu output, join memang
+     *  belum menduplikat. Yang dijaga di sini cuma perilakunya; alasan memilih
+     *  whereHas ada di komentar OrderController (tahan saat filter jadi multi-output). */
+    public function test_order_dengan_banyak_output_muncul_sekali(): void
+    {
+        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
+        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $video = \App\Models\Output::firstWhere('name', 'Video');
+
+        $this->actingAs($this->user())->post('/orders', $this->payload([
+            'nama_customer' => 'Tiga Output', 'outputs' => [$reels->id, $foto->id, $video->id],
+        ]));
+
+        $this->actingAs($this->user())->get('/orders?output='.$reels->id)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.data', fn ($rows) => count($rows) === 1));
+    }
+
+    /** Tabel butuh relasi outputs ikut terkirim, kalau tidak kolomnya kosong melulu. */
+    public function test_output_ikut_terkirim_ke_tabel(): void
+    {
+        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$foto->id]]));
+
+        $this->actingAs($this->user())->get('/orders')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('orders.data.0.outputs', fn ($out) => collect($out)->pluck('name')->all() === ['Foto'])
+                ->has('outputList')   // pilihan dropdown filter
+            );
+    }
+
+    /** Data dummy harus benar-benar bisa dipakai menguji filter Output:
+     *  tiap pilihan dropdown wajib menghasilkan sesuatu, dan harus ada order
+     *  tanpa output supaya kasus "hilang saat difilter" ikut kelihatan. */
+    public function test_seeder_order_memberi_sebaran_output_yang_bisa_difilter(): void
+    {
+        $this->seed(\Database\Seeders\PipelineSeeder::class);   // output-nya dibuat di sini
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+
+        $this->assertGreaterThan(0, \App\Models\Output::count());
+
+        foreach (\App\Models\Output::all() as $out) {
+            $this->assertGreaterThan(
+                0,
+                Order::whereHas('outputs', fn ($q) => $q->where('outputs.id', $out->id))->count(),
+                "output '{$out->name}' tak dipakai order mana pun — filternya bakal kosong"
+            );
+        }
+
+        $this->assertGreaterThan(0, Order::doesntHave('outputs')->count(),
+            'harus ada order tanpa output — itu yang menguji em-dash & hilang saat difilter');
+    }
+
+    /** Seeder dijalankan ulang tak boleh menggandakan baris pivot. */
+    public function test_seeder_order_idempoten(): void
+    {
+        $this->seed(\Database\Seeders\PipelineSeeder::class);
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+        $pivot = \Illuminate\Support\Facades\DB::table('order_output')->count();
+        $order = Order::count();
+
+        $this->seed(\Database\Seeders\OrderSeeder::class);
+
+        $this->assertSame($order, Order::count());
+        $this->assertSame($pivot, \Illuminate\Support\Facades\DB::table('order_output')->count());
+    }
+
     public function test_staff_tak_boleh_membuat_order(): void
     {
         $this->actingAs($this->user('staff'))->post('/orders', $this->payload())->assertForbidden();

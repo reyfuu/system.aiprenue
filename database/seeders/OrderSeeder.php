@@ -3,12 +3,18 @@
 namespace Database\Seeders;
 
 use App\Models\Order;
+use App\Models\Output;
 use Illuminate\Database\Seeder;
 
 class OrderSeeder extends Seeder
 {
     public function run(): void
     {
+        // Output diseed PipelineSeeder (jalan lebih dulu) & migrasi 100000. Diambil
+        // urut `id` supaya pembagian di bawah deterministik — orderBy('name') bikin
+        // urutannya berubah tiap kali ada output baru.
+        $outputs = Output::orderBy('id')->get();
+
         $tipe = array_keys(Order::TIPE_ORDER);
         $akun = array_keys(Order::ACCOUNTS);
         $bayar = ['full', 'dp'];
@@ -27,7 +33,7 @@ class OrderSeeder extends Seeder
             $tipeBayar = $bayar[$i % 2];
 
             // updateOrCreate by nama → idempotent, aman dijalankan ulang
-            Order::updateOrCreate(
+            $order = Order::updateOrCreate(
                 ['nama_customer' => $name],
                 [
                     'tipe_order'       => $tipe[$i % count($tipe)],
@@ -47,6 +53,32 @@ class OrderSeeder extends Seeder
                     'total_usd'        => $i % 5 === 4 ? 250 + ($i * 25) : 0,
                 ]
             );
+
+            // Output: sebaran sengaja dibikin timpang supaya filternya benar-benar
+            // teruji — tiap ke-7 order TANPA output (menguji em-dash & "hilang saat
+            // difilter"), sisanya 1–3 output. sync() = idempoten, aman dijalankan ulang.
+            $order->outputs()->sync($this->outputsFor($i, $outputs));
         }
+    }
+
+    /** @return array<int,int> id output untuk order ke-$i (deterministik) */
+    private function outputsFor(int $i, \Illuminate\Support\Collection $outputs): array
+    {
+        if ($outputs->isEmpty() || $i % 7 === 6) {
+            return [];
+        }
+
+        $n = $outputs->count();
+        // 1–3 output; offset ganjil (0,+3,+5) supaya kombinasinya tak selalu berdekatan
+        $jumlah = ($i % 3) + 1;
+        $ids = [];
+        foreach ([0, 3, 5] as $k => $offset) {
+            if ($k >= $jumlah) {
+                break;
+            }
+            $ids[] = $outputs[($i + $offset) % $n]->id;
+        }
+
+        return array_values(array_unique($ids));
     }
 }

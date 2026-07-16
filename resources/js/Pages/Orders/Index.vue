@@ -47,6 +47,7 @@ const f = reactive({
     tipe_order: props.filters.tipe_order || '',
     account: props.filters.account || '',
     tipe_pembayaran: props.filters.tipe_pembayaran || '',
+    output: props.filters.output || '',         // id Output (lewat pivot order_output)
     date_from: props.filters.date_from || '',   // batas awal deadline
     date_to: props.filters.date_to || '',       // batas akhir deadline
     search: props.filters.search || '',
@@ -222,6 +223,10 @@ const destroy = (o) => {
                     <option value="">Semua Akun</option>
                     <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                 </select>
+                <select v-model="f.output" @change="applyFilters()" title="Filter output" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                    <option value="">Semua Output</option>
+                    <option v-for="out in outputList" :key="out.id" :value="out.id">{{ out.name }}</option>
+                </select>
                 <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Pembayaran</option>
                     <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
@@ -247,6 +252,7 @@ const destroy = (o) => {
                             <th class="px-4 py-3 text-left">Kontak</th>
                             <th class="px-4 py-3 text-left">Tipe Order</th>
                             <th class="px-4 py-3 text-left">Akun</th>
+                            <th class="px-4 py-3 text-left">Output</th>
                             <th class="px-4 py-3 text-left">Deadline</th>
                             <th class="px-4 py-3 text-left">Pembayaran</th>
                             <th class="px-4 py-3 text-right">Total</th>
@@ -256,7 +262,7 @@ const destroy = (o) => {
                     </thead>
                     <tbody class="divide-y divide-brand-50">
                         <!-- Kosong -->
-                        <tr v-if="orders.data.length === 0"><td colspan="9" class="px-4 py-10 text-center text-slate-400">Belum ada order.</td></tr>
+                        <tr v-if="orders.data.length === 0"><td colspan="10" class="px-4 py-10 text-center text-slate-400">Belum ada order.</td></tr>
                         <!-- Baris data (hanya halaman aktif) -->
                         <tr v-else v-for="o in orders.data" :key="o.id" class="hover:bg-brand-50/60 transition">
                             <!-- Nama + kota -->
@@ -280,6 +286,19 @@ const destroy = (o) => {
                                 <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (o.account === 'fk' ? 'bg-brand-600 text-white' : 'bg-slate-500 text-white')">
                                     {{ accounts[o.account] || o.account }}
                                 </span>
+                            </td>
+                            <!-- Output: badge bisa diklik = filter cepat, jadi tak perlu
+                                 bolak-balik ke dropdown di atas. -->
+                            <td class="px-4 py-2.5">
+                                <div v-if="o.outputs?.length" class="flex flex-wrap gap-1 max-w-[160px]">
+                                    <button v-for="out in o.outputs" :key="out.id" type="button"
+                                            @click="applyFilters({ output: String(out.id) })"
+                                            :title="`Filter: ${out.name}`"
+                                            :class="['text-[10px] px-1.5 py-0.5 rounded-full border transition', String(f.output) === String(out.id) ? 'bg-brand-600 text-white border-brand-600' : 'bg-brand-50 text-brand-700 border-brand-200 hover:bg-brand-100']">
+                                        {{ out.name }}
+                                    </button>
+                                </div>
+                                <span v-else class="text-xs text-slate-300">—</span>
                             </td>
                             <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{{ fmtDate(o.tanggal_deadline) }}</td>
                             <!-- Tipe pembayaran + tanggal bayar -->
