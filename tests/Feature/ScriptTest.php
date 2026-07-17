@@ -31,7 +31,6 @@ class ScriptTest extends TestCase
         return array_merge([
             'brand'         => 'raveloux',
             'generated_for' => '2026-07-18',
-            'drive_link'    => 'https://docs.google.com/document/d/abc123',
             'scripts'       => [
                 ['title' => 'Hook kebaya modern', 'body' => "Baris 1\nBaris 2"],
                 ['title' => 'Behind the scenes', 'body' => 'Isi naskah kedua'],
@@ -57,7 +56,17 @@ class ScriptTest extends TestCase
         $this->assertSame('Hook kebaya modern', $s->title);
         $this->assertSame("Baris 1\nBaris 2", $s->body, 'baris baru dlm naskah harus utuh');
         $this->assertSame('2026-07-18', $s->generated_for->toDateString());
-        $this->assertSame('https://docs.google.com/document/d/abc123', $s->drive_link);
+    }
+
+    /** Field asing (mis. `drive_link` dari agen versi lama yang belum ter-update)
+     *  harus ditolak diam-diam, bukan meledak: validate() cuma memungut yang
+     *  dikenal, dan Script::insert() akan error kalau kolomnya tak ada. */
+    public function test_field_tak_dikenal_diabaikan(): void
+    {
+        $this->kirim($this->payload(['drive_link' => 'https://docs.google.com/document/d/abc123']))
+            ->assertCreated();
+
+        $this->assertSame(2, Script::count());
     }
 
     /** Gerbangnya cuma token — kalau ini bocor, siapa pun bisa mengisi DB. */
@@ -217,5 +226,70 @@ class ScriptTest extends TestCase
     public function test_tamu_ditolak(): void
     {
         $this->get('/script')->assertRedirect('/login');
+    }
+
+    // ---- Unduh PDF ----
+    // Menggantikan dokumen Google Drive: agen tak lagi mengunggah ke Drive, jadi
+    // PDF ini satu-satunya cara memegang paket utuh dalam satu berkas.
+
+    public function test_paket_bisa_diunduh_sebagai_pdf(): void
+    {
+        $this->kirim();
+
+        $res = $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf');
+
+        $res->assertOk();
+        $this->assertSame('application/pdf', $res->headers->get('content-type'));
+        $this->assertStringContainsString('attachment', $res->headers->get('content-disposition'));
+        $this->assertStringContainsString('Script-Raveloux-2026-07-18.pdf', $res->headers->get('content-disposition'));
+        $this->assertStringStartsWith('%PDF-', $res->getContent(), 'isinya harus PDF sungguhan, bukan halaman error');
+    }
+
+    /** PDF dirakit dari tabel, bukan berkas statis: naskah yang dihapus lewat UI
+     *  tak boleh muncul lagi di unduhan berikutnya. */
+    public function test_pdf_ikut_naskah_yang_tersisa(): void
+    {
+        $this->kirim();
+        Script::first()->delete();
+
+        $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf')->assertOk();
+
+        // paket habis → tak ada yang bisa diunduh
+        Script::query()->delete();
+        $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf')->assertNotFound();
+    }
+
+    public function test_pdf_paket_tak_ada_menjadi_404(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user())->get('/script/raveloux/2026-01-01/pdf')->assertNotFound();
+        $this->actingAs($this->user())->get('/script/ngawur/2026-07-18/pdf')->assertNotFound();
+    }
+
+    /** Tanggal ngawur harus 404 lewat constraint route — kalau lolos ke
+     *  Carbon::parse, jadinya 500. */
+    public function test_pdf_tanggal_ngawur_menjadi_404(): void
+    {
+        $this->actingAs($this->user())->get('/script/raveloux/bukan-tanggal/pdf')->assertNotFound();
+    }
+
+    public function test_staff_tak_bisa_unduh_pdf(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user('staff'))->get('/script/raveloux/2026-07-18/pdf')->assertForbidden();
+    }
+
+    /** Vue tak punya helper route() (proyek ini tanpa Ziggy), jadi URL-nya wajib
+     *  ikut di props — kalau hilang, tombolnya jadi tautan kosong. */
+    public function test_url_pdf_ikut_di_props_halaman_brand(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user())->get('/script/raveloux')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('packs.0.pdf', url('/script/raveloux/2026-07-18/pdf'))
+            );
     }
 }

@@ -39,7 +39,7 @@ class ScriptController extends Controller
             ))
             // terbaru dulu; `id` sbg pemecah seri supaya urutan dlm satu paket stabil
             ->orderByDesc('generated_for')->orderBy('id')
-            ->get(['id', 'title', 'body', 'generated_for', 'drive_link']);
+            ->get(['id', 'title', 'body', 'generated_for']);
 
         return Inertia::render('ScriptBrand', [
             'brand'     => ['key' => $brand, 'name' => Script::BRANDS[$brand]],
@@ -51,7 +51,10 @@ class ScriptController extends Controller
                 ->map(fn ($rows, $tgl) => [
                     'date'  => $tgl,
                     'label' => \Carbon\Carbon::parse($tgl)->translatedFormat('d M Y'),
-                    'link'  => $rows->first()->drive_link,
+                    // URL dirakit di server: proyek ini tak pakai Ziggy, jadi
+                    // helper route() tak ada di Vue (pola yg sama dgn reportUrl
+                    // di Pembukuan).
+                    'pdf'   => route('script.pdf', [$brand, $tgl]),
                     'items' => $rows->map(fn ($s) => [
                         'id'    => $s->id,
                         'title' => $s->title,
@@ -59,6 +62,33 @@ class ScriptController extends Controller
                     ])->values(),
                 ])->values(),
         ]);
+    }
+
+    /** Satu paket (brand + tanggal) jadi satu PDF — pengganti dokumen Drive
+     *  yang dulu dibuat agen. Sengaja dirakit dari isi tabel, bukan file yang
+     *  diunggah agen: naskah yang dihapus lewat UI ikut hilang dari PDF-nya,
+     *  sementara file statis akan terus memajang yang sudah dibuang.
+     *
+     *  Tak ikut memakai filter `search` milik show(): yang diminta paket utuh,
+     *  bukan potongan hasil pencarian. */
+    public function pdf(string $brand, string $date)
+    {
+        abort_unless(array_key_exists($brand, Script::BRANDS), 404, 'Brand tak dikenal.');
+
+        $scripts = Script::where('brand', $brand)->where('generated_for', $date)
+            ->orderBy('id')   // urutan kirim dari agen = urutan nomor naskah
+            ->get(['title', 'body']);
+
+        abort_if($scripts->isEmpty(), 404, 'Paket naskah tak ditemukan.');
+
+        $nama = Script::BRANDS[$brand];
+
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('script.report', [
+            'brand'   => $nama,
+            'tanggal' => \Carbon\Carbon::parse($date)->translatedFormat('d F Y'),
+            'scripts' => $scripts,
+        ])->setPaper('a4', 'portrait')
+            ->download("Script-{$nama}-{$date}.pdf");
     }
 
     public function destroy(Script $script)

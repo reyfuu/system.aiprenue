@@ -9,7 +9,7 @@ import ModalWrap from '../ModalWrap.vue';   // pembungkus modal (sama spt Kanban
 // Props dari ScriptController@show
 const props = defineProps({
     brand: Object,                                  // { key, name }
-    packs: { type: Array, default: () => [] },      // [{ date, label, link, items: [{id,title,body}] }]
+    packs: { type: Array, default: () => [] },      // [{ date, label, pdf, items: [{id,title,body}] }]
     filters: { type: Object, default: () => ({}) },
     canManage: { type: Boolean, default: false },   // hanya manajemen boleh hapus
 });
@@ -80,9 +80,11 @@ const hapus = (s) => {
                         <h2 class="text-sm font-bold text-slate-700">{{ p.label }}</h2>
                         <span class="text-xs text-slate-400">{{ p.items.length }} naskah</span>
                     </div>
-                    <!-- Agen tetap push ke Drive — tautannya dibawa serta -->
-                    <a v-if="p.link" :href="p.link" target="_blank" rel="noreferrer"
-                       class="text-xs font-semibold text-brand-600 hover:text-brand-800">Buka di Drive →</a>
+                    <!-- Unduh paket utuh sbg PDF. Tautan biasa, bukan Inertia:
+                         responsnya file, bukan halaman — router.get() akan
+                         menunggu properti Inertia yang tak pernah datang. -->
+                    <a :href="p.pdf"
+                       class="text-xs font-semibold text-brand-600 hover:text-brand-800">Unduh PDF ↓</a>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     <button v-for="s in p.items" :key="s.id" type="button" @click="detail = s"

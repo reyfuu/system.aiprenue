@@ -67,9 +67,13 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'update'])->name('mindmaps.update');
     Route::delete('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'destroy'])->name('mindmaps.destroy');
 
-    // Script (template dulu — data dikirim Hermes agent nanti)
+    // Script — isinya dikirim agen Daily Script Rave lewat POST /api/scripts (routes/api.php)
     Route::get('/script', [\App\Http\Controllers\ScriptController::class, 'index'])->name('script.index');
     Route::get('/script/{brand}', [\App\Http\Controllers\ScriptController::class, 'show'])->name('script.show');
+    // Unduh satu paket sebagai PDF. `where` menjaga tanggalnya: tanpa itu string
+    // ngawur masuk ke Carbon::parse & meledak jadi 500, bukan 404 yang benar.
+    Route::get('/script/{brand}/{date}/pdf', [\App\Http\Controllers\ScriptController::class, 'pdf'])
+        ->where('date', '\d{4}-\d{2}-\d{2}')->name('script.pdf');
     Route::delete('/script/{script}', [\App\Http\Controllers\ScriptController::class, 'destroy'])->name('script.destroy');
 
     // Pembukuan (rekap keuangan)

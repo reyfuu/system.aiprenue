@@ -20,7 +20,6 @@ return new class extends Migration
             $table->string('title');
             $table->longText('body');                  // naskah utuh; bisa panjang
             $table->date('generated_for');             // tanggal WIB paket ini dibuat
-            $table->string('drive_link', 500)->nullable();   // dokumen Drive paketnya (agen tetap push ke sana)
             $table->timestamps();
 
             // Satu paket = brand + tanggal. Agen mengirim ulang paket yang sama saat

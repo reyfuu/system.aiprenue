@@ -19,7 +19,6 @@ class ScriptIngestController extends Controller
         $data = $request->validate([
             'brand'          => ['required', Rule::in(array_keys(Script::BRANDS))],
             'generated_for'  => ['required', 'date'],
-            'drive_link'     => ['nullable', 'url', 'max:500'],
             'scripts'        => ['required', 'array', 'min:1', 'max:100'],
             'scripts.*.title' => ['required', 'string', 'max:255'],
             'scripts.*.body'  => ['required', 'string'],
@@ -40,7 +39,6 @@ class ScriptIngestController extends Controller
                 'title'         => $s['title'],
                 'body'          => $s['body'],
                 'generated_for' => $tanggal,
-                'drive_link'    => $data['drive_link'] ?? null,
                 'created_at'    => $now,
                 'updated_at'    => $now,
             ], $data['scripts']));
