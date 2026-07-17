@@ -438,9 +438,12 @@ const destroy = (o) => {
                     <div class="grid sm:grid-cols-2 gap-3">
                         <!-- Tipe pembayaran: full / dp -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran</label>
+                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran <span class="text-red-500">*</span></label>
                             <select v-model="form.tipe_pembayaran" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
-                                <option value="">Belum ditentukan</option>
+                                <!-- `disabled`: cuma penanda "belum dipilih" saat form kosong,
+                                     bukan pilihan yang sah. Opsi lama "Belum ditentukan" bisa
+                                     dipilih & mengirim string kosong → null → kolom NOT NULL → 500. -->
+                                <option value="" disabled>Pilih tipe pembayaran...</option>
                                 <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                             </select>
                             <span v-if="form.errors.tipe_pembayaran" class="text-xs text-red-600">{{ form.errors.tipe_pembayaran }}</span>

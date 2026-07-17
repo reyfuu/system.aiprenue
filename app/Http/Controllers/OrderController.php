@@ -78,8 +78,15 @@ class OrderController extends Controller
         ]);
     }
 
-    /** Aturan validasi bersama create & update. Hanya identitas inti order yang
-     *  wajib; detail operasional dan pembayaran boleh dilengkapi belakangan. */
+    /** Aturan validasi bersama create & update. Hanya identitas inti order +
+     *  tipe pembayaran yang wajib; detail operasional lain boleh dilengkapi
+     *  belakangan.
+     *
+     *  Tipe pembayaran wajib meski kolomnya di DB punya default 'full'. Dua
+     *  lapis itu beda tugas: `required` di sini memaksa MANUSIA memilih Full
+     *  atau DP secara sadar (salah = pesan di form), sedangkan default di DB
+     *  cuma jaring pengaman untuk penulis non-form (seeder, Order::create())
+     *  supaya tak ada jalur yang berakhir jadi NOT NULL violation alias 500. */
     private function rules(): array
     {
         return [
@@ -93,7 +100,11 @@ class OrderController extends Controller
             // kota luar dataset & penulisan lokal tetap harus bisa masuk.
             'kota' => 'required|string|max:100',
             'alamat' => 'nullable|string|max:500',
-            'tipe_pembayaran' => ['nullable', Rule::in(array_keys(Order::TIPE_PEMBAYARAN))],
+            // `required`, bukan `nullable`: opsi "Belum ditentukan" mengirim string
+            // kosong, ConvertEmptyStringsToNull mengubahnya jadi null, `nullable`
+            // meloloskannya, dan null itu mendarat di kolom NOT NULL → 500.
+            // Ditutup di sini supaya jadi pesan form, bukan SQL error.
+            'tipe_pembayaran' => ['required', Rule::in(array_keys(Order::TIPE_PEMBAYARAN))],
             'tanggal_bayar' => 'nullable|date',
             // Nominal boleh belum diketahui saat order pertama kali dicatat.
             'total_idr' => ['nullable', 'numeric', 'min:0'],
