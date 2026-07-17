@@ -78,7 +78,7 @@ const form = useForm({
     email: '',
     kota: '',                   // bebas diketik; kotaList cuma saran datalist
     alamat: '',
-    tipe_pembayaran: 'full',
+    tipe_pembayaran: '',
     tanggal_bayar: '',
     total_idr: '',
     total_usd: '',
@@ -121,7 +121,7 @@ const openEdit = (o) => {
     form.email = o.email ?? '';
     form.kota = o.kota ?? '';
     form.alamat = o.alamat ?? '';
-    form.tipe_pembayaran = o.tipe_pembayaran;
+    form.tipe_pembayaran = o.tipe_pembayaran ?? '';
     form.tanggal_bayar = o.tanggal_bayar ? o.tanggal_bayar.substring(0, 10) : '';
     form.total_idr = o.total_idr ?? '';
     form.total_usd = o.total_usd ?? '';
@@ -383,7 +383,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Tanggal deadline -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tanggal Deadline <span class="text-red-500">*</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Tanggal Deadline</label>
                             <input v-model="form.tanggal_deadline" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.tanggal_deadline" class="text-xs text-red-600">{{ form.errors.tanggal_deadline }}</span>
                         </div>
@@ -402,7 +402,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Telepon -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Telepon <span class="text-red-500">*</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Telepon</label>
                             <input v-model="form.telepon" placeholder="Telepon" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.telepon" class="text-xs text-red-600">{{ form.errors.telepon }}</span>
                         </div>
@@ -438,8 +438,9 @@ const destroy = (o) => {
                     <div class="grid sm:grid-cols-2 gap-3">
                         <!-- Tipe pembayaran: full / dp -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran <span class="text-red-500">*</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran</label>
                             <select v-model="form.tipe_pembayaran" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                                <option value="">Belum ditentukan</option>
                                 <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                             </select>
                             <span v-if="form.errors.tipe_pembayaran" class="text-xs text-red-600">{{ form.errors.tipe_pembayaran }}</span>
@@ -452,7 +453,7 @@ const destroy = (o) => {
                         </div>
                         <!-- Nominal IDR -->
                         <div>
-                            <label class="block text-xs font-semibold text-slate-600">Nilai Order (IDR) <span class="text-red-500">*</span></label>
+                            <label class="block text-xs font-semibold text-slate-600">Nilai Order (IDR)</label>
                             <input v-model="form.total_idr" type="number" min="0" step="1000" placeholder="0"
                                    class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <p class="text-[10px] text-slate-400 mt-0.5">{{ rp(form.total_idr) }}</p>

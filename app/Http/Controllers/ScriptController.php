@@ -3,11 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Script;
-use Illuminate\Http\Request;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Inertia\Inertia;
 
 // Naskah per brand. Isinya datang dari agen Daily Script Rave (POST /api/scripts)
-// — halaman ini cuma membaca & menghapus.
+// — halaman ini menampilkan satu berkas PDF per paket.
 class ScriptController extends Controller
 {
     /** Galeri brand + jumlah naskahnya. */
@@ -18,53 +19,68 @@ class ScriptController extends Controller
 
         return Inertia::render('Script', [
             'brands' => collect(Script::BRANDS)->map(fn ($label, $key) => [
-                'key'    => $key,
-                'name'   => $label,
-                'count'  => $counts[$key] ?? 0,
+                'key' => $key,
+                'name' => $label,
+                'count' => $counts[$key] ?? 0,
                 // paket terbaru: jawaban cepat utk "agennya masih jalan tidak?"
-                'latest' => ($t = $latest[$key] ?? null) ? \Carbon\Carbon::parse($t)->translatedFormat('d M Y') : null,
+                'latest' => ($t = $latest[$key] ?? null) ? Carbon::parse($t)->translatedFormat('d M Y') : null,
             ])->values(),
         ]);
     }
 
-    /** Daftar naskah satu brand, dikelompokkan per paket (tanggal). */
-    public function show(Request $request, string $brand)
+    /** Daftar paket PDF satu brand. Isi naskah baru diambil saat PDF diminta. */
+    public function show(string $brand)
     {
         abort_unless(array_key_exists($brand, Script::BRANDS), 404, 'Brand tak dikenal.');
 
-        $scripts = Script::where('brand', $brand)
-            ->when($request->filled('search'), fn ($q) => $q->where(
-                fn ($w) => $w->where('title', 'like', "%{$request->search}%")
-                    ->orWhere('body', 'like', "%{$request->search}%")
-            ))
-            // terbaru dulu; `id` sbg pemecah seri supaya urutan dlm satu paket stabil
-            ->orderByDesc('generated_for')->orderBy('id')
-            ->get(['id', 'title', 'body', 'generated_for', 'drive_link']);
+        $nama = Script::BRANDS[$brand];
+        $packs = Script::where('brand', $brand)
+            ->selectRaw('generated_for, COUNT(*) as total')
+            ->groupBy('generated_for')
+            ->orderByDesc('generated_for')
+            ->get();
 
         return Inertia::render('ScriptBrand', [
-            'brand'     => ['key' => $brand, 'name' => Script::BRANDS[$brand]],
-            'filters'   => $request->only('search'),
-            'canManage' => auth()->user()->canManage(),
-            // Dikelompokkan di server: Vue tinggal me-render, tak perlu tahu
-            // aturan pengelompokannya.
-            'packs' => $scripts->groupBy(fn ($s) => $s->generated_for->toDateString())
-                ->map(fn ($rows, $tgl) => [
-                    'date'  => $tgl,
-                    'label' => \Carbon\Carbon::parse($tgl)->translatedFormat('d M Y'),
-                    'link'  => $rows->first()->drive_link,
-                    'items' => $rows->map(fn ($s) => [
-                        'id'    => $s->id,
-                        'title' => $s->title,
-                        'body'  => $s->body,
-                    ])->values(),
-                ])->values(),
+            'brand' => ['key' => $brand, 'name' => $nama],
+            'packs' => $packs->map(function ($pack) use ($brand, $nama) {
+                $tanggal = $pack->generated_for->toDateString();
+
+                return [
+                    'date' => $tanggal,
+                    'label' => $pack->generated_for->translatedFormat('d M Y'),
+                    'count' => (int) $pack->total,
+                    'name' => "Script-{$nama}-{$tanggal}.pdf",
+                    // Proyek ini tanpa Ziggy; URL final dikirim sebagai prop.
+                    'pdf' => route('script.pdf', [$brand, $tanggal]),
+                ];
+            }),
         ]);
     }
 
-    public function destroy(Script $script)
+    /** Satu paket (brand + tanggal) jadi satu PDF — pengganti dokumen Drive
+     *  yang dulu dibuat agen. Sengaja dirakit dari isi tabel, bukan file yang
+     *  diunggah agen: naskah yang dihapus lewat UI ikut hilang dari PDF-nya,
+     *  sementara file statis akan terus memajang yang sudah dibuang.
+     *
+     *  Tak ikut memakai filter `search` milik show(): yang diminta paket utuh,
+     *  bukan potongan hasil pencarian. */
+    public function pdf(string $brand, string $date)
     {
-        $script->delete();
+        abort_unless(array_key_exists($brand, Script::BRANDS), 404, 'Brand tak dikenal.');
 
-        return back()->with('status', 'Naskah dihapus.');
+        $scripts = Script::where('brand', $brand)->where('generated_for', $date)
+            ->orderBy('id')   // urutan kirim dari agen = urutan nomor naskah
+            ->get(['title', 'body']);
+
+        abort_if($scripts->isEmpty(), 404, 'Paket naskah tak ditemukan.');
+
+        $nama = Script::BRANDS[$brand];
+
+        return Pdf::loadView('script.report', [
+            'brand' => $nama,
+            'tanggal' => Carbon::parse($date)->translatedFormat('d F Y'),
+            'scripts' => $scripts,
+        ])->setPaper('a4', 'portrait')
+            ->download("Script-{$nama}-{$date}.pdf");
     }
 }

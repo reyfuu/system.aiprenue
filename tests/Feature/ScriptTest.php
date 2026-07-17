@@ -29,10 +29,9 @@ class ScriptTest extends TestCase
     private function payload(array $o = []): array
     {
         return array_merge([
-            'brand'         => 'raveloux',
+            'brand' => 'raveloux',
             'generated_for' => '2026-07-18',
-            'drive_link'    => 'https://docs.google.com/document/d/abc123',
-            'scripts'       => [
+            'scripts' => [
                 ['title' => 'Hook kebaya modern', 'body' => "Baris 1\nBaris 2"],
                 ['title' => 'Behind the scenes', 'body' => 'Isi naskah kedua'],
             ],
@@ -57,7 +56,17 @@ class ScriptTest extends TestCase
         $this->assertSame('Hook kebaya modern', $s->title);
         $this->assertSame("Baris 1\nBaris 2", $s->body, 'baris baru dlm naskah harus utuh');
         $this->assertSame('2026-07-18', $s->generated_for->toDateString());
-        $this->assertSame('https://docs.google.com/document/d/abc123', $s->drive_link);
+    }
+
+    /** Field asing (mis. `drive_link` dari agen versi lama yang belum ter-update)
+     *  harus ditolak diam-diam, bukan meledak: validate() cuma memungut yang
+     *  dikenal, dan Script::insert() akan error kalau kolomnya tak ada. */
+    public function test_field_tak_dikenal_diabaikan(): void
+    {
+        $this->kirim($this->payload(['drive_link' => 'https://docs.google.com/document/d/abc123']))
+            ->assertCreated();
+
+        $this->assertSame(2, Script::count());
     }
 
     /** Gerbangnya cuma token — kalau ini bocor, siapa pun bisa mengisi DB. */
@@ -153,7 +162,7 @@ class ScriptTest extends TestCase
             );
     }
 
-    public function test_halaman_brand_mengelompokkan_per_paket(): void
+    public function test_halaman_brand_menampilkan_satu_pdf_per_paket(): void
     {
         $this->kirim($this->payload(['generated_for' => '2026-07-18']));
         $this->kirim($this->payload(['generated_for' => '2026-07-25']));
@@ -165,7 +174,8 @@ class ScriptTest extends TestCase
                 ->has('packs', 2)
                 ->where('packs.0.date', '2026-07-25')   // terbaru dulu
                 ->where('packs.0.label', '25 Jul 2026')
-                ->has('packs.0.items', 2)
+                ->where('packs.0.count', 2)
+                ->where('packs.0.name', 'Script-Raveloux-2026-07-25.pdf')
                 ->where('packs.1.date', '2026-07-18')
             );
     }
@@ -173,32 +183,6 @@ class ScriptTest extends TestCase
     public function test_brand_tak_dikenal_di_halaman_menjadi_404(): void
     {
         $this->actingAs($this->user())->get('/script/ngawur')->assertNotFound();
-    }
-
-    public function test_cari_menyaring_judul_dan_isi(): void
-    {
-        $this->kirim();
-
-        $this->actingAs($this->user())->get('/script/raveloux?search=kebaya')->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->has('packs', 1)
-                ->has('packs.0.items', 1)
-                ->where('packs.0.items.0.title', 'Hook kebaya modern')
-            );
-
-        // cocok lewat isi naskah, bukan judul
-        $this->actingAs($this->user())->get('/script/raveloux?search=naskah kedua')->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('packs.0.items.0.title', 'Behind the scenes'));
-    }
-
-    public function test_manajemen_boleh_hapus_naskah(): void
-    {
-        $this->kirim();
-        $s = Script::first();
-
-        $this->actingAs($this->user('manager'))->delete('/script/'.$s->id)->assertSessionHasNoErrors();
-
-        $this->assertNull($s->fresh());
     }
 
     /** Staff tak punya menu `script` sama sekali sejak akses dipersempit. */
@@ -209,7 +193,6 @@ class ScriptTest extends TestCase
 
         $this->actingAs($staff)->get('/script')->assertForbidden();
         $this->actingAs($staff)->get('/script/raveloux')->assertForbidden();
-        $this->actingAs($staff)->delete('/script/'.Script::first()->id)->assertForbidden();
 
         $this->assertSame(2, Script::count());
     }
@@ -217,5 +200,70 @@ class ScriptTest extends TestCase
     public function test_tamu_ditolak(): void
     {
         $this->get('/script')->assertRedirect('/login');
+    }
+
+    // ---- Unduh PDF ----
+    // Menggantikan dokumen Google Drive: agen tak lagi mengunggah ke Drive, jadi
+    // PDF ini satu-satunya cara memegang paket utuh dalam satu berkas.
+
+    public function test_paket_bisa_diunduh_sebagai_pdf(): void
+    {
+        $this->kirim();
+
+        $res = $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf');
+
+        $res->assertOk();
+        $this->assertSame('application/pdf', $res->headers->get('content-type'));
+        $this->assertStringContainsString('attachment', $res->headers->get('content-disposition'));
+        $this->assertStringContainsString('Script-Raveloux-2026-07-18.pdf', $res->headers->get('content-disposition'));
+        $this->assertStringStartsWith('%PDF-', $res->getContent(), 'isinya harus PDF sungguhan, bukan halaman error');
+    }
+
+    /** PDF dirakit dari tabel, bukan berkas statis, sehingga selalu mengikuti
+     *  isi paket yang tersimpan saat pengguna mengunduhnya. */
+    public function test_pdf_ikut_naskah_yang_tersisa(): void
+    {
+        $this->kirim();
+        Script::first()->delete();
+
+        $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf')->assertOk();
+
+        // paket habis → tak ada yang bisa diunduh
+        Script::query()->delete();
+        $this->actingAs($this->user())->get('/script/raveloux/2026-07-18/pdf')->assertNotFound();
+    }
+
+    public function test_pdf_paket_tak_ada_menjadi_404(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user())->get('/script/raveloux/2026-01-01/pdf')->assertNotFound();
+        $this->actingAs($this->user())->get('/script/ngawur/2026-07-18/pdf')->assertNotFound();
+    }
+
+    /** Tanggal ngawur harus 404 lewat constraint route — kalau lolos ke
+     *  Carbon::parse, jadinya 500. */
+    public function test_pdf_tanggal_ngawur_menjadi_404(): void
+    {
+        $this->actingAs($this->user())->get('/script/raveloux/bukan-tanggal/pdf')->assertNotFound();
+    }
+
+    public function test_staff_tak_bisa_unduh_pdf(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user('staff'))->get('/script/raveloux/2026-07-18/pdf')->assertForbidden();
+    }
+
+    /** Vue tak punya helper route() (proyek ini tanpa Ziggy), jadi URL-nya wajib
+     *  ikut di props — kalau hilang, tombolnya jadi tautan kosong. */
+    public function test_url_pdf_ikut_di_props_halaman_brand(): void
+    {
+        $this->kirim();
+
+        $this->actingAs($this->user())->get('/script/raveloux')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('packs.0.pdf', url('/script/raveloux/2026-07-18/pdf'))
+            );
     }
 }
