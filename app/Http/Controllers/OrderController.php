@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\Output;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -59,55 +59,51 @@ class OrderController extends Controller
         $totalUsd = (float) Order::sum('total_usd');
 
         return Inertia::render('Orders/Index', [
-            'orders'  => $orders,
+            'orders' => $orders,
             'filters' => $request->only(['tipe_order', 'account', 'tipe_pembayaran', 'output', 'date_from', 'date_to', 'search']),
             'summary' => [
-                'total'    => Order::count(),
+                'total' => Order::count(),
                 'totalIdr' => $totalIdr,
                 'totalUsd' => $totalUsd,
                 'grandIdr' => $totalIdr + $totalUsd * $rate,   // dipajang sbg "Total Pembayaran"
-                'dp'       => Order::where('tipe_pembayaran', 'dp')->count(),
+                'dp' => Order::where('tipe_pembayaran', 'dp')->count(),
             ],
             'rate' => $rate,   // dipakai menghitung total per baris di tabel
             // Referensi dropdown (form + filter)
-            'tipeOrder'      => Order::TIPE_ORDER,
-            'accounts'       => Order::ACCOUNTS,
+            'tipeOrder' => Order::TIPE_ORDER,
+            'accounts' => Order::ACCOUNTS,
             'tipePembayaran' => Order::TIPE_PEMBAYARAN,
-            'kotaList'       => Order::kotaList(),
-            'outputList'     => \App\Models\Output::orderBy('name')->get(['id', 'name']),   // checkbox modal
+            'kotaList' => Order::kotaList(),
+            'outputList' => Output::orderBy('name')->get(['id', 'name']),   // checkbox modal
         ]);
     }
 
-    /** Aturan validasi bersama create & update.
-     *  NB: wajib ditegakkan di sini, BUKAN lewat NOT NULL di DB — baris order lama
-     *  (hasil impor .sql) banyak yang kosong, dan NOT NULL akan menolak seluruh
-     *  tabelnya. Kolomnya tetap nullable di DB, gerbangnya di aplikasi. */
-    private function rules(Request $request): array
+    /** Aturan validasi bersama create & update. Hanya identitas inti order yang
+     *  wajib; detail operasional dan pembayaran boleh dilengkapi belakangan. */
+    private function rules(): array
     {
         return [
-            'tipe_order'       => ['required', Rule::in(array_keys(Order::TIPE_ORDER))],
-            'account'          => ['required', Rule::in(array_keys(Order::ACCOUNTS))],
-            'tanggal_deadline' => 'required|date',
-            'nama_customer'    => 'required|string|max:150',
-            'telepon'          => 'required|string|max:30',
-            'email'            => 'nullable|email|max:150',
+            'tipe_order' => ['required', Rule::in(array_keys(Order::TIPE_ORDER))],
+            'account' => ['required', Rule::in(array_keys(Order::ACCOUNTS))],
+            'tanggal_deadline' => 'nullable|date',
+            'nama_customer' => 'required|string|max:150',
+            'telepon' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:150',
             // Kota bebas diketik (dataset wilayah cuma jadi saran di datalist) —
             // kota luar dataset & penulisan lokal tetap harus bisa masuk.
-            'kota'             => 'required|string|max:100',
-            'alamat'           => 'nullable|string|max:500',
-            'tipe_pembayaran'  => ['required', Rule::in(array_keys(Order::TIPE_PEMBAYARAN))],
-            'tanggal_bayar'    => 'nullable|date',
-            // Nilai order: boleh IDR saja, USD saja, atau dua-duanya — tapi tak boleh
-            // dua-duanya kosong/0. Cek silangnya di prepare(), lihat alasannya di sana.
-            'total_idr'        => ['nullable', 'numeric', 'min:0'],
-            'total_usd'        => ['nullable', 'numeric', 'min:0'],
-            'outputs'          => 'array',
-            'outputs.*'        => 'exists:outputs,id',
-            'bukti_bayar'      => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
-            'invoice'          => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
+            'kota' => 'required|string|max:100',
+            'alamat' => 'nullable|string|max:500',
+            'tipe_pembayaran' => ['nullable', Rule::in(array_keys(Order::TIPE_PEMBAYARAN))],
+            'tanggal_bayar' => 'nullable|date',
+            // Nominal boleh belum diketahui saat order pertama kali dicatat.
+            'total_idr' => ['nullable', 'numeric', 'min:0'],
+            'total_usd' => ['nullable', 'numeric', 'min:0'],
+            'outputs' => 'array',
+            'outputs.*' => 'exists:outputs,id',
+            'bukti_bayar' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
+            'invoice' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
         ];
     }
-
 
     /** Field upload → folder di disk 'public' (butuh `php artisan storage:link`). */
     private const FILES = ['bukti_bayar' => 'bukti-bayar', 'invoice' => 'invoice'];
@@ -166,23 +162,10 @@ class OrderController extends Controller
         return back()->with('status', 'Order dihapus.');
     }
 
-    /** Validasi + default nominal. Kolom NOT NULL default 0 → jangan kirim null. */
+    /** Validasi + default nominal. Kolom nominal NOT NULL → jangan kirim null. */
     private function prepare(Request $request): array
     {
-        $validator = Validator::make($request->all(), $this->rules($request));
-
-        // Cek silang nominal ditaruh di after(), BUKAN sebagai rule di total_idr:
-        // `nullable` membuat Laravel melewati SEMUA aturan berikutnya begitu nilainya
-        // null — termasuk closure — jadi order tanpa nominal sama sekali malah lolos.
-        // after() selalu jalan, apa pun isinya.
-        $validator->after(function ($v) use ($request) {
-            if ((float) $request->input('total_idr', 0) <= 0 && (float) $request->input('total_usd', 0) <= 0) {
-                // menempel di total_idr agar muncul di bawah field "Nilai Order (IDR)"
-                $v->errors()->add('total_idr', 'Nilai order wajib diisi — minimal salah satu IDR atau USD lebih dari 0.');
-            }
-        });
-
-        $data = $validator->validate();
+        $data = $request->validate($this->rules());
         $data['total_idr'] = $data['total_idr'] ?? 0;
         $data['total_usd'] = $data['total_usd'] ?? 0;
         // `outputs` bukan kolom di tabel orders — masuk lewat pivot (sync di store/update).

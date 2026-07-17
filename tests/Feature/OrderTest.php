@@ -3,9 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\Output;
 use App\Models\User;
+use App\Support\ExchangeRate;
+use Database\Seeders\OrderSeeder;
+use Database\Seeders\PipelineSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -22,7 +29,7 @@ class OrderTest extends TestCase
 
         // Total order dihitung pakai kurs (ExchangeRate). Cache di test = array, jadi
         // tanpa ini tiap request benar-benar memanggil open.er-api.com → lambat & flaky.
-        \Illuminate\Support\Facades\Cache::put('usd_idr_rate', self::RATE);
+        Cache::put('usd_idr_rate', self::RATE);
     }
 
     private function user(string $role = 'owner'): User
@@ -30,18 +37,14 @@ class OrderTest extends TestCase
         return User::factory()->create(['role' => $role]);
     }
 
-    /** Payload minimum yang lolos validasi. */
+    /** Empat field yang memang wajib untuk mencatat order baru. */
     private function payload(array $override = []): array
     {
         return array_merge([
-            'tipe_order'       => 'coaching_1on1',
-            'account'          => 'fk',
-            'nama_customer'    => 'Budi',
-            'tipe_pembayaran'  => 'full',
-            'tanggal_deadline' => '2026-08-01',
-            'telepon'          => '08123456789',
-            'kota'             => 'Kota Bandung',
-            'total_idr'        => 1_000_000,
+            'tipe_order' => 'coaching_1on1',
+            'account' => 'fk',
+            'nama_customer' => 'Budi',
+            'kota' => 'Kota Bandung',
         ], $override);
     }
 
@@ -67,7 +70,7 @@ class OrderTest extends TestCase
         $this->actingAs($this->user())->get('/orders')
             ->assertInertia(fn (Assert $page) => $page->where('rate', self::RATE));
 
-        $this->assertGreaterThan(0, \App\Support\ExchangeRate::usdToIdr());
+        $this->assertGreaterThan(0, ExchangeRate::usdToIdr());
     }
 
     public function test_kota_boleh_diketik_manual_di_luar_dataset_wilayah(): void
@@ -103,7 +106,7 @@ class OrderTest extends TestCase
 
     public function test_prioritas_sudah_tak_ada(): void
     {
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('orders', 'prioritas'));
+        $this->assertFalse(Schema::hasColumn('orders', 'prioritas'));
         $this->assertFalse(defined(Order::class.'::PRIORITAS'));
     }
 
@@ -113,7 +116,7 @@ class OrderTest extends TestCase
 
         $this->actingAs($this->user())->post('/orders', $this->payload([
             'bukti_bayar' => UploadedFile::fake()->create('bukti.pdf', 10, 'application/pdf'),
-            'invoice'     => UploadedFile::fake()->create('invoice.pdf', 10, 'application/pdf'),
+            'invoice' => UploadedFile::fake()->create('invoice.pdf', 10, 'application/pdf'),
         ]))->assertSessionHasNoErrors();
 
         $order = Order::first();
@@ -146,7 +149,7 @@ class OrderTest extends TestCase
 
         $this->actingAs($this->user())->post('/orders', $this->payload([
             'bukti_bayar' => UploadedFile::fake()->create('bukti.pdf', 10, 'application/pdf'),
-            'invoice'     => UploadedFile::fake()->create('invoice.pdf', 10, 'application/pdf'),
+            'invoice' => UploadedFile::fake()->create('invoice.pdf', 10, 'application/pdf'),
         ]));
 
         $order = Order::first();
@@ -157,9 +160,9 @@ class OrderTest extends TestCase
         Storage::disk('public')->assertMissing([$bukti, $invoice]);
     }
 
-    public function test_field_penting_wajib_diisi(): void
+    public function test_hanya_empat_field_utama_yang_wajib_diisi(): void
     {
-        foreach (['tanggal_deadline', 'telepon', 'kota', 'nama_customer'] as $field) {
+        foreach (['tipe_order', 'account', 'nama_customer', 'kota'] as $field) {
             $payload = $this->payload();
             unset($payload[$field]);
 
@@ -170,37 +173,25 @@ class OrderTest extends TestCase
         $this->assertSame(0, Order::count());
     }
 
-    /** Nilai order tak boleh kosong — tapi boleh IDR saja, USD saja, atau dua-duanya.
-     *  `required` biasa tak cukup: bagi Laravel, 0 itu "terisi". */
-    public function test_nilai_order_wajib_minimal_satu_mata_uang(): void
+    public function test_seluruh_field_lain_boleh_kosong(): void
     {
-        $owner = $this->user();
-
-        // dua-duanya kosong → ditolak
-        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => 0, 'total_usd' => 0]))
-            ->assertSessionHasErrors('total_idr');
-        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => null, 'total_usd' => null]))
-            ->assertSessionHasErrors('total_idr');
-        $this->assertSame(0, Order::count());
-
-        // USD saja → boleh (order luar negeri tanpa nominal rupiah)
-        $this->actingAs($owner)->post('/orders', $this->payload(['total_idr' => 0, 'total_usd' => 500]))
+        $this->actingAs($this->user())->post('/orders', $this->payload())
             ->assertSessionHasNoErrors();
-        $this->assertSame(1, Order::count());
 
-        // IDR saja → boleh
-        $this->actingAs($owner)->post('/orders', $this->payload(['total_usd' => 0]))
-            ->assertSessionHasNoErrors();
-        $this->assertSame(2, Order::count());
+        $order = Order::first();
+        $this->assertNull($order->tanggal_deadline);
+        $this->assertNull($order->telepon);
+        $this->assertNull($order->tipe_pembayaran);
+        $this->assertSame('0.00', $order->total_idr);
+        $this->assertSame('0.00', $order->total_usd);
     }
 
-    /** Wajib ditegakkan aplikasi, BUKAN NOT NULL di DB — baris order lama hasil
-     *  impor .sql banyak yang kosong & akan ditolak seluruhnya. */
-    public function test_kolom_wajib_tetap_nullable_di_database(): void
+    /** Kolom opsional harus benar-benar menerima null di semua skema DB. */
+    public function test_kolom_opsional_nullable_di_database(): void
     {
-        foreach (['tanggal_deadline', 'telepon', 'kota', 'email'] as $col) {
+        foreach (['tanggal_deadline', 'telepon', 'kota', 'email', 'tipe_pembayaran'] as $col) {
             $this->assertTrue(
-                collect(\Illuminate\Support\Facades\Schema::getColumns('orders'))
+                collect(Schema::getColumns('orders'))
                     ->firstWhere('name', $col)['nullable'],
                 "kolom {$col} harus nullable di DB — baris lama boleh kosong"
             );
@@ -211,8 +202,8 @@ class OrderTest extends TestCase
      *  sumber dgn kartu Sales/Kanban — jangan ada daftar kedua. */
     public function test_output_order_tersimpan_lewat_pivot(): void
     {
-        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
-        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $reels = Output::firstWhere('name', 'Reels') ?? Output::create(['name' => 'Reels']);
+        $foto = Output::firstWhere('name', 'Foto');
         $this->assertNotNull($foto, "output 'Foto' harus ada dari migrasi");
 
         $this->actingAs($this->user())
@@ -248,8 +239,8 @@ class OrderTest extends TestCase
     /** Edit harus MENGGANTI daftar output, bukan menambahi. */
     public function test_edit_order_mengganti_daftar_output(): void
     {
-        $a = \App\Models\Output::create(['name' => 'Output A']);
-        $b = \App\Models\Output::create(['name' => 'Output B']);
+        $a = Output::create(['name' => 'Output A']);
+        $b = Output::create(['name' => 'Output B']);
 
         $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$a->id]]));
         $order = Order::first();
@@ -265,21 +256,21 @@ class OrderTest extends TestCase
     /** Hapus order ikut membersihkan pivot — cascadeOnDelete. */
     public function test_hapus_order_ikut_membuang_baris_pivot(): void
     {
-        $out = \App\Models\Output::create(['name' => 'Output X']);
+        $out = Output::create(['name' => 'Output X']);
         $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$out->id]]));
         $order = Order::first();
 
         $this->actingAs($this->user())->delete('/orders/'.$order->id)->assertSessionHasNoErrors();
 
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('order_output')->where('order_id', $order->id)->count());
+        $this->assertSame(0, DB::table('order_output')->where('order_id', $order->id)->count());
         $this->assertNotNull($out->fresh(), 'output-nya sendiri jangan ikut terhapus');
     }
 
     /** Filter kolom Output lewat pivot. */
     public function test_filter_output_menyaring_order(): void
     {
-        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
-        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $reels = Output::firstWhere('name', 'Reels') ?? Output::create(['name' => 'Reels']);
+        $foto = Output::firstWhere('name', 'Foto');
         $owner = $this->user();
 
         $this->actingAs($owner)->post('/orders', $this->payload(['nama_customer' => 'Pakai Reels', 'outputs' => [$reels->id]]));
@@ -303,9 +294,9 @@ class OrderTest extends TestCase
      *  whereHas ada di komentar OrderController (tahan saat filter jadi multi-output). */
     public function test_order_dengan_banyak_output_muncul_sekali(): void
     {
-        $reels = \App\Models\Output::firstWhere('name', 'Reels') ?? \App\Models\Output::create(['name' => 'Reels']);
-        $foto = \App\Models\Output::firstWhere('name', 'Foto');
-        $video = \App\Models\Output::firstWhere('name', 'Video');
+        $reels = Output::firstWhere('name', 'Reels') ?? Output::create(['name' => 'Reels']);
+        $foto = Output::firstWhere('name', 'Foto');
+        $video = Output::firstWhere('name', 'Video');
 
         $this->actingAs($this->user())->post('/orders', $this->payload([
             'nama_customer' => 'Tiga Output', 'outputs' => [$reels->id, $foto->id, $video->id],
@@ -318,7 +309,7 @@ class OrderTest extends TestCase
     /** Tabel butuh relasi outputs ikut terkirim, kalau tidak kolomnya kosong melulu. */
     public function test_output_ikut_terkirim_ke_tabel(): void
     {
-        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $foto = Output::firstWhere('name', 'Foto');
         $this->actingAs($this->user())->post('/orders', $this->payload(['outputs' => [$foto->id]]));
 
         $this->actingAs($this->user())->get('/orders')->assertOk()
@@ -333,12 +324,12 @@ class OrderTest extends TestCase
      *  tanpa output supaya kasus "hilang saat difilter" ikut kelihatan. */
     public function test_seeder_order_memberi_sebaran_output_yang_bisa_difilter(): void
     {
-        $this->seed(\Database\Seeders\PipelineSeeder::class);   // output-nya dibuat di sini
-        $this->seed(\Database\Seeders\OrderSeeder::class);
+        $this->seed(PipelineSeeder::class);   // output-nya dibuat di sini
+        $this->seed(OrderSeeder::class);
 
-        $this->assertGreaterThan(0, \App\Models\Output::count());
+        $this->assertGreaterThan(0, Output::count());
 
-        foreach (\App\Models\Output::all() as $out) {
+        foreach (Output::all() as $out) {
             $this->assertGreaterThan(
                 0,
                 Order::whereHas('outputs', fn ($q) => $q->where('outputs.id', $out->id))->count(),
@@ -353,15 +344,15 @@ class OrderTest extends TestCase
     /** Seeder dijalankan ulang tak boleh menggandakan baris pivot. */
     public function test_seeder_order_idempoten(): void
     {
-        $this->seed(\Database\Seeders\PipelineSeeder::class);
-        $this->seed(\Database\Seeders\OrderSeeder::class);
-        $pivot = \Illuminate\Support\Facades\DB::table('order_output')->count();
+        $this->seed(PipelineSeeder::class);
+        $this->seed(OrderSeeder::class);
+        $pivot = DB::table('order_output')->count();
         $order = Order::count();
 
-        $this->seed(\Database\Seeders\OrderSeeder::class);
+        $this->seed(OrderSeeder::class);
 
         $this->assertSame($order, Order::count());
-        $this->assertSame($pivot, \Illuminate\Support\Facades\DB::table('order_output')->count());
+        $this->assertSame($pivot, DB::table('order_output')->count());
     }
 
     public function test_staff_tak_boleh_membuat_order(): void
