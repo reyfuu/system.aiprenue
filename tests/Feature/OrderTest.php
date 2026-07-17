@@ -45,6 +45,7 @@ class OrderTest extends TestCase
             'account' => 'fk',
             'nama_customer' => 'Budi',
             'kota' => 'Kota Bandung',
+            'tipe_pembayaran' => 'full',
         ], $override);
     }
 
@@ -160,9 +161,9 @@ class OrderTest extends TestCase
         Storage::disk('public')->assertMissing([$bukti, $invoice]);
     }
 
-    public function test_hanya_empat_field_utama_yang_wajib_diisi(): void
+    public function test_hanya_lima_field_utama_yang_wajib_diisi(): void
     {
-        foreach (['tipe_order', 'account', 'nama_customer', 'kota'] as $field) {
+        foreach (['tipe_order', 'account', 'nama_customer', 'kota', 'tipe_pembayaran'] as $field) {
             $payload = $this->payload();
             unset($payload[$field]);
 
@@ -181,15 +182,72 @@ class OrderTest extends TestCase
         $order = Order::first();
         $this->assertNull($order->tanggal_deadline);
         $this->assertNull($order->telepon);
-        $this->assertNull($order->tipe_pembayaran);
         $this->assertSame('0.00', $order->total_idr);
         $this->assertSame('0.00', $order->total_usd);
+    }
+
+    // ---- Tipe pembayaran wajib ----
+
+    /** Ini bug yang sesungguhnya, bukan sekadar validasi kosmetik.
+     *
+     *  Opsi "Belum ditentukan" di form mengirim string kosong →
+     *  ConvertEmptyStringsToNull mengubahnya jadi null → `nullable` meloloskannya
+     *  → null mendarat di kolom NOT NULL → **500 di layar user**. Yang harus
+     *  keluar adalah pesan di form, bukan halaman error. */
+    public function test_tipe_pembayaran_kosong_jadi_pesan_form_bukan_500(): void
+    {
+        foreach (['', null] as $kosong) {
+            $this->actingAs($this->user())
+                ->post('/orders', $this->payload(['tipe_pembayaran' => $kosong]))
+                ->assertSessionHasErrors('tipe_pembayaran');   // 302 + error, BUKAN 500
+        }
+
+        // form kirim tanpa field-nya sama sekali
+        $tanpa = $this->payload();
+        unset($tanpa['tipe_pembayaran']);
+        $this->actingAs($this->user())->post('/orders', $tanpa)
+            ->assertSessionHasErrors('tipe_pembayaran');
+
+        $this->assertSame(0, Order::count(), 'tak boleh ada order tersimpan tanpa tipe pembayaran');
+    }
+
+    public function test_tipe_pembayaran_di_luar_daftar_ditolak(): void
+    {
+        $this->actingAs($this->user())->post('/orders', $this->payload(['tipe_pembayaran' => 'ngawur']))
+            ->assertSessionHasErrors('tipe_pembayaran');
+
+        $this->assertSame(0, Order::count());
+    }
+
+    /** Penulis non-form (seeder, Order::create() langsung) tak mengirim kolom ini.
+     *  Default DB-nya wajib tetap ada — tanpa itu mereka kena NOT NULL violation
+     *  alias 500, padahal gerbang "wajib dipilih" tugasnya ada di validasi form. */
+    public function test_penulis_tanpa_form_tetap_dapat_default_bukan_error(): void
+    {
+        $tanpa = $this->payload();
+        unset($tanpa['tipe_pembayaran']);
+
+        $order = Order::create($tanpa);   // bypass validasi, seperti seeder
+
+        $this->assertSame('full', $order->fresh()->tipe_pembayaran);
+    }
+
+    /** Bentuk kolomnya yang membuat tes 500 di atas bermakna: kalau kolom ini
+     *  nullable, null akan masuk diam-diam & tes itu lolos tanpa menjaga apa pun.
+     *  NOT NULL + default 'full' = dua sifat yang saling melengkapi, keduanya
+     *  wajib ada. */
+    public function test_tipe_pembayaran_not_null_dan_berdefault_di_database(): void
+    {
+        $kolom = collect(Schema::getColumns('orders'))->firstWhere('name', 'tipe_pembayaran');
+
+        $this->assertFalse($kolom['nullable'], 'harus NOT NULL — kalau nullable, null lolos diam-diam');
+        $this->assertStringContainsString('full', (string) $kolom['default'], 'default wajib ada utk penulis non-form');
     }
 
     /** Kolom opsional harus benar-benar menerima null di semua skema DB. */
     public function test_kolom_opsional_nullable_di_database(): void
     {
-        foreach (['tanggal_deadline', 'telepon', 'kota', 'email', 'tipe_pembayaran'] as $col) {
+        foreach (['tanggal_deadline', 'telepon', 'kota', 'email'] as $col) {
             $this->assertTrue(
                 collect(Schema::getColumns('orders'))
                     ->firstWhere('name', $col)['nullable'],
