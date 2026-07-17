@@ -54,14 +54,25 @@ class ScriptIngestController extends Controller
         ], 201);
     }
 
-    /** hash_equals: bandingkan token dgn waktu tetap, jangan `===` (bocor lewat
-     *  selisih waktu). Token kosong di .env = tolak — jangan sampai lupa mengisi
-     *  malah membuka endpointnya untuk semua orang. */
+    /** Dua kegagalan yang berbeda, dua jawaban yang berbeda — sengaja.
+     *
+     *  Dulu keduanya sama-sama 401 "Token tidak sah", dan itu jalan buntu saat
+     *  memasang di server: gagal karena token belum diisi & gagal karena token
+     *  beda dengan GitHub tak bisa dibedakan dari luar. Satu-satunya cara
+     *  memastikan adalah `php artisan tinker` di server — percuma buat yang
+     *  cuma pegang panel hosting.
+     *
+     *  503 tetap MENOLAK (fail closed): lupa mengisi token tak boleh membuka
+     *  endpointnya. Yang dibocorkan hanya status konfigurasi, bukan tokennya —
+     *  dan itu tak menolong penyerang sama sekali, karena tetap tak bisa masuk. */
     private function pastikanTokenSah(Request $request): void
     {
         $token = (string) config('services.script_agent.token');
 
-        abort_if($token === '' || ! hash_equals($token, (string) $request->bearerToken()),
-            401, 'Token tidak sah.');
+        abort_if($token === '', 503,
+            'Token agen belum dikonfigurasi di server. Isi SCRIPT_AGENT_TOKEN di .env lalu jalankan: php artisan optimize:clear');
+
+        // hash_equals: bandingkan dgn waktu tetap, jangan `===` (bocor lewat selisih waktu).
+        abort_unless(hash_equals($token, (string) $request->bearerToken()), 401, 'Token tidak sah.');
     }
 }

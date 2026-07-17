@@ -83,8 +83,34 @@ class ScriptTest extends TestCase
     {
         config()->set('services.script_agent.token', null);
 
+        // 503, bukan 401: server belum siap — beda dari "tokenmu salah".
+        $this->kirim([], null)->assertStatus(503);
+        $this->kirim([], '')->assertStatus(503);
+        $this->kirim([], 'token-apa-pun')->assertStatus(503);
+
+        $this->assertSame(0, Script::count(), 'token kosong tetap wajib menolak');
+    }
+
+    /** Yang membedakan 503 dari 401 itu bukan kosmetik: saat memasang di server,
+     *  "token belum diisi" & "token beda dgn GitHub" dulu sama-sama 401, jadi tak
+     *  ada cara membedakannya tanpa `tinker` di server. Pesannya pun menyebut
+     *  langkah perbaikannya — log GitHub Actions memuntahkan body ini apa adanya. */
+    public function test_pesan_503_menuntun_ke_perbaikannya(): void
+    {
+        config()->set('services.script_agent.token', '');
+
+        $res = $this->kirim([], 'token-ngawur')->assertStatus(503);
+
+        $this->assertStringContainsString('SCRIPT_AGENT_TOKEN', $res->json('message'));
+        $this->assertStringContainsString('optimize:clear', $res->json('message'));
+    }
+
+    /** Token yg SUDAH dikonfigurasi tapi tak cocok tetap 401 — jangan sampai
+     *  jawabannya membocorkan bahwa tokennya ada & seberapa dekat tebakannya. */
+    public function test_token_salah_tetap_401_bukan_503(): void
+    {
+        $this->kirim([], 'token-ngawur')->assertUnauthorized();
         $this->kirim([], null)->assertUnauthorized();
-        $this->kirim([], '')->assertUnauthorized();
 
         $this->assertSame(0, Script::count());
     }

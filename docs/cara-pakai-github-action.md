@@ -65,6 +65,35 @@ php artisan tinker --execute="echo strlen((string) config('services.script_agent
 
 Hasil harus lebih dari `0`; token dari perintah di atas panjangnya `48` karakter.
 
+### Cek dari laptop, tanpa SSH
+
+Kalau tak sedang pegang terminal server, status token bisa dibaca dari luar
+lewat satu permintaan. Kirim token yang sengaja salah:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://app.aipreneur.co.id/api/scripts \
+  -H "Authorization: Bearer sengaja-salah" -H "Content-Type: application/json" -d '{}'
+```
+
+| Hasil | Artinya |
+|---|---|
+| `503` | Token **belum** terisi di server, atau config masih ter-cache → ulangi langkah di atas |
+| `401` | Token **sudah** terisi. Sisa pekerjaannya cuma menyamakan nilainya dengan GitHub |
+| `404` | Aplikasi versi lama — modul Script belum ter-deploy |
+
+Setelah `401` muncul, uji token yang asli. Balasan `201` berarti seluruh jalur
+sudah benar dan agen tinggal dijalankan:
+
+```bash
+curl -s -X POST https://app.aipreneur.co.id/api/scripts \
+  -H "Authorization: Bearer TOKEN_ASLI" -H "Content-Type: application/json" \
+  -d '{"brand":"raveloux","generated_for":"2026-07-17","scripts":[{"title":"1. Uji","body":"KATEGORI: uji"}]}'
+```
+
+Hapus naskah uji itu lewat menu Script setelah selesai. Perintah ini tak memakai
+kuota Anthropic sama sekali — pakai ini untuk memastikan token beres **sebelum**
+menjalankan workflow yang berbayar.
+
 ## 3. Buat API key Anthropic
 
 Buka [Anthropic Console](https://console.anthropic.com/settings/keys), lalu:
@@ -161,8 +190,9 @@ permintaan paket di luar jadwal.
 
 | Gejala | Penyebab yang mungkin | Tindakan |
 |---|---|---|
-| `ANTHROPIC_API_KEY` kosong | Secret belum dibuat atau namanya salah | Buat secret dengan nama persis `ANTHROPIC_API_KEY` |
-| `401 Token tidak sah` | Token GitHub dan server berbeda | Samakan `APP_SCRIPT_TOKEN` dengan `SCRIPT_AGENT_TOKEN`, lalu `php artisan optimize:clear` |
+| `Could not resolve authentication method` | `ANTHROPIC_API_KEY` belum dibuat atau namanya salah. **Secret yang tak diset bukan berarti kosong — env var-nya tetap ada, isinya string kosong**, jadi SDK menolaknya, bukan Python yang error | Buat secret dengan nama persis `ANTHROPIC_API_KEY` |
+| `503 Token agen belum dikonfigurasi` | `SCRIPT_AGENT_TOKEN` belum terisi **di server** (atau terisi tapi config masih ter-cache) | Isi di `.env`, lalu `php artisan optimize:clear` |
+| `401 Token tidak sah` | Server **sudah** punya token, tapi nilainya beda dengan GitHub | Samakan `APP_SCRIPT_TOKEN` dengan `SCRIPT_AGENT_TOKEN` |
 | `422` | Format brand atau naskah ditolak aplikasi | Buka detail respons di log job |
 | Connection error | Domain aplikasi tidak dapat dijangkau | Buka endpoint aplikasi dan periksa DNS/SSL |
 | Credit/billing error | Saldo atau billing Anthropic bermasalah | Periksa billing Anthropic Console |
