@@ -7,26 +7,26 @@
            Naskah memakai "·" sebagai pemisah kategori & "–" di judul seksi —
            dengan font lain keduanya jadi kotak kosong. */
         * { font-family: DejaVu Sans, sans-serif; }
-        body { color: #1e293b; font-size: 11px; }
+        /* Paket berisi 30 naskah: ukuran dan jarak dibuat rapat supaya beberapa
+           naskah muat per halaman tanpa mengorbankan keterbacaan saat dicetak. */
+        @page { margin: 24px 28px; }
+        body { color: #1e293b; font-size: 8px; margin: 0; }
 
-        h1 { font-size: 18px; margin: 0; color: #1d4ed8; }
-        .muted { color: #64748b; font-size: 10px; }
-        .head { border-bottom: 2px solid #1d4ed8; padding-bottom: 8px; margin-bottom: 4px; }
+        h1 { font-size: 14px; margin: 0; color: #1d4ed8; }
+        .muted { color: #64748b; font-size: 8px; }
+        .head { border-bottom: 1px solid #1d4ed8; padding-bottom: 4px; margin-bottom: 2px; }
 
-        /* Efeknya di DomPDF: praktis satu naskah per halaman (diukur — 3 naskah
-           jadi 3 halaman; tanpa aturan ini 2 halaman, tapi ada naskah terbelah
-           di tengah kalimat). Halaman jadi lebih banyak, dan itu memang yang
-           dipilih: paket ini dibaca & dicetak per naskah, bukan sebagai prosa
-           bersambung. Naskah 30-45 detik selalu muat dalam satu halaman. */
-        .script { page-break-inside: avoid; margin-top: 16px; }
+        /* Jangan paksa satu naskah satu halaman. Judul tetap menempel pada awal
+           body, sedangkan body panjang boleh berlanjut agar ruang tidak boros. */
+        .script { margin-top: 6px; }
         .script h2 {
-            font-size: 12px; margin: 0 0 6px; color: #1d4ed8;
-            background: #eef2ff; padding: 6px 8px; border-radius: 3px;
+            page-break-after: avoid; font-size: 9px; margin: 0 0 2px; color: #1d4ed8;
+            background: #eef2ff; padding: 3px 5px; border-radius: 2px;
         }
         /* white-space: pre-wrap — naskah disimpan sebagai teks polos & barisnya
            bermakna (HOOK:, SCRIPT:, CTA: masing-masing satu baris). Tanpa ini
            HTML meratakan semuanya jadi satu paragraf yang tak terbaca. */
-        .body { white-space: pre-wrap; line-height: 1.5; padding: 0 8px; }
+        .body { white-space: pre-wrap; line-height: 1.25; padding: 0 5px; }
     </style>
 </head>
 <body>

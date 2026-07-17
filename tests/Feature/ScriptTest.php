@@ -29,9 +29,9 @@ class ScriptTest extends TestCase
     private function payload(array $o = []): array
     {
         return array_merge([
-            'brand'         => 'raveloux',
+            'brand' => 'raveloux',
             'generated_for' => '2026-07-18',
-            'scripts'       => [
+            'scripts' => [
                 ['title' => 'Hook kebaya modern', 'body' => "Baris 1\nBaris 2"],
                 ['title' => 'Behind the scenes', 'body' => 'Isi naskah kedua'],
             ],
@@ -162,7 +162,7 @@ class ScriptTest extends TestCase
             );
     }
 
-    public function test_halaman_brand_mengelompokkan_per_paket(): void
+    public function test_halaman_brand_menampilkan_satu_pdf_per_paket(): void
     {
         $this->kirim($this->payload(['generated_for' => '2026-07-18']));
         $this->kirim($this->payload(['generated_for' => '2026-07-25']));
@@ -174,7 +174,8 @@ class ScriptTest extends TestCase
                 ->has('packs', 2)
                 ->where('packs.0.date', '2026-07-25')   // terbaru dulu
                 ->where('packs.0.label', '25 Jul 2026')
-                ->has('packs.0.items', 2)
+                ->where('packs.0.count', 2)
+                ->where('packs.0.name', 'Script-Raveloux-2026-07-25.pdf')
                 ->where('packs.1.date', '2026-07-18')
             );
     }
@@ -182,32 +183,6 @@ class ScriptTest extends TestCase
     public function test_brand_tak_dikenal_di_halaman_menjadi_404(): void
     {
         $this->actingAs($this->user())->get('/script/ngawur')->assertNotFound();
-    }
-
-    public function test_cari_menyaring_judul_dan_isi(): void
-    {
-        $this->kirim();
-
-        $this->actingAs($this->user())->get('/script/raveloux?search=kebaya')->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->has('packs', 1)
-                ->has('packs.0.items', 1)
-                ->where('packs.0.items.0.title', 'Hook kebaya modern')
-            );
-
-        // cocok lewat isi naskah, bukan judul
-        $this->actingAs($this->user())->get('/script/raveloux?search=naskah kedua')->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('packs.0.items.0.title', 'Behind the scenes'));
-    }
-
-    public function test_manajemen_boleh_hapus_naskah(): void
-    {
-        $this->kirim();
-        $s = Script::first();
-
-        $this->actingAs($this->user('manager'))->delete('/script/'.$s->id)->assertSessionHasNoErrors();
-
-        $this->assertNull($s->fresh());
     }
 
     /** Staff tak punya menu `script` sama sekali sejak akses dipersempit. */
@@ -218,7 +193,6 @@ class ScriptTest extends TestCase
 
         $this->actingAs($staff)->get('/script')->assertForbidden();
         $this->actingAs($staff)->get('/script/raveloux')->assertForbidden();
-        $this->actingAs($staff)->delete('/script/'.Script::first()->id)->assertForbidden();
 
         $this->assertSame(2, Script::count());
     }
@@ -245,8 +219,8 @@ class ScriptTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $res->getContent(), 'isinya harus PDF sungguhan, bukan halaman error');
     }
 
-    /** PDF dirakit dari tabel, bukan berkas statis: naskah yang dihapus lewat UI
-     *  tak boleh muncul lagi di unduhan berikutnya. */
+    /** PDF dirakit dari tabel, bukan berkas statis, sehingga selalu mengikuti
+     *  isi paket yang tersimpan saat pengguna mengunduhnya. */
     public function test_pdf_ikut_naskah_yang_tersisa(): void
     {
         $this->kirim();

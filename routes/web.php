@@ -7,14 +7,15 @@ use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
-use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PipelineController;
+use App\Http\Controllers\ScriptController;
+use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -61,21 +62,19 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
 
     // Mindmap (mind-elixir) — galeri + editor + simpan/hapus
-    Route::get('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'index'])->name('mindmaps.index');
-    Route::post('/mindmaps', [\App\Http\Controllers\MindmapController::class, 'store'])->name('mindmaps.store');
-    Route::get('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'show'])->name('mindmaps.show');
-    Route::put('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'update'])->name('mindmaps.update');
-    Route::delete('/mindmaps/{mindmap}', [\App\Http\Controllers\MindmapController::class, 'destroy'])->name('mindmaps.destroy');
+    Route::get('/mindmaps', [MindmapController::class, 'index'])->name('mindmaps.index');
+    Route::post('/mindmaps', [MindmapController::class, 'store'])->name('mindmaps.store');
+    Route::get('/mindmaps/{mindmap}', [MindmapController::class, 'show'])->name('mindmaps.show');
+    Route::put('/mindmaps/{mindmap}', [MindmapController::class, 'update'])->name('mindmaps.update');
+    Route::delete('/mindmaps/{mindmap}', [MindmapController::class, 'destroy'])->name('mindmaps.destroy');
 
     // Script — isinya dikirim agen Daily Script Rave lewat POST /api/scripts (routes/api.php)
-    Route::get('/script', [\App\Http\Controllers\ScriptController::class, 'index'])->name('script.index');
-    Route::get('/script/{brand}', [\App\Http\Controllers\ScriptController::class, 'show'])->name('script.show');
+    Route::get('/script', [ScriptController::class, 'index'])->name('script.index');
+    Route::get('/script/{brand}', [ScriptController::class, 'show'])->name('script.show');
     // Unduh satu paket sebagai PDF. `where` menjaga tanggalnya: tanpa itu string
     // ngawur masuk ke Carbon::parse & meledak jadi 500, bukan 404 yang benar.
-    Route::get('/script/{brand}/{date}/pdf', [\App\Http\Controllers\ScriptController::class, 'pdf'])
+    Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])
         ->where('date', '\d{4}-\d{2}-\d{2}')->name('script.pdf');
-    Route::delete('/script/{script}', [\App\Http\Controllers\ScriptController::class, 'destroy'])->name('script.destroy');
-
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');
     Route::get('/pembukuan/report', [PembukuanController::class, 'report'])->name('pembukuan.report');

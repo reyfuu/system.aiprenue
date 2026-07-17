@@ -41,7 +41,6 @@ class EnsureMenuAccess
     private function isManageRoute(string $name): bool
     {
         return in_array($name, [
-            'script.destroy',   // mutasi — sisanya (index/show) cuma baca
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
             'pipelines.progress', 'pipelines.todos', 'pipelines.archive',
             'pipelines.done',   // mutasi juga — sebelumnya lolos cek canManage()
