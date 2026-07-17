@@ -301,10 +301,40 @@ class SalesPipelineTest extends TestCase
         $card = $this->card('lead');
 
         $this->actingAs($this->user('manager'))
-            ->patchJson("/pipelines/{$card->id}/progress", ['progress' => 'nego'])
+            ->patchJson('/pipelines/reorder', ['progress' => 'nego', 'ids' => [$card->id]])
             ->assertOk();
 
         $this->assertSame('nego', $card->fresh()->progress);
+    }
+
+    /** Inti keluhannya: menggeser kartu naik/turun di dalam kolom yang sama dulu
+     *  tak tersimpan sama sekali — di layar pindah, lalu balik begitu dimuat
+     *  ulang, karena tak ada kolom urutan & klien membuang event 'moved'. */
+    public function test_geser_urutan_dalam_kolom_tersimpan(): void
+    {
+        [$a, $b, $c] = [$this->card('lead'), $this->card('lead'), $this->card('lead')];
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [$c->id, $a->id, $b->id]])
+            ->assertOk();
+
+        $urut = Pipeline::where('progress', 'lead')->orderBy('position')->orderBy('id')->pluck('id')->all();
+        $this->assertSame([$c->id, $a->id, $b->id], $urut, 'urutan hasil drag harus bertahan');
+    }
+
+    /** Urutan wajib datang dari `position`, bukan kebetulan urutan id. */
+    public function test_kanban_menampilkan_kartu_sesuai_urutan_tersimpan(): void
+    {
+        [$a, $b] = [$this->card('lead'), $this->card('lead')];
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [$b->id, $a->id]])->assertOk();
+
+        $this->actingAs($this->user('manager'))->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('board.lead.0.id', $b->id)   // yg digeser ke atas tampil duluan
+                ->where('board.lead.1.id', $a->id)
+            );
     }
 
     public function test_stage_di_luar_board_ditolak(): void
@@ -312,8 +342,32 @@ class SalesPipelineTest extends TestCase
         $card = $this->card('lead');
 
         $this->actingAs($this->user('manager'))
-            ->patchJson("/pipelines/{$card->id}/progress", ['progress' => 'editing']) // kolom board lain
+            ->patchJson('/pipelines/reorder', ['progress' => 'editing', 'ids' => [$card->id]]) // kolom board lain
             ->assertStatus(422);
+
+        $this->assertSame('lead', $card->fresh()->progress);
+    }
+
+    /** Key kolom tak unik antar board (dua board bisa sama-sama punya 'script'),
+     *  jadi board WAJIB diambil dari kartunya. Kalau diambil dari request, kartu
+     *  bisa dilempar ke kolom milik board lain. */
+    public function test_kartu_dari_board_berbeda_ditolak(): void
+    {
+        $sales = $this->card('lead');
+        $lain  = Pipeline::create(['category' => 'endorse', 'progress' => 'editing', 'endorse' => 'X']);
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [$sales->id, $lain->id]])
+            ->assertStatus(422);
+
+        $this->assertSame('editing', $lain->fresh()->progress);
+    }
+
+    public function test_id_tak_ada_ditolak(): void
+    {
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [999999]])
+            ->assertNotFound();
     }
 
     /** Staff cuma boleh Kanban & Mindmap — Sales Pipeline tertutup sama sekali,
@@ -324,7 +378,7 @@ class SalesPipelineTest extends TestCase
         $staff = $this->user('staff');
 
         $this->actingAs($staff)->get('/pipelines')->assertForbidden();
-        $this->actingAs($staff)->patchJson("/pipelines/{$card->id}/progress", ['progress' => 'nego'])->assertForbidden();
+        $this->actingAs($staff)->patchJson('/pipelines/reorder', ['progress' => 'nego', 'ids' => [$card->id]])->assertForbidden();
         // `done` dulu lolos cek canManage() — sekarang ikut tertutup
         $this->actingAs($staff)->patchJson("/pipelines/{$card->id}/done", ['done' => true])->assertForbidden();
 

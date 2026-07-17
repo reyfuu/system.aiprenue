@@ -42,7 +42,7 @@ class EnsureMenuAccess
     {
         return in_array($name, [
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
-            'pipelines.progress', 'pipelines.todos', 'pipelines.archive',
+            'pipelines.reorder', 'pipelines.todos', 'pipelines.archive',
             'pipelines.done',   // mutasi juga — sebelumnya lolos cek canManage()
         ], true)
             || str_starts_with($name, 'boards.')
@@ -70,7 +70,7 @@ class EnsureMenuAccess
             $name === 'dashboard' => ['dashboard'],
             $name === 'pipelines.kanban' => ['kanban'],
             $name === 'pipelines.index' => ['pipeline'],
-            in_array($name, ['pipelines.progress', 'pipelines.todos', 'pipelines.archive', 'pipelines.done'], true) => ['kanban', 'pipeline'],
+            in_array($name, ['pipelines.reorder', 'pipelines.todos', 'pipelines.archive', 'pipelines.done'], true) => ['kanban', 'pipeline'],
             $name === 'pipelines.store' => ['kanban', 'pipeline'],
             str_starts_with($name, 'boards.') => ['kanban', 'pipeline'],
             str_starts_with($name, 'columns.') => ['kanban', 'pipeline'],

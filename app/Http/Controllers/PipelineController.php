@@ -7,6 +7,7 @@ use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class PipelineController extends Controller
@@ -89,7 +90,10 @@ class PipelineController extends Controller
             ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
-            ->orderBy('id')->get();
+            // position = urutan hasil drag. `id` sbg pemecah seri: kartu baru
+            // sama-sama position 0, tanpa ini urutannya diserahkan ke DB & bisa
+            // berubah tiap muat ulang tanpa ada yang menyentuhnya.
+            ->orderBy('position')->orderBy('id')->get();
 
         // Jumlah kartu per jenis untuk angka di chip — TIDAK ikut $jenis, kalau ikut
         // angkanya jadi 0 begitu chip lain dipilih & tak bisa dipakai memilih.
@@ -201,13 +205,48 @@ class PipelineController extends Controller
         ]);
     }
 
-    public function updateProgress(Request $request, Pipeline $pipeline)
+    /** Simpan isi & urutan satu kolom kanban sekaligus.
+     *
+     *  Menggantikan endpoint per-kartu yang lama (`{pipeline}/progress`). Dulu
+     *  ia cuma menyimpan "kartu ini pindah ke kolom mana", jadi menggeser kartu
+     *  naik/turun di dalam kolom yang sama tak tersimpan sama sekali.
+     *
+     *  Yang dikirim klien = daftar id kolom tujuan sesudah drag, terurut.
+     *  Bentuk itu memuat KEDUA kejadiannya: pindah antar kolom & geser di dalam
+     *  kolom sama-sama menghasilkan "kolom B sekarang berisi id-id ini, urutan
+     *  segini". Satu endpoint, satu perjalanan jaringan, tak ada keadaan
+     *  setengah jadi seperti kalau progress & urutan dikirim terpisah.
+     *
+     *  Kolom ASAL tak perlu ikut diperbarui: posisinya boleh berlubang
+     *  (0,1,3,...) karena yang dipakai cuma urutan relatifnya. */
+    public function reorder(Request $request)
     {
-        $validKeys = \App\Models\BoardColumn::where('board_key', $pipeline->category)->pluck('key')->all();
         $data = $request->validate([
-            'progress' => ['required', \Illuminate\Validation\Rule::in($validKeys)],
+            'progress' => ['required', 'string'],
+            'ids'      => ['required', 'array', 'min:1'],
+            'ids.*'    => ['integer'],
         ]);
-        $pipeline->update($data);
+
+        $cards = Pipeline::whereIn('id', $data['ids'])->get();
+
+        abort_if($cards->count() !== count($data['ids']), 404, 'Ada kartu yang tak ditemukan.');
+
+        // Semua kartu wajib satu board. Board diambil DARI KARTUNYA, bukan dari
+        // request: key kolom tak unik antar board (dua board bisa sama-sama punya
+        // 'script'), jadi memvalidasi progress tanpa tahu boardnya = membiarkan
+        // kartu dipindah ke kolom milik board lain.
+        $category = $cards->pluck('category')->unique();
+        abort_if($category->count() > 1, 422, 'Kartu berasal dari board berbeda.');
+
+        $validKeys = \App\Models\BoardColumn::where('board_key', $category->first())->pluck('key')->all();
+        abort_unless(in_array($data['progress'], $validKeys, true), 422, 'Kolom tak dikenal di board ini.');
+
+        // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
+        DB::transaction(function () use ($data) {
+            foreach ($data['ids'] as $i => $id) {
+                Pipeline::where('id', $id)->update(['progress' => $data['progress'], 'position' => $i]);
+            }
+        });
 
         return response()->json(['ok' => true]);
     }

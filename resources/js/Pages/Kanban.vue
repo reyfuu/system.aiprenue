@@ -77,13 +77,29 @@ const boardCount = computed(() => Object.values(cols.value).flat().length);
 const rp = (n) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n));           // penuh: kartu
 const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n); // ringkas: header stage
 
-// ---- Drag & drop (vuedraggable) — pindah antar kolom → simpan progress ----
-// vuedraggable memutasi cols.value[key] langsung. @change memicu 'added' HANYA
-// di kolom penerima → dari situ kita tahu progress baru kartu.
+// ---- Drag & drop (vuedraggable) — simpan isi & urutan kolom tujuan ----
+// vuedraggable memutasi cols.value[key] langsung, lalu @change memicu:
+//   'added'   di kolom penerima (kartu masuk dari kolom lain)
+//   'moved'   di kolom yg sama  (kartu digeser naik/turun)
+//   'removed' di kolom asal     — diabaikan, lihat di bawah
+//
+// Dulu cuma 'added' yang ditangani, jadi geseran naik/turun tak pernah
+// tersimpan: di layar kartunya pindah, lalu balik ke tempat semula begitu
+// halaman dimuat ulang.
+//
+// Yang dikirim bukan "kartu X ke kolom B", tapi seluruh isi kolom tujuan sesudah
+// drag. Bentuk itu memuat kedua kejadian sekaligus & tak bisa setengah jadi.
+// 'removed' diabaikan dgn sengaja: satu drag antar kolom memicu 'removed' di
+// kolom asal DAN 'added' di kolom tujuan — menanganinya berarti dua kiriman
+// untuk satu perbuatan, dan posisi kolom asal boleh berlubang (0,1,3,…) karena
+// yang dipakai cuma urutan relatifnya.
 const onCardChange = (evt, toKey) => {
-    if (!evt.added) return;                                        // reorder dalam kolom tak perlu disimpan (tak ada kolom urutan)
-    const card = evt.added.element;
-    patchCard(`/pipelines/${card.id}/progress`, { progress: toKey });
+    if (!evt.added && !evt.moved) return;
+
+    patchCard('/pipelines/reorder', {
+        progress: toKey,
+        ids: (cols.value[toKey] || []).map((c) => c.id),
+    });
 };
 
 // ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
