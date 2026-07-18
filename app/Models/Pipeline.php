@@ -15,7 +15,7 @@ class Pipeline extends Model
         'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
         'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'done',
-        'archived_at',
+        'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
     ];
 
     protected $casts = [

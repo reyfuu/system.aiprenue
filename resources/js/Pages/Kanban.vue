@@ -37,6 +37,10 @@ const authUser = usePage().props.auth.user;                        // user login
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || ''; // token utk fetch
 const todayStr = () => new Date().toISOString().slice(0, 10);      // 'YYYY-MM-DD' hari ini
 const isUrgent = (card) => (card.labels || []).some((l) => l.name === 'Urgent'); // kartu mendesak?
+// Tautan kontak. WA: buang non-digit, awalan 0 → 62 (format wa.me Indonesia).
+// IG: buang '@' di depan kalau ada. Isian bebas dari user, jadi selalu dibersihkan.
+const waLink = (v) => 'https://wa.me/' + String(v).replace(/\D/g, '').replace(/^0/, '62');
+const igLink = (v) => 'https://instagram.com/' + String(v).trim().replace(/^@/, '');
 
 // PATCH JSON + sinkron ulang bila server menolak.
 // fetch() TIDAK reject pada 4xx/5xx — tanpa cek res.ok, kegagalan (403/422/500)
@@ -59,6 +63,13 @@ const cloneBoard = (b) => Object.fromEntries(Object.entries(b || {}).map(([k, v]
 const cols = ref(cloneBoard(props.board));
 watch(() => props.board, (b) => { cols.value = cloneBoard(b); }); // sinkron ulang saat Inertia kirim board baru
 
+// Urutan kolom — salinan prop dgn alasan yang sama persis dgn `cols` di atas:
+// SortableJS memutasi array ini via splice saat drag, dan prop Inertia readonly,
+// jadi memakai props.columns langsung = drag kolom seolah mati.
+// Shallow copy cukup: yang berubah hanya urutan array, isi objek kolomnya tidak.
+const colOrder = ref([...props.columns]);
+watch(() => props.columns, (c) => { colOrder.value = [...c]; });
+
 const colMenu = ref(null);                                         // kolom yg menunya terbuka
 const colNames = computed(() => Object.fromEntries(props.columns.map((c) => [c.key, c.name]))); // key→nama kolom
 const isTodolist = computed(() => props.category === 'todolist'); // board todolist: sembunyikan nominal IDR/USD & payment
@@ -77,13 +88,39 @@ const boardCount = computed(() => Object.values(cols.value).flat().length);
 const rp = (n) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n));           // penuh: kartu
 const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n); // ringkas: header stage
 
-// ---- Drag & drop (vuedraggable) — pindah antar kolom → simpan progress ----
-// vuedraggable memutasi cols.value[key] langsung. @change memicu 'added' HANYA
-// di kolom penerima → dari situ kita tahu progress baru kartu.
+// ---- Drag & drop (vuedraggable) — simpan isi & urutan kolom tujuan ----
+// vuedraggable memutasi cols.value[key] langsung, lalu @change memicu:
+//   'added'   di kolom penerima (kartu masuk dari kolom lain)
+//   'moved'   di kolom yg sama  (kartu digeser naik/turun)
+//   'removed' di kolom asal     — diabaikan, lihat di bawah
+//
+// Dulu cuma 'added' yang ditangani, jadi geseran naik/turun tak pernah
+// tersimpan: di layar kartunya pindah, lalu balik ke tempat semula begitu
+// halaman dimuat ulang.
+//
+// Yang dikirim bukan "kartu X ke kolom B", tapi seluruh isi kolom tujuan sesudah
+// drag. Bentuk itu memuat kedua kejadian sekaligus & tak bisa setengah jadi.
+// 'removed' diabaikan dgn sengaja: satu drag antar kolom memicu 'removed' di
+// kolom asal DAN 'added' di kolom tujuan — menanganinya berarti dua kiriman
+// untuk satu perbuatan, dan posisi kolom asal boleh berlubang (0,1,3,…) karena
+// yang dipakai cuma urutan relatifnya.
 const onCardChange = (evt, toKey) => {
-    if (!evt.added) return;                                        // reorder dalam kolom tak perlu disimpan (tak ada kolom urutan)
-    const card = evt.added.element;
-    patchCard(`/pipelines/${card.id}/progress`, { progress: toKey });
+    if (!evt.added && !evt.moved) return;
+
+    patchCard('/pipelines/reorder', {
+        progress: toKey,
+        ids: (cols.value[toKey] || []).map((c) => c.id),
+    });
+};
+
+// Urutan kolom sesudah drag. Cuma 'moved' yang mungkin terjadi: daftar kolom
+// cuma satu di halaman ini & grupnya ('columns') tak dibagi dgn daftar lain,
+// jadi tak ada kolom yang 'added' dari tempat lain.
+// Dikirim SELURUH kolom board — server menolak kiriman sebagian (position kembar).
+const onColumnChange = (evt) => {
+    if (!evt.moved) return;
+
+    patchCard('/columns/reorder', { ids: colOrder.value.map((c) => c.id) });
 };
 
 // ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
@@ -95,7 +132,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [] });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '' });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -117,6 +154,9 @@ const fillForm = (card) => {
     editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
     editForm.notes = card.notes ?? '';
     editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
+    editForm.kontak_wa = card.kontak_wa ?? '';
+    editForm.kontak_gmail = card.kontak_gmail ?? '';
+    editForm.kontak_ig = card.kontak_ig ?? '';
 };
 
 const openAdd = (progress) => {
@@ -343,12 +383,63 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 </button>
             </div>
 
-            <!-- Kolom -->
+            <!-- Kolom — drag utk atur urutan (ala Trello).
+                 group 'columns' SENGAJA beda dari 'kanban' milik kartu: nama grup yang sama
+                 berarti kartu bisa dijatuhkan ke daftar kolom (& sebaliknya).
+
+                 Kolom bisa dicengkeram dari MANA SAJA (header, nominal, ruang kosong, tepi),
+                 kecuali yang disebut di `filter`. Pakai filter, BUKAN handle sempit:
+                   - `.col-cards` (daftar kartu) WAJIB difilter. Selektor item SortableJS =
+                     `[data-draggable]` (vuedraggable.common.js:4400) dan KARTU pun memakainya
+                     dari draggable bersarang di dalam kolom — tanpa filter ini, sortable kolom
+                     menelusuri ke atas dari titik klik, menemukan KARTU, lalu menyeretnya sbg
+                     "kolom" → drag kartu rusak total.
+                   - `button, a` supaya menekan tombol +/menu/link tak terbaca sbg awal drag.
+                 SortableJS mengecek filter SEBELUM handle & mencocokkannya sampai ke leluhur,
+                 jadi klik di dalam kartu tak pernah sampai ke sortable kolom.
+
+                 prevent-on-filter=false WAJIB: default-nya true = preventDefault() di mousedown,
+                 yang mematikan klik tombol DAN drag kartu (sortable kartu menerima event yg sama).
+
+                 force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
+                 (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
+                 Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
             <div class="overflow-x-auto pb-4">
                 <div class="flex gap-3 min-w-max">
-                    <div v-for="col in columns" :key="col.key" class="w-72 flex-shrink-0 bg-white border border-brand-100 rounded-2xl shadow-sm p-3">
-                        <!-- Header kolom: nama stage + total nilai & jml deal (ala Pipedrive) -->
-                        <div class="flex items-start justify-between mb-3">
+                <draggable
+                    :list="colOrder"
+                    :group="{ name: 'columns' }"
+                    item-key="key"
+                    :disabled="dragDisabled"
+                    filter="button, a, .col-cards"
+                    :prevent-on-filter="false"
+                    :force-auto-scroll-fallback="true"
+                    :scroll-sensitivity="90"
+                    :scroll-speed="14"
+                    class="flex gap-3"
+                    ghost-class="drag-ghost"
+                    :animation="180"
+                    @change="onColumnChange"
+                >
+                <!-- JANGAN taruh komentar/elemen apa pun di dalam <template #item> sebelum
+                     <div> di bawah: Vue mengubah komentar HTML jadi comment VNode, slot item
+                     jadi 2 root node, dan vuedraggable melempar "Item slot must have only one
+                     child" (vuedraggable.common.js:4617). Compiler MEMBUANG komentar di build
+                     produksi tapi MEMPERTAHANKANNYA di dev → `npm run build` tak akan pernah
+                     menangkapnya, cuma layar dev yang mati. Komentar taruh di sini, atau di
+                     dalam <div>-nya. -->
+                <template #item="{ element: col }">
+                    <div class="w-72 flex-shrink-0 flex flex-col bg-white border border-brand-100 rounded-2xl shadow-sm p-3">
+                        <!-- flex flex-col = rangka supaya area kartu (.col-cards) bisa memanjang
+                             memenuhi sisa tinggi kolom. Deretan kolom sudah `flex` dgn
+                             align-items:stretch bawaan, jadi tiap kolom setinggi kolom tertinggi —
+                             tanpa rangka ini sisa tingginya cuma ruang putih mati yang tak
+                             menerima jatuhan kartu. -->
+                        <!-- Header kolom: nama stage + total nilai & jml deal (ala Pipedrive).
+                             cursor-grab cuma DI SINI walau kolom bisa diseret dari mana saja:
+                             memasangnya di akar kolom bikin kursor grab ikut muncul di sela-sela
+                             kartu, tempat drag kolom justru tak aktif (difilter) — sinyal palsu. -->
+                        <div :class="['flex items-start justify-between mb-3', dragDisabled ? '' : 'cursor-grab active:cursor-grabbing']">
                             <div>
                                 <div class="flex items-center gap-2">
                                     <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
@@ -373,14 +464,23 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                             </div>
                         </div>
 
-                        <!-- Daftar kartu (drag via vuedraggable, ala Trello) -->
-                        <div class="min-h-[120px] rounded-xl p-2 bg-brand-50/60">
+                        <!-- Daftar kartu (drag via vuedraggable, ala Trello).
+                             Kelas `col-cards` dibaca oleh filter draggable KOLOM di atas —
+                             menandai "di sini drag kolom tak berlaku". Jangan dihapus. -->
+                        <div class="col-cards flex-1 flex flex-col min-h-[120px] rounded-xl p-2 bg-brand-50/60">
+                            <!-- Di ATAS draggable, bukan di bawahnya: draggable sekarang `flex-1`
+                                 (memanjang), jadi kalau teks ini ditaruh sesudahnya dia terdorong
+                                 ke dasar kolom & terlihat melayang jauh dari judulnya. -->
+                            <p v-if="cardCount(col.key) === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
                             <draggable
                                 :list="cols[col.key]"
                                 :group="{ name: 'kanban' }"
                                 item-key="id"
                                 :disabled="dragDisabled"
-                                class="space-y-2.5 min-h-[80px]"
+                                :force-auto-scroll-fallback="true"
+                                :scroll-sensitivity="90"
+                                :scroll-speed="14"
+                                class="space-y-2.5 flex-1"
                                 ghost-class="drag-ghost"
                                 :animation="180"
                                 @change="onCardChange($event, col.key)"
@@ -446,17 +546,22 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                     </div>
                                 </template>
                             </draggable>
-                            <p v-if="cardCount(col.key) === 0" class="text-center text-xs text-slate-400 py-6">— no tasks —</p>
                         </div>
                     </div>
+                </template>
+                </draggable>
 
-                    <!-- Tambah kolom -->
-                    <div v-if="canManage && !showArchived" class="w-64 flex-shrink-0">
-                        <button @click="colForm.board_key = category; colForm.name = ''; colCreateOpen = true" class="w-full flex items-center gap-2 bg-white/70 hover:bg-white border border-dashed border-brand-200 hover:border-brand-300 text-slate-500 hover:text-brand-700 rounded-2xl px-4 py-3 text-sm font-semibold transition">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                            Add another list
-                        </button>
-                    </div>
+                <!-- Tambah kolom — SIBLING di luar <draggable>, sengaja bukan slot #footer.
+                     Slot footer sebenarnya sah (footer tak diberi data-draggable, jadi tak
+                     ikut jadi item), tapi menaruhnya di luar berarti tombol ini tak punya
+                     urusan sama sekali dgn SortableJS — satu variabel dugaan lebih sedikit
+                     saat tombolnya bermasalah. -->
+                <div v-if="canManage && !showArchived" class="w-64 flex-shrink-0">
+                    <button @click="colForm.board_key = category; colForm.name = ''; colCreateOpen = true" class="w-full flex items-center gap-2 bg-white/70 hover:bg-white border border-dashed border-brand-200 hover:border-brand-300 text-slate-500 hover:text-brand-700 rounded-2xl px-4 py-3 text-sm font-semibold transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        Add another list
+                    </button>
+                </div>
                 </div>
             </div>
         </div>
@@ -483,6 +588,15 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     </button>
                     <button type="button" @click="closeCard" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
                 </div>
+            </div>
+
+            <!-- Kontak lead yang bisa langsung dihubungi. Tampil utk kartu yg sudah ada
+                 (bukan saat membuat) di mode form MAUPUN read-only, jadi manager/admin pun
+                 dapat tautan klik-hubungi, bukan cuma kolom isian. -->
+            <div v-if="detailCard && (detailCard.kontak_wa || detailCard.kontak_gmail || detailCard.kontak_ig)" class="flex flex-wrap gap-2 mb-3">
+                <a v-if="detailCard.kontak_wa" :href="waLink(detailCard.kontak_wa)" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">WA · {{ detailCard.kontak_wa }}</a>
+                <a v-if="detailCard.kontak_gmail" :href="'mailto:' + detailCard.kontak_gmail" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Gmail · {{ detailCard.kontak_gmail }}</a>
+                <a v-if="detailCard.kontak_ig" :href="igLink(detailCard.kontak_ig)" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 hover:bg-fuchsia-100">IG · {{ detailCard.kontak_ig }}</a>
             </div>
 
             <!-- Form lengkap (manager) — sama persis untuk buat & edit -->
@@ -534,6 +648,20 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 <label class="col-span-2 block font-medium text-slate-600">Link Video
                     <input type="url" v-model="editForm.link" placeholder="https://…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
+                <!-- Kontak lead: WA / Gmail / DM Instagram. Cuma di board sales (bukan todolist).
+                     String bebas — WA boleh '0812…'/'+62…', IG boleh '@akun'; server tak
+                     memvalidasi ketat, jadi placeholder saja yang memandu format. -->
+                <div v-if="!isTodolist" class="col-span-2 grid grid-cols-3 gap-3">
+                    <label class="block font-medium text-slate-600">WhatsApp
+                        <input v-model="editForm.kontak_wa" placeholder="0812…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                    <label class="block font-medium text-slate-600">Gmail
+                        <input v-model="editForm.kontak_gmail" placeholder="nama@gmail.com" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                    <label class="block font-medium text-slate-600">DM Instagram
+                        <input v-model="editForm.kontak_ig" placeholder="@akun" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                </div>
                 <!-- Output -->
                 <div class="col-span-2">
                     <p class="font-medium text-slate-600 mb-1.5">Output</p>

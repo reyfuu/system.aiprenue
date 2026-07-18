@@ -15,6 +15,7 @@ const roleColors = {                                    // map role -> kelas bad
     owner: 'bg-rose-600 text-white',                    // owner merah
     manager: 'bg-brand-600 text-white',                 // manager brand
     it: 'bg-violet-600 text-white',                     // IT ungu
+    admin: 'bg-sky-600 text-white',                     // admin biru (CRUD terbatas)
     staff: 'bg-slate-200 text-slate-700',               // staff abu (view-only)
 };                                                      // akhir map warna
 

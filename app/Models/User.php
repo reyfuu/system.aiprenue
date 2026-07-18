@@ -17,19 +17,21 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'staff' => 'Staff'];
+    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'admin' => 'Admin', 'staff' => 'Staff'];
 
     /**
      * Menu yang boleh diakses tiap role. '*' = semua.
      * Menu: dashboard, pipeline, kanban, order, mindmap, script, pembukuan, user.
      * - owner & it = akses penuh (termasuk manajemen user).
      * - manager = kelola board+task+operasional, TAPI tak boleh menu 'user'.
+     * - admin = kelola (CRUD, lihat canManage()) TAPI cuma di sales/kanban/mindmap.
      * - staff = VIEW-ONLY (lihat canManage()): tanpa menu 'user' & 'pembukuan' (keuangan).
      */
     public const MENU_ACCESS = [
         'owner'   => ['*'],
         'it'      => ['*'],           // IT = akses penuh teknis
         'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan'],
+        'admin'   => ['pipeline', 'kanban', 'mindmap'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
         'staff'   => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
@@ -46,7 +48,7 @@ class User extends Authenticatable
      *  (route comments.* memang tak dicek canManage di EnsureMenuAccess). */
     public function canManage(): bool
     {
-        return in_array($this->role, ['owner', 'manager', 'it'], true);
+        return in_array($this->role, ['owner', 'manager', 'it', 'admin'], true);
     }
 
     /** Route landing pertama yang boleh diakses user. */

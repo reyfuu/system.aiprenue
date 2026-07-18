@@ -13,6 +13,9 @@ const ITEMS = [
     { key: 'script',    label: 'Script',    href: '/script',           icon: 'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z' },
     { key: 'pembukuan', label: 'Pembukuan', href: '/pembukuan',        icon: 'M9 7h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z' },
     { key: 'user',      label: 'User',      href: '/users',            icon: 'M17 20h5v-1a4 4 0 00-4-4h-1m-6 5H2v-1a4 4 0 014-4h4a4 4 0 014 4v1zm-2-9a4 4 0 11-8 0 4 4 0 018 0zm7 0a3 3 0 11-6 0 3 3 0 016 0z' },
+    // Tautan EKSTERNAL ke aplikasi ProdPilot — buka tab baru, bukan navigasi SPA.
+    // `external: true` → dirender sbg <a>, dan tak digating menus[] (tampil ke semua user).
+    { key: 'prodpilot', label: 'ProdPilot', href: 'https://prodpilot.aipreneur.co.id', external: true, icon: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' },
 ];
 
 const page = usePage();                                     // akses shared props (auth, url)
@@ -22,8 +25,9 @@ const user = computed(() => page.props.auth?.user);         // user login (atau 
 const matchHref = (href) => page.url === href || page.url.startsWith(href + '/') || page.url.startsWith(href + '?');
 // href TERPANJANG yg cocok = menu aktif (agar /pipelines/kanban tak menyorot /pipelines)
 const activeHref = computed(() => ITEMS.filter((it) => matchHref(it.href)).reduce((best, it) => (it.href.length > best.length ? it.href : best), ''));
-// Menu yg boleh dilihat user ini
-const visibleItems = computed(() => ITEMS.filter((it) => user.value?.menus[it.key]));
+// Menu yg boleh dilihat user ini. Item eksternal (ProdPilot) selalu tampil —
+// tak ada padanannya di menus[] backend, jadi digating sendiri lewat `external`.
+const visibleItems = computed(() => ITEMS.filter((it) => it.external || user.value?.menus[it.key]));
 
 const logout = () => router.post('/logout');                // POST /logout (CSRF otomatis)
 </script>
@@ -38,17 +42,22 @@ const logout = () => router.post('/logout');                // POST /logout (CSR
         </div>
         <!-- Navigasi -->
         <nav class="flex-1 p-3 space-y-1 text-sm">
-            <Link
+            <!-- <a> utk tautan eksternal (tab baru), <Link> Inertia utk menu internal.
+                 target/rel cuma diisi saat eksternal supaya menu internal tetap navigasi SPA. -->
+            <component
+                :is="it.external ? 'a' : Link"
                 v-for="it in visibleItems"
                 :key="it.key"
                 :href="it.href"
+                :target="it.external ? '_blank' : undefined"
+                :rel="it.external ? 'noreferrer' : undefined"
                 :class="['flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition', it.href === activeHref ? 'bg-white text-brand-700 font-semibold' : 'hover:bg-white/10']"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" :d="it.icon" />
                 </svg>
                 {{ it.label }}
-            </Link>
+            </component>
         </nav>
         <!-- Footer: nama user + tombol logout -->
         <div class="p-3 border-t border-white/10 flex items-center justify-between">

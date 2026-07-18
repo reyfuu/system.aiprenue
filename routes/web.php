@@ -30,7 +30,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     Route::get('/pipelines', [PipelineController::class, 'index'])->name('pipelines.index');
     Route::get('/pipelines/kanban', [PipelineController::class, 'kanban'])->name('pipelines.kanban');
-    Route::patch('/pipelines/{pipeline}/progress', [PipelineController::class, 'updateProgress'])->name('pipelines.progress');
+    // Isi & urutan satu kolom kanban sesudah drag. Per-KOLOM, bukan per-kartu:
+    // satu kiriman memuat pindah antar kolom sekaligus geser naik/turun.
+    Route::patch('/pipelines/reorder', [PipelineController::class, 'reorder'])->name('pipelines.reorder');
     Route::patch('/pipelines/{pipeline}/done', [PipelineController::class, 'updateDone'])->name('pipelines.done');
     Route::patch('/pipelines/{pipeline}/archive', [PipelineController::class, 'archive'])->name('pipelines.archive');
 
@@ -48,6 +50,10 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::delete('/boards/{board}', [BoardController::class, 'destroy'])->name('boards.destroy');
 
     // Kolom kanban (list) — CRUD hanya super admin & IT
+    // Urutan kolom sesudah drag. Satu kiriman = seluruh kolom board.
+    // Nama `columns.*` sudah diborong EnsureMenuAccess (isManageRoute + menusFor),
+    // jadi rute ini ikut terjaga tanpa perlu didaftarkan di sana satu per satu.
+    Route::patch('/columns/reorder', [ColumnController::class, 'reorder'])->name('columns.reorder');
     Route::post('/columns', [ColumnController::class, 'store'])->name('columns.store');
     Route::put('/columns/{column}', [ColumnController::class, 'update'])->name('columns.update');
     Route::delete('/columns/{column}', [ColumnController::class, 'destroy'])->name('columns.destroy');
