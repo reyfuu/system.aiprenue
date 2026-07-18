@@ -171,6 +171,10 @@ class PipelineController extends Controller
                 'progress'       => $p->progress,
                 'output_ids'     => $p->outputs->pluck('id'),
                 'notes'          => $p->notes,
+                // kontak lead (WA / Gmail / DM IG) — tampil di modal detail
+                'kontak_wa'      => $p->kontak_wa,
+                'kontak_gmail'   => $p->kontak_gmail,
+                'kontak_ig'      => $p->kontak_ig,
             ];
         }
 
@@ -304,6 +308,11 @@ class PipelineController extends Controller
             'account'         => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::ACCOUNTS))],
             'assigned_to'     => 'nullable|exists:users,id',
             'link'            => 'nullable|url|max:2048',
+            // Kontak lead — string bebas, bukan url/email ketat: WA sering ditulis
+            // '0812…' atau '+62…', IG '@akun'. Validasi kaku malah menolak isian wajar.
+            'kontak_wa'       => 'nullable|string|max:40',
+            'kontak_gmail'    => 'nullable|string|max:255',
+            'kontak_ig'       => 'nullable|string|max:100',
             'labels'          => 'nullable|array',
             'labels.*.name'   => 'required_with:labels|string|max:50',
             'labels.*.color'  => 'required_with:labels|string|max:40',

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BoardColumn;
 use App\Models\Pipeline;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ColumnController extends Controller
@@ -35,6 +36,48 @@ class ColumnController extends Controller
 
         return redirect()->route('pipelines.kanban', ['category' => $column->board_key])
             ->with('status', 'Kolom diperbarui.');
+    }
+
+    /** Urutan kolom sesudah drag. Yang dikirim seluruh kolom board, bukan
+     *  "kolom X ke posisi 3" — bentuk itu tak bisa setengah jadi.
+     *
+     *  Beda sengaja dari PipelineController@reorder yang membolehkan kiriman
+     *  sebagian (kartu: cuma isi kolom tujuan, posisi kolom asal boleh berlubang):
+     *  kolom cuma punya SATU daftar per board, jadi kiriman sebagian tak pernah sah
+     *  dan malah bikin position kembar — dan position kembar = urutan kolom acak
+     *  di orderBy('position'), persis keluhan yang mau ditutup fitur ini.
+     */
+    public function reorder(Request $request)
+    {
+        $data = $request->validate([
+            'ids'   => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $columns = BoardColumn::whereIn('id', $data['ids'])->get();
+
+        abort_if($columns->count() !== count($data['ids']), 404, 'Ada kolom yang tak ditemukan.');
+
+        // Board diambil DARI KOLOMNYA, bukan dari request: id kolom unik global,
+        // jadi tanpa pagar ini satu kiriman bisa menata ulang kolom board lain.
+        $board = $columns->pluck('board_key')->unique();
+        abort_if($board->count() > 1, 422, 'Kolom berasal dari board berbeda.');
+
+        // Wajib memuat SEMUA kolom board — lihat alasan position kembar di atas.
+        abort_if(
+            BoardColumn::where('board_key', $board->first())->count() !== count($data['ids']),
+            422,
+            'Urutan wajib memuat semua kolom board.'
+        );
+
+        // Transaksi: separuh tersimpan = urutan kolom kacau di layar semua orang.
+        DB::transaction(function () use ($data) {
+            foreach ($data['ids'] as $i => $id) {
+                BoardColumn::where('id', $id)->update(['position' => $i]);
+            }
+        });
+
+        return response()->json(['ok' => true]);
     }
 
     public function destroy(BoardColumn $column)

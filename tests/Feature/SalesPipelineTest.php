@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\BoardColumn;
 use App\Models\Category;
 use App\Models\Pipeline;
 use App\Models\User;
@@ -337,6 +338,82 @@ class SalesPipelineTest extends TestCase
             );
     }
 
+    /** Kolom (wadah kartu) bisa digeser utk atur urutan — dulu urutannya mati,
+     *  cuma bisa diubah dgn hapus & bikin ulang kolom. */
+    public function test_geser_urutan_kolom_tersimpan(): void
+    {
+        $ids = BoardColumn::forBoard('sales')->pluck('id')->all();  // lead, kontak, nego, closing, deal
+        $dibalik = array_reverse($ids);
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/columns/reorder', ['ids' => $dibalik])
+            ->assertOk();
+
+        $this->assertSame($dibalik, BoardColumn::forBoard('sales')->pluck('id')->all(), 'urutan kolom hasil drag harus bertahan');
+
+        // Urutan wajib sampai ke layar, bukan cuma ke DB.
+        $this->actingAs($this->user('manager'))->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('columns.0.key', 'deal'));
+    }
+
+    /** Kiriman sebagian = position kembar = urutan kolom acak. Ditolak di server,
+     *  bukan cuma diandalkan ke klien yang selalu mengirim semua. */
+    public function test_urutan_kolom_sebagian_ditolak(): void
+    {
+        $ids = BoardColumn::forBoard('sales')->pluck('id')->all();
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/columns/reorder', ['ids' => [$ids[1], $ids[0]]])   // 2 dari 5
+            ->assertStatus(422);
+
+        $this->assertSame($ids, BoardColumn::forBoard('sales')->pluck('id')->all(), 'urutan tak boleh berubah');
+    }
+
+    /** Id kolom unik global → tanpa pagar, satu kiriman bisa menata board lain.
+     *  Board kedua = 'todolist': sesudah migrasi 15 Juli cuma tinggal sales & todolist
+     *  (endorse dkk lebur jadi `jenis` kartu, kolomnya ikut terhapus).
+     *
+     *  Bentuk kiriman dipilih HATI-HATI, sudah diuji-mutasi: 2 kolom todolist +
+     *  1 kolom sales = 3 id. Controller menentukan board dari kolom ber-id TERKECIL,
+     *  dan id todolist selalu di bawah sales (migrasinya lebih awal) → board terbaca
+     *  'todolist' yang jumlah kolomnya 3, jadi pagar KELENGKAPAN meloloskan kiriman ini
+     *  dan satu-satunya yang bisa menolak adalah pagar lintas-board.
+     *
+     *  Versi lugu (2 id, atau 4 sales + 1 todolist) tetap hijau walau pagar lintas-board
+     *  dihapus — yang menolak pagar kelengkapan, bukan yang sedang diuji.
+     */
+    public function test_urutan_kolom_lintas_board_ditolak(): void
+    {
+        $sales    = BoardColumn::forBoard('sales')->pluck('id')->all();
+        $todolist = BoardColumn::where('board_key', 'todolist')->orderBy('id')->pluck('id')->all();
+
+        $this->assertCount(3, $todolist, 'prasyarat: board todolist wajib punya 3 kolom');
+
+        $ids = $todolist;
+        array_pop($ids);
+        $ids[] = $sales[0];                       // 2 todolist + 1 sales, tetap 3 id
+
+        $this->actingAs($this->user('manager'))
+            ->patchJson('/columns/reorder', ['ids' => $ids])
+            ->assertStatus(422);
+
+        $this->assertSame($sales, BoardColumn::forBoard('sales')->pluck('id')->all(), 'board sales tak boleh ikut tertata');
+        $this->assertSame($todolist, BoardColumn::forBoard('todolist')->pluck('id')->all(), 'board todolist tak boleh ikut tertata');
+    }
+
+    /** staff view-only: tombolnya memang disembunyikan di Vue, tapi request langsung
+     *  harus tetap ditolak — gerbangnya dari prefix `columns.` di EnsureMenuAccess. */
+    public function test_staff_tak_bisa_geser_urutan_kolom(): void
+    {
+        $ids = BoardColumn::forBoard('sales')->pluck('id')->all();
+
+        $this->actingAs($this->user('staff'))
+            ->patchJson('/columns/reorder', ['ids' => array_reverse($ids)])
+            ->assertStatus(403);
+
+        $this->assertSame($ids, BoardColumn::forBoard('sales')->pluck('id')->all());
+    }
+
     public function test_stage_di_luar_board_ditolak(): void
     {
         $card = $this->card('lead');
@@ -368,6 +445,49 @@ class SalesPipelineTest extends TestCase
         $this->actingAs($this->user('manager'))
             ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [999999]])
             ->assertNotFound();
+    }
+
+    /** Admin: boleh KELOLA (CRUD) sales/kanban/mindmap, tapi tertutup dari
+     *  order/pembukuan/user. Beda dari staff yang cuma view-only. */
+    public function test_admin_bisa_kelola_sales_kanban_mindmap_saja(): void
+    {
+        $admin = $this->user('admin');
+        $card = $this->card('lead');
+
+        // sales (=pipeline) & kanban terbuka + BOLEH mutasi
+        $this->actingAs($admin)->get('/pipelines')->assertOk();
+        $this->actingAs($admin)->get('/pipelines/kanban')->assertOk();
+        $this->actingAs($admin)
+            ->patchJson('/pipelines/reorder', ['progress' => 'nego', 'ids' => [$card->id]])
+            ->assertOk();
+        $this->assertSame('nego', $card->fresh()->progress);
+
+        // mindmap terbuka
+        $this->actingAs($admin)->get('/mindmaps')->assertOk();
+
+        // di luar jatahnya → 403
+        $this->actingAs($admin)->get('/orders')->assertForbidden();
+        $this->actingAs($admin)->get('/users')->assertForbidden();
+        $this->actingAs($admin)->get('/pembukuan')->assertForbidden();
+    }
+
+    /** Kontak lead (WA/Gmail/DM IG) tersimpan lewat form & sampai ke prop kartu. */
+    public function test_kontak_lead_tersimpan(): void
+    {
+        $this->actingAs($this->user('admin'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Deal kontak',
+            'progress' => 'lead', 'payment_status' => 'belum',
+            'kontak_wa' => '0812-3456', 'kontak_gmail' => 'lead@gmail.com', 'kontak_ig' => '@akun',
+        ])->assertSessionHasNoErrors();
+
+        $kartu = Pipeline::firstWhere('endorse', 'Deal kontak');
+        $this->assertSame('0812-3456', $kartu->kontak_wa);
+        $this->assertSame('lead@gmail.com', $kartu->kontak_gmail);
+        $this->assertSame('@akun', $kartu->kontak_ig);
+
+        // sampai ke layar (prop kartu)
+        $this->actingAs($this->user('admin'))->get('/pipelines')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('board.lead.0.kontak_wa', '0812-3456'));
     }
 
     /** Staff cuma boleh Kanban & Mindmap — Sales Pipeline tertutup sama sekali,
