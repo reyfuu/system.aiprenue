@@ -110,6 +110,44 @@ class DashboardController extends Controller
             ? count(array_filter(File::allFiles($scriptDir), fn ($f) => ! str_starts_with($f->getFilename(), '.')))
             : 0;
 
+        // ---- Drill-down: klik kartu ringkasan → daftar order menggantikan grafik ----
+        // Sengaja menyaring $orders (koleksi yang SUDAH terfilter bulan), bukan query
+        // baru ke DB. Dua untungnya: tanpa query tambahan, dan angka di kartu selalu
+        // sama dengan jumlah baris di tabel — keduanya dari koleksi yang sama persis.
+        // Kalau ini pernah diubah jadi query sendiri, aturan tanggalnya (tanggal_bayar
+        // mundur ke created_at) WAJIB disalin, kalau tidak angkanya mulai berselisih.
+        $lihat  = (string) $request->query('lihat', '');
+        $cocok  = match (true) {
+            $lihat === 'all'                             => $orders,
+            in_array($lihat, ['full', 'dp'], true)        => $orders->where('tipe_pembayaran', $lihat),
+            array_key_exists($lihat, Order::ACCOUNTS)     => $orders->where('account', $lihat),
+            default                                       => null,   // termasuk '' (tak ada drill-down)
+        };
+
+        // `lihat` ngawur → null → grafik tetap tampil. Sama prinsipnya dgn $bulanAktif:
+        // jangan pernah menampilkan tabel kosong yang terlihat seperti "tak ada data".
+        $daftar = $cocok === null ? null : [
+            'kunci'  => $lihat,
+            'judul'  => match (true) {
+                $lihat === 'all'  => 'Semua Order',
+                $lihat === 'full' => 'Order Lunas (Full)',
+                $lihat === 'dp'   => 'Order Outstanding (DP)',
+                default           => 'Order '.Order::ACCOUNTS[$lihat],
+            },
+            'jumlah' => $cocok->count(),
+            // Dibatasi 50 baris: ini panel ringkas di dashboard, bukan pengganti
+            // halaman Order. Kalau terpotong, UI menautkan ke /orders (lihat .vue).
+            'baris'  => $cocok->sortByDesc($tanggalOrder)->take(50)->map(fn ($o) => [
+                'id'         => $o->id,
+                'customer'   => $o->nama_customer,
+                'tipeOrder'  => Order::TIPE_ORDER[$o->tipe_order] ?? $o->tipe_order,
+                'akun'       => Order::ACCOUNTS[$o->account] ?? $o->account,
+                'bayar'      => Order::TIPE_PEMBAYARAN[$o->tipe_pembayaran] ?? $o->tipe_pembayaran,
+                'totalIdr'   => $o->totalIdr($rate),
+                'tanggal'    => ($t = $tanggalOrder($o)) ? $t->format('Y-m-d') : null,
+            ])->values(),
+        ];
+
         // ---- Pembukuan: dari transaksi & inventaris (bukan omzet pipeline) ----
         $pemasukan   = (float) Transaction::where('type', 'pemasukan')->sum('amount_idr');
         $pengeluaran = (float) Transaction::where('type', 'pengeluaran')->sum('amount_idr');
@@ -119,6 +157,8 @@ class DashboardController extends Controller
             'rate'     => $rate,
             'monthly'  => $monthly,          // grafik omzet per bulan, per akun (SELALU semua bulan)
             'accounts' => Order::ACCOUNTS,   // label + urutan seri grafik
+            // null = tampilkan grafik; terisi = tampilkan tabel order menggantikannya
+            'daftar'   => $daftar,
 
             // Filter periode. `opsi` cuma memuat bulan yang benar-benar ada ordernya,
             // jadi tak ada pilihan yang menghasilkan halaman kosong.
