@@ -121,6 +121,24 @@ class DashboardDrilldownTest extends TestCase
                 ->etc());
     }
 
+    /**
+     * Tombol Grand Omzet menutup drill-down TANPA mereset periode. Klien mengirim
+     * `bulan` tanpa `lihat`; kalau bulan ikut hilang, angka melonjak ke seluruh
+     * waktu dan orang mengira datanya berubah sendiri.
+     */
+    public function test_menutup_daftar_tidak_mereset_periode(): void
+    {
+        $this->order('2026-05-10', 'fk', 'dp');
+        $this->order('2026-06-10', 'fk', 'dp');
+
+        $this->actingAs($this->owner())->get('/dashboard?bulan=2026-05')->assertOk()
+            ->assertInertia(fn (Assert $p) => $p
+                ->where('daftar', null)              // grafik kembali
+                ->where('filter.bulan', '2026-05')   // periode bertahan
+                ->where('summary.outstanding', 1)
+                ->etc());
+    }
+
     /** Panel dibatasi 50 baris, tapi `jumlah` tetap melaporkan angka sebenarnya
      *  supaya UI bisa berkata "menampilkan 50 dari sekian". */
     public function test_baris_dibatasi_50_tapi_jumlah_melaporkan_total_sebenarnya(): void
