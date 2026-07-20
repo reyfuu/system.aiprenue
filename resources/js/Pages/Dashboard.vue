@@ -142,9 +142,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
                 <!-- Penanda periode aktif: tanpa ini, angka yang mengecil gampang
                      disangka data hilang, bukan hasil filter. -->
-                <span v-if="filter.bulan !== 'semua'" class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-100">
+                <span v-if="filter.bulan !== 'semua'" class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold pl-2.5 pr-1 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-100">
                     Menampilkan {{ labelBulanAktif }}
-                    <button @click="gantiBulan('semua')" title="Tampilkan semua bulan" class="text-brand-500 hover:text-brand-800">&times;</button>
+                    <!-- Sasaran klik minimal 24x24 (w-6 h-6). Dulu cuma glyph &times;
+                         telanjang tanpa padding — lebarnya ~8px, praktis mustahil
+                         dikenai di trackpad. Padding kanan chip dikurangi (pr-1)
+                         supaya tombol yang membesar tak bikin chip terlihat gemuk. -->
+                    <button
+                        @click="gantiBulan('semua')"
+                        title="Tampilkan semua bulan"
+                        aria-label="Hapus filter periode"
+                        class="inline-flex items-center justify-center w-6 h-6 rounded-md text-base leading-none text-brand-500 hover:text-brand-800 hover:bg-brand-100 focus:ring-2 focus:ring-brand-400 outline-none"
+                    >&times;</button>
                 </span>
                 <span v-else class="text-xs text-slate-400">Semua order sejak awal</span>
             </div>
