@@ -19,16 +19,29 @@ const props = defineProps({
     script: { type: Object, default: () => ({}) },      // { folders, files }
     pembukuan: { type: Object, default: () => ({}) },   // { pemasukan, pengeluaran, laba, transaksi, invTotal }
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
+    daftar: { type: Object, default: null },            // drill-down: null = tampilkan grafik
 });
 
-// Ganti periode → muat ulang dgn query `bulan`.
-// preserveState:false disengaja: seluruh angka halaman datang dari server &
-// harus ikut berubah; mempertahankan state lama bikin sebagian kartu masih
-// memperlihatkan periode sebelumnya.
-const gantiBulan = (nilai) => router.get('/dashboard',
-    nilai === 'semua' ? {} : { bulan: nilai },
-    { preserveScroll: true, preserveState: false },
-);
+// Satu pintu untuk semua navigasi dashboard. `bulan` dan `lihat` harus selalu
+// dikirim bersamaan — kalau salah satu dijatuhkan, mengganti bulan akan menutup
+// tabel, atau membuka tabel akan mereset periode ke "semua". Keduanya pernah
+// jadi bug yang membingungkan karena angkanya berubah tanpa sebab yang terlihat.
+const pindah = (ubah) => {
+    const q = { bulan: props.filter.bulan, lihat: props.daftar?.kunci ?? '', ...ubah };
+    router.get('/dashboard',
+        Object.fromEntries(Object.entries(q).filter(([, v]) => v && v !== 'semua')),
+        { preserveScroll: true, preserveState: false },
+    );
+};
+
+// preserveState:false disengaja: seluruh angka halaman datang dari server & harus
+// ikut berubah; mempertahankan state lama bikin sebagian kartu masih memperlihatkan
+// periode sebelumnya.
+const gantiBulan = (nilai) => pindah({ bulan: nilai });
+
+// Klik kartu ringkasan → tabel order menggantikan grafik. Klik kartu yang sama
+// lagi = menutup (toggle), jadi tak perlu mencari tombol tutup.
+const bukaDaftar = (kunci) => pindah({ lihat: props.daftar?.kunci === kunci ? '' : kunci });
 
 // Label periode aktif untuk penanda di samping dropdown
 const labelBulanAktif = computed(
@@ -174,8 +187,11 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
                      FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
                      dua blok disalin — nambah akun cukup di Order::ACCOUNTS. -->
-                <div v-for="(akun, key) in summary.perAccount" :key="key"
-                     class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                <button v-for="(akun, key) in summary.perAccount" :key="key"
+                     @click="bukaDaftar(key)"
+                     :aria-pressed="daftar?.kunci === key"
+                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                              daftar?.kunci === key ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
                     <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
                     <!-- JANGAN pasang `truncate` di angka uang. "Rp 91.046.8..."
                          terlihat seperti angka utuh padahal digitnya hilang —
@@ -183,26 +199,97 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                          yang membungkus ke baris berikutnya. -->
                     <p class="text-xl font-bold text-brand-700 mt-1">{{ rp(akun.grandIdr) }}</p>
                     <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} order</p>
-                </div>
+                </button>
                 <!-- Total order -->
-                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                <button @click="bukaDaftar('all')" :aria-pressed="daftar?.kunci === 'all'"
+                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                              daftar?.kunci === 'all' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
                     <p class="text-xs text-slate-500 font-medium">Total Order</p>
                     <p class="text-2xl font-bold text-brand-700 mt-1">{{ summary.total }}</p>
-                </div>
+                </button>
                 <!-- Lunas = tipe pembayaran Full (Order tak kenal status 'belum') -->
-                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                <button @click="bukaDaftar('full')" :aria-pressed="daftar?.kunci === 'full'"
+                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                              daftar?.kunci === 'full' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
                     <p class="text-xs text-slate-500 font-medium">Lunas (Full)</p>
                     <p class="text-2xl font-bold text-emerald-600 mt-1">{{ summary.lunas }}<span class="text-sm text-slate-400 font-medium"> / {{ summary.total }}</span></p>
-                </div>
+                </button>
                 <!-- Outstanding = order yang baru DP -->
-                <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
+                <button @click="bukaDaftar('dp')" :aria-pressed="daftar?.kunci === 'dp'"
+                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                              daftar?.kunci === 'dp' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
                     <p class="text-xs text-slate-500 font-medium">Outstanding (DP)</p>
                     <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.outstanding }}</p>
+                </button>
+            </div>
+
+            <!-- ===== Panel drill-down: tabel order MENGGANTIKAN grafik =====
+                 Satu ruang dipakai bergantian, bukan tabel ditambahkan di bawah —
+                 halaman tak jadi memanjang & mata tak perlu mencari ke mana daftarnya
+                 muncul. Menutupnya: klik lagi kartu yang sama, atau tombol di sini. -->
+            <div v-if="daftar" class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
+                <div class="flex items-baseline justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">{{ daftar.judul }}</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            {{ daftar.jumlah }} order{{ filter.bulan !== 'semua' ? ' · ' + labelBulanAktif : '' }}
+                            <!-- Kalau terpotong, katakan terus terang & tunjukkan jalan
+                                 ke daftar penuh. Diam-diam memotong = user mengira
+                                 segitu saja ordernya. -->
+                            <span v-if="daftar.jumlah > daftar.baris.length">
+                                · menampilkan {{ daftar.baris.length }} terbaru,
+                                <Link href="/orders" class="text-brand-600 hover:text-brand-800 font-medium">lihat semua →</Link>
+                            </span>
+                        </p>
+                    </div>
+                    <button @click="bukaDaftar(daftar.kunci)" class="text-xs font-medium text-slate-500 hover:text-brand-700 whitespace-nowrap">
+                        Tutup, tampilkan grafik
+                    </button>
+                </div>
+
+                <!-- overflow-x-auto: tabel 6 kolom tak muat di layar sempit; biarkan
+                     tabelnya yang menggeser, jangan seluruh halaman. -->
+                <div class="overflow-x-auto -mx-1">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-xs text-slate-400 border-b border-brand-50">
+                                <th class="text-left font-medium px-1 pb-2">Customer</th>
+                                <th class="text-left font-medium px-1 pb-2">Tipe</th>
+                                <th class="text-left font-medium px-1 pb-2">Akun</th>
+                                <th class="text-left font-medium px-1 pb-2">Bayar</th>
+                                <th class="text-right font-medium px-1 pb-2">Total</th>
+                                <th class="text-right font-medium px-1 pb-2">Tanggal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="b in daftar.baris" :key="b.id" class="border-b border-brand-50 last:border-0">
+                                <td class="px-1 py-2 font-medium text-slate-700">{{ b.customer || '—' }}</td>
+                                <td class="px-1 py-2 text-slate-500">{{ b.tipeOrder }}</td>
+                                <td class="px-1 py-2 text-slate-500">{{ b.akun }}</td>
+                                <td class="px-1 py-2">
+                                    <span :class="['text-xs font-semibold px-2 py-0.5 rounded-md',
+                                                   b.bayar === 'Full' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700']">
+                                        {{ b.bayar }}
+                                    </span>
+                                </td>
+                                <!-- tabular-nums: angka rata secara vertikal biar mudah dibandingkan -->
+                                <td class="px-1 py-2 text-right font-semibold text-brand-700 tabular-nums whitespace-nowrap">{{ rp(b.totalIdr) }}</td>
+                                <td class="px-1 py-2 text-right text-slate-400 tabular-nums whitespace-nowrap">{{ b.tanggal || '—' }}</td>
+                            </tr>
+                            <!-- Kosong itu hasil yang sah (mis. belum ada DP bulan ini),
+                                 jadi katakan, jangan tampilkan tabel kosong tanpa kata. -->
+                            <tr v-if="!daftar.baris.length">
+                                <td colspan="6" class="px-1 py-6 text-center text-sm text-slate-400">
+                                    Tidak ada order pada kriteria ini.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
             <!-- ===== Grafik omzet per bulan ===== -->
-            <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
+            <div v-else class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
                 <div class="flex items-baseline justify-between gap-3 mb-4">
                     <div>
                         <h2 class="text-sm font-bold text-slate-700">Omzet per Bulan</h2>
