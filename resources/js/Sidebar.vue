@@ -13,8 +13,10 @@ const ITEMS = [
     { key: 'script',    label: 'Script',    href: '/script',           icon: 'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z' },
     { key: 'pembukuan', label: 'Pembukuan', href: '/pembukuan',        icon: 'M9 7h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z' },
     { key: 'user',      label: 'User',      href: '/users',            icon: 'M17 20h5v-1a4 4 0 00-4-4h-1m-6 5H2v-1a4 4 0 014-4h4a4 4 0 014 4v1zm-2-9a4 4 0 11-8 0 4 4 0 018 0zm7 0a3 3 0 11-6 0 3 3 0 016 0z' },
+    { key: 'akses',     label: 'Manajemen Akses', href: '/akses',    icon: 'M12 11c0-1.1.9-2 2-2s2 .9 2 2m-4 0v0M5 11h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1zm3 0V7a4 4 0 018 0v4' },
     // Tautan EKSTERNAL ke aplikasi ProdPilot — buka tab baru, bukan navigasi SPA.
-    // `external: true` → dirender sbg <a>, dan tak digating menus[] (tampil ke semua user).
+    // `external: true` cuma soal RENDER (<a> bukan <Link>). Hak aksesnya tetap dari
+    // menus.prodpilot (User::MENU_ACCESS) — owner/it/manager saja.
     { key: 'prodpilot', label: 'ProdPilot', href: 'https://prodpilot.aipreneur.co.id', external: true, icon: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' },
 ];
 
@@ -25,9 +27,11 @@ const user = computed(() => page.props.auth?.user);         // user login (atau 
 const matchHref = (href) => page.url === href || page.url.startsWith(href + '/') || page.url.startsWith(href + '?');
 // href TERPANJANG yg cocok = menu aktif (agar /pipelines/kanban tak menyorot /pipelines)
 const activeHref = computed(() => ITEMS.filter((it) => matchHref(it.href)).reduce((best, it) => (it.href.length > best.length ? it.href : best), ''));
-// Menu yg boleh dilihat user ini. Item eksternal (ProdPilot) selalu tampil —
-// tak ada padanannya di menus[] backend, jadi digating sendiri lewat `external`.
-const visibleItems = computed(() => ITEMS.filter((it) => it.external || user.value?.menus[it.key]));
+// Menu yg boleh dilihat user ini — SEMUA item digating `menus[key]` dari backend,
+// termasuk yang eksternal. `external` cuma menentukan cara render (<a> vs <Link>),
+// BUKAN hak akses; dulu dipakai utk melewati gating & itu bikin ProdPilot tampil
+// ke semua peran.
+const visibleItems = computed(() => ITEMS.filter((it) => user.value?.menus[it.key]));
 
 const logout = () => router.post('/logout');                // POST /logout (CSRF otomatis)
 </script>

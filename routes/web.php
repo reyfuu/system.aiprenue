@@ -13,6 +13,8 @@ use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\AksesController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +23,27 @@ use Illuminate\Support\Facades\Route;
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+// Registrasi mandiri — pendaftar langsung aktif sebagai 'staff'.
+// throttle: pintu ini membuat baris user dari internet tanpa gerbang apa pun,
+// jadi dibatasi 6 percobaan/menit per IP supaya tak bisa dibanjiri skrip.
+Route::middleware('throttle:6,1')->group(function () {
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register', [AuthController::class, 'register'])->name('register.store');
+});
+
+// Lupa password — user memasang passwordnya sendiri lewat tautan di email.
+// Nama route `password.reset` WAJIB persis begitu: notifikasi bawaan Laravel
+// membangun URL tautannya dengan route('password.reset', ...). Ganti namanya =
+// email terkirim tapi tautannya mati.
+// throttle: pintu ini mengirim email & bisa dipakai menebak-nebak alamat,
+// jadi dibatasi 6 permintaan/menit per IP.
+Route::middleware('throttle:6,1')->group(function () {
+    Route::get('/forgot-password', [PasswordResetController::class, 'showRequest'])->name('password.request');
+    Route::post('/forgot-password', [PasswordResetController::class, 'sendLink'])->name('password.email');
+    Route::get('/reset-password/{token}', [PasswordResetController::class, 'showReset'])->name('password.reset');
+    Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('password.update');
+});
 
 Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->homeRoute() : 'login'));
 
@@ -98,4 +121,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/users', [UserController::class, 'store'])->name('users.store');
     Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+
+    // Manajemen Akses — centang menu per peran. Dijaga EnsureMenuAccess:
+    // menu 'akses' (owner/manager/it) + akses.update butuh canManage.
+    Route::get('/akses', [AksesController::class, 'index'])->name('akses.index');
+    Route::put('/akses', [AksesController::class, 'update'])->name('akses.update');
 });

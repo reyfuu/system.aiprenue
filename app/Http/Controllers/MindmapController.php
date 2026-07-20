@@ -20,18 +20,29 @@ class MindmapController extends Controller
                     'updated' => $m->updated_at?->diffForHumans(),
                 ]),
             'canManage' => auth()->user()->canManage(),
+            // Pilihan template di galeri (tanpa struktur node — itu dibangun di server)
+            'templates' => collect(Mindmap::templates())
+                ->map(fn ($t, $key) => ['key' => $key, 'label' => $t['label'], 'desc' => $t['desc']])
+                ->values(),
         ]);
     }
 
     /** Buat mindmap baru → langsung buka editornya. */
     public function store(Request $request)
     {
-        $data = $request->validate(['title' => 'nullable|string|max:120']);
+        $data = $request->validate([
+            'title'    => 'nullable|string|max:120',
+            'template' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(Mindmap::templates()))],
+        ]);
+
+        $template = $data['template'] ?? 'kosong';
+        $judul = trim($data['title'] ?? '') ?: (Mindmap::templates()[$template]['root'] ?? 'Mindmap Baru');
 
         $mindmap = Mindmap::create([
             'user_id' => auth()->id(),
-            'title'   => trim($data['title'] ?? '') ?: 'Mindmap Baru',
-            'data'    => null, // diisi struktur default di frontend saat pertama dibuka
+            'title'   => $judul,
+            // null utk template kosong → frontend pakai MindElixir.new() spt dulu
+            'data'    => Mindmap::dataDariTemplate($template, $judul),
         ]);
 
         return redirect()->route('mindmaps.show', $mindmap);
