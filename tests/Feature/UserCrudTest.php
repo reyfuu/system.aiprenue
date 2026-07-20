@@ -139,4 +139,31 @@ class UserCrudTest extends TestCase
             $this->assertFalse($staff->canSee($tolak), "staff tak boleh lihat {$tolak}");
         }
     }
+
+    /** ProdPilot = tautan EKSTERNAL, jadi tak dijaga EnsureMenuAccess (bukan route app).
+     *  Gerbang satu-satunya = tampil/tidaknya menu di Sidebar, yang baca `menus.prodpilot`.
+     *  Dulu sempat lolos ke SEMUA peran karena Sidebar melewati gating utk item eksternal. */
+    public function test_prodpilot_cuma_owner_manager_it(): void
+    {
+        foreach (['owner', 'manager', 'it'] as $boleh) {
+            $this->assertTrue($this->user($boleh)->canSee('prodpilot'), "{$boleh} harus boleh lihat prodpilot");
+        }
+
+        foreach (['admin', 'staff'] as $tolak) {
+            $this->assertFalse($this->user($tolak)->canSee('prodpilot'), "{$tolak} tak boleh lihat prodpilot");
+        }
+    }
+
+    /** Peta `menus` yang dikirim ke Sidebar wajib memuat prodpilot — kalau kunci ini
+     *  hilang, `menus[it.key]` jadi undefined & menunya lenyap utk SEMUA orang. */
+    public function test_menus_prodpilot_ikut_dikirim_ke_frontend(): void
+    {
+        $this->actingAs($this->user('owner'))->get('/dashboard')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('auth.user.menus.prodpilot', true));
+
+        $this->actingAs($this->user('staff'))->get('/pipelines/kanban')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('auth.user.menus.prodpilot', false));
+    }
 }

@@ -1,7 +1,7 @@
 <script setup>
 // Halaman login — tanpa sidebar/Layout (full-screen). Port dari resources/views/auth/login.blade.php.
 import { ref } from 'vue';                       // ref untuk state lokal (toggle password)
-import { Head, useForm } from '@inertiajs/vue3'; // Head untuk judul tab, useForm untuk form Inertia
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3'; // Head judul tab, Link nav SPA, useForm form, usePage flash
 
 // Form Inertia versi Vue: field top-level (bukan form.data). Bind pakai v-model="form.xxx".
 const form = useForm({
@@ -12,6 +12,10 @@ const form = useForm({
 
 // Toggle lihat/sembunyi password
 const show = ref(false);
+
+// Flash dari server — dipakai pesan "Password berhasil dibuat. Silakan masuk."
+// sesudah user selesai mengatur passwordnya lewat tautan reset.
+const page = usePage();
 
 // Submit → POST /login (CSRF otomatis). onFinish kosongkan password setelah kirim.
 const submit = () => {
@@ -34,6 +38,11 @@ const submit = () => {
 
             <!-- Kartu form -->
             <div class="bg-white rounded-2xl shadow-2xl p-8">
+                <!-- Pesan sukses (mis. sesudah password dibuat lewat tautan reset) -->
+                <div v-if="page.props.flash?.status" class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-2.5 rounded-xl">
+                    {{ page.props.flash.status }}
+                </div>
+
                 <!-- Pesan error (email/password salah) -->
                 <div v-if="form.errors.email" class="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl">
                     {{ form.errors.email }}
@@ -79,14 +88,21 @@ const submit = () => {
                         </div>
                     </div>
 
-                    <!-- Checkbox ingat saya -->
-                    <label class="flex items-center gap-2 text-sm text-slate-600">
-                        <input
-                            type="checkbox"
-                            v-model="form.remember"
-                            class="accent-brand-600"
-                        /> Ingat saya
-                    </label>
+                    <!-- Ingat saya + jalan keluar kalau lupa password.
+                         Ditaruh sebaris & tepat di bawah field password: di situlah
+                         orang menyadari dirinya lupa, bukan di footer halaman. -->
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center gap-2 text-sm text-slate-600">
+                            <input
+                                type="checkbox"
+                                v-model="form.remember"
+                                class="accent-brand-600"
+                            /> Ingat saya
+                        </label>
+                        <Link href="/forgot-password" class="text-sm font-medium text-brand-600 hover:text-brand-800">
+                            Lupa password?
+                        </Link>
+                    </div>
 
                     <!-- Tombol submit (disable saat proses) -->
                     <button

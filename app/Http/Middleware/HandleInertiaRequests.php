@@ -42,6 +42,8 @@ class HandleInertiaRequests extends Middleware
                         'script'    => $user->canSee('script'),
                         'pembukuan' => $user->canSee('pembukuan'),
                         'user'      => $user->canSee('user'),
+                        'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
+                        'akses'     => $user->canSee('akses'),       // Manajemen Akses
                     ],
                 ] : null,
             ],
