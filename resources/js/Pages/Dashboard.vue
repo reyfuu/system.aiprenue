@@ -43,6 +43,12 @@ const gantiBulan = (nilai) => pindah({ bulan: nilai });
 // lagi = menutup (toggle), jadi tak perlu mencari tombol tutup.
 const bukaDaftar = (kunci) => pindah({ lihat: props.daftar?.kunci === kunci ? '' : kunci });
 
+// Grand Omzet = jumlah semuanya, jadi mengkliknya berarti "kembali ke tampilan
+// utuh": tutup drill-down apa pun, kembalikan grafik. Dijaga `props.daftar` —
+// tanpa itu, klik saat grafik sudah tampil memicu round-trip ke server yang
+// hasilnya sama persis dengan yang sedang dilihat.
+const tutupDaftar = () => { if (props.daftar) pindah({ lihat: '' }); };
+
 // Label periode aktif untuk penanda di samping dropdown
 const labelBulanAktif = computed(
     () => props.filter.opsi.find((o) => o.value === props.filter.bulan)?.label ?? props.filter.bulan,
@@ -179,11 +185,22 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                  lg (1024) dan xl (1280) sengaja dilewat: keduanya masih terlalu
                  sempit. Di bawah 2xl tampil 3 kolom / 2 baris, tetap terbaca. -->
             <div class="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-6 gap-3">
-                <!-- Grand omzet (sengaja paling kiri) -->
-                <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
-                    <p class="text-xs text-brand-100 font-medium">Grand Omzet (IDR)</p>
+                <!-- Grand omzet (sengaja paling kiri). Merangkap tombol "kembali ke
+                     grafik": ia jumlah dari semua kartu lain, jadi mengkliknya wajar
+                     diartikan "tampilkan semuanya lagi". Saat tak ada drill-down,
+                     tombolnya sengaja tidak memberi isyarat bisa diklik (cursor-default,
+                     tanpa hover) — kalau tidak, orang mengkliknya lalu tak terjadi apa-apa
+                     dan mengira ada yang rusak. -->
+                <button @click="tutupDaftar" :disabled="!daftar"
+                     :title="daftar ? 'Kembali ke grafik omzet' : null"
+                     :class="['text-left bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white outline-none transition',
+                              daftar ? 'cursor-pointer hover:shadow-md hover:brightness-110 focus:ring-2 focus:ring-brand-300' : 'cursor-default']">
+                    <p class="text-xs text-brand-100 font-medium">
+                        Grand Omzet (IDR)
+                        <span v-if="daftar" class="ml-1 opacity-80">· ← grafik</span>
+                    </p>
                     <p class="text-2xl font-bold mt-1">{{ rp(summary.grandIdr) }}</p>
-                </div>
+                </button>
                 <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
                      FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
                      dua blok disalin — nambah akun cukup di Order::ACCOUNTS. -->
@@ -242,7 +259,7 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                             </span>
                         </p>
                     </div>
-                    <button @click="bukaDaftar(daftar.kunci)" class="text-xs font-medium text-slate-500 hover:text-brand-700 whitespace-nowrap">
+                    <button @click="tutupDaftar" class="text-xs font-medium text-slate-500 hover:text-brand-700 whitespace-nowrap">
                         Tutup, tampilkan grafik
                     </button>
                 </div>
