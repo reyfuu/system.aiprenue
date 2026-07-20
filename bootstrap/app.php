@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -27,4 +28,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // Sesi habis (SESSION_LIFETIME) → token CSRF tak cocok → 419 "Page Expired".
+        // Layar itu buntu: user tak tahu harus apa. Lempar ke login dengan pesan.
+        // 303 (bukan 302) supaya Inertia mengikuti redirect setelah POST/PUT/DELETE —
+        // exception CSRF dilempar SEBELUM middleware Inertia, jadi konversi
+        // 302→303 bawaannya tak kebagian; kita set sendiri.
+        $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
+            if ($response->getStatusCode() !== 419 || $request->expectsJson()) {
+                return $response;
+            }
+
+            return redirect()->guest(route('login'))
+                ->setStatusCode(303)
+                ->with('status', 'Sesi kamu sudah habis. Silakan masuk lagi.');
+        });
     })->create();
