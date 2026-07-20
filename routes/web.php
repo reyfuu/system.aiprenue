@@ -24,6 +24,14 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
+// Registrasi mandiri — pendaftar langsung aktif sebagai 'staff'.
+// throttle: pintu ini membuat baris user dari internet tanpa gerbang apa pun,
+// jadi dibatasi 6 percobaan/menit per IP supaya tak bisa dibanjiri skrip.
+Route::middleware('throttle:6,1')->group(function () {
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register', [AuthController::class, 'register'])->name('register.store');
+});
+
 // Lupa password — user memasang passwordnya sendiri lewat tautan di email.
 // Nama route `password.reset` WAJIB persis begitu: notifikasi bawaan Laravel
 // membangun URL tautannya dengan route('password.reset', ...). Ganti namanya =
