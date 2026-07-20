@@ -160,7 +160,12 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
             <!-- ===== Ringkasan cepat: SEMUA dari Order (omzet nyata), bukan Sales.
                  Sales = corong prospek yang nilainya masih estimasi & bisa batal. ===== -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <!-- 6 kolom baru dipakai di 2xl (>=1536px). Di 1366 — laptop paling
+                 umum — 6 kolom menyisakan ~168px per kartu setelah dipotong
+                 sidebar 224px, dan angka omzet 9 digit tidak muat di situ.
+                 lg (1024) dan xl (1280) sengaja dilewat: keduanya masih terlalu
+                 sempit. Di bawah 2xl tampil 3 kolom / 2 baris, tetap terbaca. -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-6 gap-3">
                 <!-- Grand omzet (sengaja paling kiri) -->
                 <div class="bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white">
                     <p class="text-xs text-brand-100 font-medium">Grand Omzet (IDR)</p>
@@ -172,7 +177,11 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <div v-for="(akun, key) in summary.perAccount" :key="key"
                      class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4">
                     <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
-                    <p class="text-xl font-bold text-brand-700 mt-1 truncate" :title="rp(akun.grandIdr)">{{ rp(akun.grandIdr) }}</p>
+                    <!-- JANGAN pasang `truncate` di angka uang. "Rp 91.046.8..."
+                         terlihat seperti angka utuh padahal digitnya hilang —
+                         salah baca yang tak disadari, lebih buruk daripada teks
+                         yang membungkus ke baris berikutnya. -->
+                    <p class="text-xl font-bold text-brand-700 mt-1">{{ rp(akun.grandIdr) }}</p>
                     <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} order</p>
                 </div>
                 <!-- Total order -->
