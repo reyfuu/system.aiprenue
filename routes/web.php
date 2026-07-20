@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
@@ -9,12 +10,11 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\AksesController;
-use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
@@ -99,11 +99,11 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Script — isinya dikirim agen Daily Script Rave lewat POST /api/scripts (routes/api.php)
     Route::get('/script', [ScriptController::class, 'index'])->name('script.index');
+    // Unduh satu paket sebagai PDF. Ditulis sebelum /script/{brand} supaya tanggal
+    // tidak ditangkap sebagai brand oleh router.
+    Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])->name('script.pdf');
+    Route::post('/script/{brand}/upload', [ScriptController::class, 'upload'])->name('script.upload');
     Route::get('/script/{brand}', [ScriptController::class, 'show'])->name('script.show');
-    // Unduh satu paket sebagai PDF. `where` menjaga tanggalnya: tanpa itu string
-    // ngawur masuk ke Carbon::parse & meledak jadi 500, bukan 404 yang benar.
-    Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])
-        ->where('date', '\d{4}-\d{2}-\d{2}')->name('script.pdf');
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');
     Route::get('/pembukuan/report', [PembukuanController::class, 'report'])->name('pembukuan.report');
