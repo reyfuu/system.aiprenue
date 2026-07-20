@@ -17,6 +17,40 @@ let mind = null;                  // instance mind-elixir
 
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
 
+// Tema kustom — bawaan mind-elixir tampilannya polos (kotak siku, abu-abu, rapat).
+// Yang diubah: node membulat & berjarak, root jadi pil brand, palet cabang cerah
+// tapi tetap serasi dgn biru elektrik aplikasi (#2c4bff).
+const TEMA = {
+    name: 'aipreneur',
+    type: 'light',
+    // Warna cabang utama — dipakai bergiliran per cabang. Urutannya sengaja
+    // selang-seling gelap/terang biar cabang bersebelahan tak menyatu.
+    palette: ['#2c4bff', '#f5576c', '#10b981', '#f59e0b', '#8b5cf6', '#0ea5e9', '#ec4899', '#14b8a6'],
+    cssVar: {
+        '--node-gap-x': '32px',       // bawaan terlalu rapat → terlihat sesak
+        '--node-gap-y': '12px',
+        '--main-gap-x': '58px',
+        '--main-gap-y': '22px',
+        '--main-color': '#191a2b',    // teks cabang utama = near-black brand
+        '--main-bgcolor': '#ffffff',
+        '--main-border': '1px solid #dfe4ff',
+        '--color': '#334155',         // teks node anak
+        '--bgcolor': '#ffffff',
+        '--selected': '#2c4bff',      // garis pilih = warna brand
+        '--accent-color': '#2c4bff',
+        '--root-color': '#ffffff',    // root: pil biru brand, jadi pusat jelas
+        '--root-bgcolor': '#2c4bff',
+        '--root-border-color': '#2c4bff',
+        '--root-radius': '14px',
+        '--main-radius': '10px',
+        '--topic-padding': '9px 14px',  // bawaan terlalu tipis → teks nempel tepi
+        '--panel-color': '#334155',
+        '--panel-bgcolor': '#ffffff',
+        '--panel-border-color': '#dfe4ff',
+        '--map-padding': '60px',
+    },
+};
+
 onMounted(() => {
     mind = new MindElixir({
         el: mapEl.value,
@@ -26,9 +60,16 @@ onMounted(() => {
         toolBar: true,                // toolbar zoom/layout kiri-bawah
         nodeMenu: true,               // menu styling node (warna/font)
         keypress: true,               // shortcut (tab=child, enter=sibling, del=hapus)
+        theme: TEMA,
     });
     // Data tersimpan (dari getData) atau struktur default bila mindmap baru
     const data = props.mindmap.data || MindElixir.new(title.value || 'Mindmap');
+
+    // getData() IKUT menyimpan tema, jadi mindmap yang dibuat sebelum tema ini ada
+    // membawa tema lama & akan menimpa TEMA di atas — tampilannya tetap polos
+    // padahal sudah diperbaiki. Ditimpa di sini supaya semua peta seragam.
+    data.theme = TEMA;
+
     mind.init(data);
 });
 
@@ -87,8 +128,9 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
                 </div>
             </div>
 
-            <!-- Kanvas mind-elixir -->
-            <div ref="mapEl" class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 bg-white overflow-hidden"></div>
+            <!-- Kanvas mind-elixir. Latar titik-titik (bukan putih polos) supaya
+                 terasa papan tulis & geseran kanvas kelihatan bergerak. -->
+            <div ref="mapEl" class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"></div>
             <p v-if="!canManage" class="text-xs text-slate-400 mt-2">Mode lihat — hanya owner/manager/it yang bisa mengubah & menyimpan.</p>
         </div>
     </Layout>
@@ -98,4 +140,45 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
 /* Pastikan kanvas mind-elixir mengisi kontainer */
 .mindmap-canvas :deep(me-main),
 .mindmap-canvas :deep(.map-container) { width: 100%; height: 100%; }
+
+/* Latar titik-titik ala papan tulis. Ditaruh di kontainer (bukan .map-container)
+   supaya tak ikut bergeser saat kanvas di-pan — titiknya jadi acuan diam. */
+.mindmap-canvas {
+    background-color: #fbfbfd;
+    background-image: radial-gradient(#d7dcf0 1px, transparent 1px);
+    background-size: 22px 22px;
+}
+.mindmap-canvas :deep(me-main),
+.mindmap-canvas :deep(.map-container) { background: transparent; }
+
+/* Node: bayangan halus + transisi. Bawaan mind-elixir rata tanpa kedalaman,
+   itu penyebab utama tampilannya terasa "datar & basic". */
+.mindmap-canvas :deep(me-tpc) {
+    box-shadow: 0 1px 2px rgb(25 26 43 / 6%), 0 2px 8px rgb(25 26 43 / 5%);
+    transition: box-shadow .15s ease, transform .15s ease;
+}
+.mindmap-canvas :deep(me-tpc:hover) {
+    box-shadow: 0 2px 6px rgb(44 75 255 / 14%), 0 6px 16px rgb(44 75 255 / 10%);
+}
+/* Root sedikit lebih tebal & menonjol — pusat peta harus langsung ketemu mata */
+.mindmap-canvas :deep(me-root me-tpc) {
+    font-weight: 700;
+    letter-spacing: .01em;
+    box-shadow: 0 3px 10px rgb(44 75 255 / 30%);
+}
+/* Node terpilih: cincin brand, bukan garis tipis bawaan */
+.mindmap-canvas :deep(me-tpc.selected) {
+    box-shadow: 0 0 0 2px #2c4bff, 0 4px 12px rgb(44 75 255 / 18%);
+}
+
+/* Panel/toolbar bawaan: samakan dgn bahasa visual aplikasi (membulat + bayangan).
+   Nama kelas DIVERIFIKASI ke MindElixir.css — `.node-menu` tak pernah ada di
+   library ini, jadi aturan yang menyebutnya cuma mati diam-diam. */
+.mindmap-canvas :deep(.mind-elixir-toolbar),
+.mindmap-canvas :deep(.context-menu),
+.mindmap-canvas :deep(.menu-list) {
+    border-radius: 12px;
+    border: 1px solid #dfe4ff;
+    box-shadow: 0 4px 16px rgb(25 26 43 / 8%);
+}
 </style>

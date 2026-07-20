@@ -1,7 +1,7 @@
 <script setup>
 // Halaman Dashboard — ringkasan atas + kartu per modul (Pipeline, Kanban, Order, Mindmap, Script, Pembukuan).
 import { computed } from 'vue';               // computed untuk turunan reaktif
-import { Link, usePage } from '@inertiajs/vue3'; // Link navigasi Inertia, usePage untuk shared props
+import { Link, router, usePage } from '@inertiajs/vue3'; // Link nav, router utk filter, usePage shared props
 import Layout from '../Layout.vue';           // Layout sudah render sidebar + flash toast
 import '../scripts/lib/charts';               // registrasi elemen Chart.js (dipakai bareng Pembukuan)
 import { Line } from 'vue-chartjs';           // komponen chart siap pakai
@@ -18,7 +18,22 @@ const props = defineProps({
     mindmap: { type: Object, default: () => ({}) },     // { total, latest }
     script: { type: Object, default: () => ({}) },      // { folders, files }
     pembukuan: { type: Object, default: () => ({}) },   // { pemasukan, pengeluaran, laba, transaksi, invTotal }
+    filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
 });
+
+// Ganti periode → muat ulang dgn query `bulan`.
+// preserveState:false disengaja: seluruh angka halaman datang dari server &
+// harus ikut berubah; mempertahankan state lama bikin sebagian kartu masih
+// memperlihatkan periode sebelumnya.
+const gantiBulan = (nilai) => router.get('/dashboard',
+    nilai === 'semua' ? {} : { bulan: nilai },
+    { preserveScroll: true, preserveState: false },
+);
+
+// Label periode aktif untuk penanda di samping dropdown
+const labelBulanAktif = computed(
+    () => props.filter.opsi.find((o) => o.value === props.filter.bulan)?.label ?? props.filter.bulan,
+);
 
 // Peta menu yang boleh dilihat user → kartu modul ikut digating seperti sidebar
 const page = usePage();
@@ -111,6 +126,29 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
         </header>
 
         <div class="px-6 py-6 space-y-6">
+            <!-- ===== Filter periode. Mempersempit angka ringkasan & kartu Order;
+                 grafik tren di bawah SENGAJA tetap semua bulan (lihat komentar
+                 di controller). ===== -->
+            <div class="flex flex-wrap items-center gap-3">
+                <label class="text-sm font-medium text-slate-600">Periode</label>
+                <select
+                    :value="filter.bulan"
+                    @change="gantiBulan($event.target.value)"
+                    class="border border-brand-100 bg-white rounded-xl px-3 py-2 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-brand-400 outline-none"
+                >
+                    <option value="semua">Semua bulan</option>
+                    <option v-for="o in filter.opsi" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+
+                <!-- Penanda periode aktif: tanpa ini, angka yang mengecil gampang
+                     disangka data hilang, bukan hasil filter. -->
+                <span v-if="filter.bulan !== 'semua'" class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-100">
+                    Menampilkan {{ labelBulanAktif }}
+                    <button @click="gantiBulan('semua')" title="Tampilkan semua bulan" class="text-brand-500 hover:text-brand-800">&times;</button>
+                </span>
+                <span v-else class="text-xs text-slate-400">Semua order sejak awal</span>
+            </div>
+
             <!-- ===== Ringkasan cepat: SEMUA dari Order (omzet nyata), bukan Sales.
                  Sales = corong prospek yang nilainya masih estimasi & bisa batal. ===== -->
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

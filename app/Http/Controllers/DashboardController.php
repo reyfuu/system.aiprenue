@@ -13,7 +13,7 @@ use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(\Illuminate\Http\Request $request)
     {
         $rate = ExchangeRate::usdToIdr();
 
@@ -24,7 +24,30 @@ class DashboardController extends Controller
         // Sales = corong prospek (nilainya estimasi & bisa batal); Order = transaksi
         // yang benar-benar jadi. Jadi semua angka omzet di dashboard bersumber Order.
         // Alur bisnisnya: sales → order → kanban.
-        $orders   = Order::all();
+        $semuaOrder = Order::all();
+
+        // Tanggal acuan satu order = kapan uangnya masuk. Didefinisikan SEKALI di
+        // sini & dipakai filter maupun grafik — kalau dua tempat memakai aturan
+        // berbeda, total per bulan tak akan pernah cocok dgn Grand Omzet.
+        $tanggalOrder = fn ($o) => $o->tanggal_bayar ?? $o->created_at;
+
+        // Daftar bulan yang benar-benar punya order (untuk isi dropdown).
+        $bulanTersedia = $semuaOrder
+            ->map(fn ($o) => ($t = $tanggalOrder($o)) ? $t->format('Y-m') : null)
+            ->filter()->unique()->sort()->reverse()->values();
+
+        // Filter bulan. Default 'semua' — SENGAJA, bukan bulan berjalan: mengubah
+        // default berarti angka yang selama ini dilihat orang tiba-tiba mengecil
+        // tanpa mereka mengubah apa pun.
+        $bulanAktif = (string) $request->query('bulan', 'semua');
+        if (! $bulanTersedia->contains($bulanAktif)) {
+            $bulanAktif = 'semua';   // bulan ngawur / tanpa data → jangan tampilkan kosong diam-diam
+        }
+
+        $orders = $bulanAktif === 'semua'
+            ? $semuaOrder
+            : $semuaOrder->filter(fn ($o) => ($t = $tanggalOrder($o)) && $t->format('Y-m') === $bulanAktif);
+
         $totalIdr = (float) $orders->sum('total_idr');
         $totalUsd = (float) $orders->sum('total_usd');
         $grandIdr = $totalIdr + $totalUsd * $rate;
@@ -51,9 +74,12 @@ class DashboardController extends Controller
         // Tanggalnya `tanggal_bayar` = kapan uang benar-benar masuk; itu arti "omzet
         // per bulan". Mundur ke `created_at` bila kosong supaya tak ada order yang
         // lenyap dari grafik tanpa jejak — jumlah semua bulan tetap = Grand Omzet.
+        // Sengaja dari $semuaOrder, BUKAN $orders yang terfilter: grafik ini justru
+        // pembanding antar bulan. Kalau ikut terfilter, isinya tinggal satu titik &
+        // kehilangan seluruh gunanya. Filter mengecilkan angka ringkasan, bukan tren.
         $perBulan = [];
-        foreach ($orders as $o) {
-            $tgl = $o->tanggal_bayar ?? $o->created_at;
+        foreach ($semuaOrder as $o) {
+            $tgl = $tanggalOrder($o);
             if (! $tgl) {
                 continue;
             }
@@ -91,8 +117,18 @@ class DashboardController extends Controller
 
         return Inertia::render('Dashboard', [
             'rate'     => $rate,
-            'monthly'  => $monthly,          // grafik omzet per bulan, per akun
+            'monthly'  => $monthly,          // grafik omzet per bulan, per akun (SELALU semua bulan)
             'accounts' => Order::ACCOUNTS,   // label + urutan seri grafik
+
+            // Filter periode. `opsi` cuma memuat bulan yang benar-benar ada ordernya,
+            // jadi tak ada pilihan yang menghasilkan halaman kosong.
+            'filter' => [
+                'bulan' => $bulanAktif,
+                'opsi'  => $bulanTersedia->map(fn ($b) => [
+                    'value' => $b,
+                    'label' => \Carbon\Carbon::createFromFormat('Y-m', $b)->translatedFormat('F Y'),
+                ])->values(),
+            ],
 
             // Ringkasan atas — SEMUA dari Order (omzet nyata), bukan Sales (estimasi).
             // Satu baris = satu sumber; mencampur keduanya bikin angkanya tak bisa
@@ -123,12 +159,16 @@ class DashboardController extends Controller
                 'progresses'  => Pipeline::PROGRESS,
             ],
 
+            // Ikut filter bulan seperti ringkasan atas — kartu ini bicara tentang
+            // order yang sama, jadi kalau angkanya beda periode orang akan
+            // membandingkan dua hal yang tak sebanding. Dihitung dari koleksi
+            // $orders yang sudah di-load, bukan query ulang.
             'order' => [
-                'total'     => Order::count(),
-                'dp'        => Order::where('tipe_pembayaran', 'dp')->count(),
+                'total'     => $orders->count(),
+                'dp'        => $orders->where('tipe_pembayaran', 'dp')->count(),
                 // Nilai order = IDR + USD dikonversi kurs (prioritas sudah dibuang)
-                'nilai'     => (float) Order::sum('total_idr') + (float) Order::sum('total_usd') * $rate,
-                'perTipe'   => Order::selectRaw('tipe_order, count(*) as total')->groupBy('tipe_order')->pluck('total', 'tipe_order'),
+                'nilai'     => (float) $orders->sum('total_idr') + (float) $orders->sum('total_usd') * $rate,
+                'perTipe'   => $orders->groupBy('tipe_order')->map->count(),
                 'tipeOrder' => Order::TIPE_ORDER,
             ],
 
