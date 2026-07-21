@@ -94,6 +94,10 @@ class PipelineController extends Controller
             ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
+            // Date Marker = tanggal kartu dibuat, bukan deadline. Batas awal/akhir
+            // berdiri sendiri supaya pengguna boleh mengisi salah satunya saja.
+            ->when($request->filled('created_from'), fn ($q) => $q->whereDate('created_at', '>=', $request->created_from))
+            ->when($request->filled('created_to'), fn ($q) => $q->whereDate('created_at', '<=', $request->created_to))
             // position = urutan hasil drag. `id` DESC sbg pemecah seri: saat banyak
             // kartu sama-sama position 0 (baru dibuat, belum pernah di-drag), yang
             // TERBARU (id terbesar) muncul paling atas — kartu baru itu yang sedang
@@ -136,6 +140,7 @@ class PipelineController extends Controller
             $board[$ck][] = [
                 'id' => $p->id,
                 'code' => 't_'.str_pad($p->id, 6, '0', STR_PAD_LEFT),
+                'created_date' => $p->created_at?->toDateString(),
                 'endorse' => $p->endorse,
                 'jenis' => $p->jenis,                                               // key mentah (form edit)
                 'jenis_label' => $p->jenis ? (Pipeline::JENIS[$p->jenis] ?? $p->jenis) : null,
@@ -206,6 +211,7 @@ class PipelineController extends Controller
             'board' => $board,                                       // kartu tersusun per kolom
             'columns' => $columns,                                     // kolom dinamis board ini
             'jenis' => $jenis,                                      // chip aktif (array; kosong = semua)
+            'dateFilters' => $request->only(['created_from', 'created_to']),
             'jenisCounts' => $jenisCounts,                                // angka di tiap chip
             'showArchived' => $showArchived,                               // sedang lihat arsip?
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip

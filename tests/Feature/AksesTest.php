@@ -128,6 +128,8 @@ class AksesTest extends TestCase
         $this->assertFalse($this->user('manager')->canSee('user'));
         $this->assertTrue($this->user('admin')->canSee('kanban'));
         $this->assertFalse($this->user('admin')->canSee('order'));
+        $this->assertFalse($this->user('admin')->canSee('pembukuan'));
+        $this->assertFalse($this->user('it')->canSee('pembukuan'));
         $this->assertTrue($this->user('staff')->canSee('kanban'));
         $this->assertFalse($this->user('staff')->canSee('pembukuan'));
     }
@@ -141,5 +143,16 @@ class AksesTest extends TestCase
         $this->assertTrue($this->user('staff')->canSee('kanban'));
         $this->assertFalse($this->user('staff')->canSee('pembukuan'));
         $this->assertTrue($this->user('owner')->canSee('user'));
+    }
+
+    public function test_pembukuan_tetap_owner_manager_meski_db_mencentang_admin(): void
+    {
+        DB::table('role_menu_access')->insertOrIgnore([
+            'role' => 'admin', 'menu' => 'pembukuan', 'can_manage' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->assertFalse($this->user('admin')->canSee('pembukuan'));
+        $this->assertTrue($this->user('manager')->canSee('pembukuan'));
     }
 }

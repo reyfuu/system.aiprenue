@@ -9,7 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /** CRUD transaksi & inventaris (modul Pembukuan).
- *  Menu `pembukuan` cuma dimiliki owner/it/manager — staff ditolak di gerbang menu,
+ *  Menu `pembukuan` cuma dimiliki owner/manager — role lain ditolak di gerbang menu,
  *  bukan gerbang canManage. */
 class PembukuanCrudTest extends TestCase
 {
@@ -72,6 +72,12 @@ class PembukuanCrudTest extends TestCase
     {
         $this->actingAs($this->user('staff'))->post('/transactions', $this->trx())->assertForbidden();
         $this->assertSame(0, Transaction::count());
+    }
+
+    public function test_admin_dan_it_tak_punya_akses_pembukuan(): void
+    {
+        $this->actingAs($this->user('admin'))->get('/pembukuan')->assertForbidden();
+        $this->actingAs($this->user('it'))->get('/pembukuan')->assertForbidden();
     }
 
     public function test_manager_boleh_kelola_transaksi(): void

@@ -70,6 +70,7 @@ class HandleInertiaRequests extends Middleware
                         'mindmap' => $user->canSee('mindmap'),
                         'script' => $user->canSee('script'),
                         'content' => $user->canSee('content'),     // kalender produksi konten
+                        'tracking' => $user->canSee('tracking'),   // ringkasan progress owner/manager
                         'pembukuan' => $user->canSee('pembukuan'),
                         'user' => $user->canSee('user'),
                         'insight' => $user->canSee('insight'),      // Insight IG & YouTube

@@ -1,7 +1,7 @@
 <script setup>
 // Halaman Kanban (Vue) — kolom dinamis, drag-drop, label, + fitur kartu:
 // deadline, arsip, deskripsi, attachment, komentar (staff yg ditugasi pun bisa komentar).
-import { ref, computed, watch } from 'vue';                       // reaktivitas Vue
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'; // reaktivitas + sinkron scrollbar
 import { router, useForm, usePage, Link } from '@inertiajs/vue3';  // Inertia: navigasi, form, props, Link
 import Layout from '../Layout.vue';                                // kerangka + sidebar
 import ModalWrap from '../ModalWrap.vue';                          // pembungkus modal
@@ -17,6 +17,7 @@ const props = defineProps({
     labels: { type: Array, default: () => [] },  // definisi label (dikelola owner)
     jenis: { type: Array, default: () => [] },   // chip jenis yang aktif (kosong = semua)
     jenisCounts: { type: Object, default: () => ({}) },
+    dateFilters: { type: Object, default: () => ({}) }, // filter tanggal kartu dibuat
     boardTotal: { type: Number, default: 0 },    // estimasi nilai SELURUH board (tak ikut filter)
     baseUrl: { type: String, default: '/pipelines/kanban' },
     pageTitle: { type: String, default: 'Kanban' },
@@ -50,6 +51,24 @@ const patchCard = (url, body) =>
         .then((res) => { if (!res.ok) router.reload(); })
         .catch(() => router.reload());   // gagal jaringan
 const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'); // ukuran file
+const fmtCreated = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+// Scrollbar kembar: yang atas membuat board bisa digeser tanpa turun ke dasar.
+// Lebar batang atas mengikuti scrollWidth board dan keduanya saling sinkron.
+const topScroll = ref(null);
+const topScrollInner = ref(null);
+const boardScroll = ref(null);
+let scrollObserver;
+const updateTopScrollWidth = () => {
+    if (topScrollInner.value && boardScroll.value) topScrollInner.value.style.width = boardScroll.value.scrollWidth + 'px';
+};
+const syncScroll = (source, target) => { if (target) target.scrollLeft = source.scrollLeft; };
+onMounted(() => {
+    nextTick(updateTopScrollWidth);
+    scrollObserver = new ResizeObserver(updateTopScrollWidth);
+    if (boardScroll.value) scrollObserver.observe(boardScroll.value);
+});
+onUnmounted(() => scrollObserver?.disconnect());
 
 // State kartu per kolom (salinan board; di-resync bila board prop berubah).
 // Deep-copy tiap array kolom → cols punya array sendiri, TIDAK berbagi referensi
@@ -273,10 +292,27 @@ const submitColEdit = () => colForm.put('/columns/' + colEditId.value, { onSucce
 const openColEdit = (id, name) => { colEditId.value = id; colForm.name = name; colEditOpen.value = true; };
 const deleteColumn = (id) => { if (props.canManage && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
 const deleteBoard = () => { if (confirm(`Hapus board "${props.currentBoard.name}"? (hanya bila kosong)`)) router.delete('/boards/' + props.currentBoard.key); };
-const switchBoard = (e) => router.get(props.baseUrl, { category: e.target.value }, { preserveState: false });
+const switchBoard = (e) => router.get(props.baseUrl, {
+    category: e.target.value,
+    created_from: createdFrom.value || undefined,
+    created_to: createdTo.value || undefined,
+}, { preserveState: false });
 
 // Sales cuma punya SATU board (`sales`): tak ada pilih/buat/ubah/hapus board.
 const isPipeline = computed(() => props.boardType === 'pipeline');
+
+// ---- Filter Date Marker (created_at) — berlaku di Sales dan semua Kanban ----
+const createdFrom = ref(props.dateFilters.created_from || '');
+const createdTo = ref(props.dateFilters.created_to || '');
+const dateFilterAktif = computed(() => Boolean(createdFrom.value || createdTo.value));
+const applyDateFilter = () => router.get(props.baseUrl, {
+    category: props.category,
+    jenis: props.jenis?.length ? props.jenis : undefined,
+    created_from: createdFrom.value || undefined,
+    created_to: createdTo.value || undefined,
+    archived: props.showArchived ? 1 : undefined,
+}, { preserveState: false });
+const resetDateFilter = () => { createdFrom.value = ''; createdTo.value = ''; applyDateFilter(); };
 
 // ---- Filter jenis (chip, board sales) ----
 // WAJIB chip, JANGAN dropdown. Versi dropdown pernah ada & dibuang: letaknya sama
@@ -284,12 +320,15 @@ const isPipeline = computed(() => props.boardType === 'pipeline');
 // Chip tak punya masalah itu — bisa aktif banyak sekaligus, & "Semua" selalu terlihat.
 const jenisAktif = computed(() => new Set(props.jenis || []));
 const filterAktif = computed(() => jenisAktif.value.size > 0);
+const anyFilterAktif = computed(() => filterAktif.value || dateFilterAktif.value);
 
 // Kirim ulang halaman dgn daftar chip yang baru. Array kosong → param dibuang
 // (?jenis[]= kosong tetap terbaca array berisi '' oleh Laravel).
 const pergiKeFilter = (keys) => router.get(props.baseUrl, {
     category: props.category,
     jenis: keys.length ? keys : undefined,
+    created_from: createdFrom.value || undefined,
+    created_to: createdTo.value || undefined,
     archived: props.showArchived ? 1 : undefined,
 }, { preserveState: false });
 
@@ -304,6 +343,8 @@ const resetJenis = () => filterAktif.value && pergiKeFilter([]);
 const toggleArchiveView = () => router.get(props.baseUrl, {
     category: props.category,
     jenis: props.jenis?.length ? props.jenis : undefined,
+    created_from: createdFrom.value || undefined,
+    created_to: createdTo.value || undefined,
     archived: props.showArchived ? undefined : 1,
 }, { preserveState: false });
 </script>
@@ -402,6 +443,19 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 </span>
             </div>
 
+            <!-- Filter Date Marker = tanggal kartu dibuat. Berlaku sama untuk Sales
+                 dan Kanban; isi salah satu batas saja juga valid. -->
+            <div class="flex flex-wrap items-end gap-2 mb-3 px-0.5">
+                <span class="pb-2 text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Date Marker</span>
+                <label class="text-[10px] text-slate-500">Dari
+                    <input v-model="createdFrom" type="date" @change="applyDateFilter" class="mt-0.5 block bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-400" />
+                </label>
+                <label class="text-[10px] text-slate-500">Sampai
+                    <input v-model="createdTo" type="date" @change="applyDateFilter" class="mt-0.5 block bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-400" />
+                </label>
+                <button v-if="dateFilterAktif" @click="resetDateFilter" class="mb-0.5 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-brand-700">Reset tanggal</button>
+            </div>
+
             <!-- Pembeda mode: Task Aktif (hijau) vs Mode Arsip (amber) -->
             <div :class="['flex items-center gap-2.5 rounded-xl border px-4 py-2.5 mb-5', showArchived ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200']">
                 <!-- ikon: kotak arsip / papan aktif -->
@@ -410,10 +464,10 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 <span :class="['font-bold text-sm', showArchived ? 'text-amber-800' : 'text-emerald-800']">{{ showArchived ? 'Mode Arsip' : 'Task Aktif' }}</span>
                 <!-- Saat filter aktif: boardCount, BUKAN counts[category]. Yang kedua tak ikut
                      filter, jadi angkanya beda dgn kartu yang benar-benar tampil. -->
-                <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : (filterAktif ? `${boardCount} kartu tersaring dari ${counts[category] ?? 0}` : `${counts[category] ?? 0} kartu aktif di board ini`) }}</span>
+                <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : (anyFilterAktif ? `${boardCount} kartu tersaring dari ${counts[category] ?? 0}` : `${counts[category] ?? 0} kartu aktif di board ini`) }}</span>
                 <!-- Nilai yang TERSARING — cuma saat filter aktif. Tanpa ini, "Estimasi
                      board" yang diam saat chip dipilih terbaca seperti angka macet. -->
-                <span v-if="filterAktif && !showArchived && !isKanban" class="text-xs font-semibold text-emerald-800">
+                <span v-if="anyFilterAktif && !showArchived && !isKanban" class="text-xs font-semibold text-emerald-800">
                     · {{ rp(boardValue) }} tersaring
                 </span>
                 <button @click="router.reload()" title="Muat ulang" class="ml-auto inline-flex items-center gap-1 bg-white/70 hover:bg-white border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
@@ -443,7 +497,12 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                  force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
                  (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
                  Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
-            <div class="overflow-x-auto pb-4">
+            <!-- Scrollbar atas tersinkron dengan board: pengguna tidak perlu turun
+                 sampai kartu paling bawah hanya untuk bergeser ke kolom kanan. -->
+            <div ref="topScroll" class="overflow-x-auto h-4 mb-2" @scroll="syncScroll($event.target, boardScroll)">
+                <div ref="topScrollInner" class="h-px"></div>
+            </div>
+            <div ref="boardScroll" class="overflow-x-auto pb-4" @scroll="syncScroll($event.target, topScroll)">
                 <div class="flex gap-3 min-w-max">
                 <draggable
                     :list="colOrder"
@@ -549,6 +608,9 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                     <span v-if="card.deadline" :class="['inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded', card.deadline < todayStr() ? 'bg-red-100 text-red-700 font-semibold' : 'bg-slate-100 text-slate-600']">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" /></svg>
                                         {{ card.deadline }}
+                                    </span>
+                                    <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Tanggal kartu dibuat">
+                                        Dibuat {{ fmtCreated(card.created_date) }}
                                     </span>
                                     <span v-if="card.description" class="inline-flex items-center text-slate-400" title="Ada deskripsi"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10" /></svg></span>
                                     <span v-if="card.comment_count > 0" class="inline-flex items-center gap-0.5 text-[10px] text-slate-400"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 01-13.5 7.8L3 21l1.2-4.5A9 9 0 1121 12z" /></svg>{{ card.comment_count }}</span>
@@ -709,9 +771,17 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                         <input type="number" step="0.01" v-model="editForm.dp3" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                     </label>
                 </div>
-                <label class="col-span-2 block font-medium text-slate-600">{{ isPipeline ? 'Link Video' : 'Tautan' }}
-                    <input type="url" v-model="editForm.link" placeholder="https://…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
-                </label>
+                <div class="col-span-2 font-medium text-slate-600">
+                    <label for="card-link">{{ isPipeline ? 'Link Video' : 'Tautan' }}</label>
+                    <div class="mt-1 flex gap-2">
+                        <input id="card-link" type="url" v-model="editForm.link" placeholder="https://…" class="min-w-0 flex-1 border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                        <!-- Saat URL sudah terisi, bisa dibuka tanpa menyimpan/menutup form. -->
+                        <a v-if="editForm.link" :href="editForm.link" target="_blank" rel="noreferrer"
+                           class="inline-flex items-center px-4 py-2 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 text-xs font-semibold hover:bg-brand-100">
+                            Buka tautan ↗
+                        </a>
+                    </div>
+                </div>
                 <!-- Kontak lead: WA / Gmail / DM Instagram. Cuma di Sales Pipeline.
                      String bebas — WA boleh '0812…'/'+62…', IG boleh '@akun'; server tak
                      memvalidasi ketat, jadi placeholder saja yang memandu format. -->

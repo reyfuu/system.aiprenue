@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\BoardColumn;
 use App\Models\Category;
+use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
+use Database\Seeders\PipelineSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -24,7 +28,7 @@ class SalesPipelineTest extends TestCase
         // jadi tanpa ini tiap request benar-benar memanggil open.er-api.com → lambat & flaky.
         // Isi cache-nya = Cache::remember langsung hit, tak ada HTTP sama sekali.
         // (Jangan pakai Http::preventStrayRequests(): ikut memblokir ping Inertia SSR → 500.)
-        \Illuminate\Support\Facades\Cache::put('usd_idr_rate', 16250.5);
+        Cache::put('usd_idr_rate', 16250.5);
     }
 
     private function user(string $role): User
@@ -105,7 +109,7 @@ class SalesPipelineTest extends TestCase
     public function test_kartu_baru_dibuat_lengkap_dengan_detailnya_sekali_kirim(): void
     {
         $pj = $this->user('staff');
-        $output = \App\Models\Output::create(['name' => 'Reels']);
+        $output = Output::create(['name' => 'Reels']);
 
         $this->actingAs($this->user('owner'))->post('/pipelines', [
             'category' => 'sales', 'account' => 'fk', 'endorse' => 'Deal lengkap',
@@ -136,8 +140,8 @@ class SalesPipelineTest extends TestCase
      *  di produksi). Checkbox di modal kartu ikut isi tabel ini, jadi tak ada kode UI. */
     public function test_output_video_dan_foto_tersedia_dan_bisa_dicentang(): void
     {
-        $video = \App\Models\Output::firstWhere('name', 'Video');
-        $foto = \App\Models\Output::firstWhere('name', 'Foto');
+        $video = Output::firstWhere('name', 'Video');
+        $foto = Output::firstWhere('name', 'Foto');
         $this->assertNotNull($video, "output 'Video' harus ada dari migrasi");
         $this->assertNotNull($foto, "output 'Foto' harus ada dari migrasi");
 
@@ -281,12 +285,12 @@ class SalesPipelineTest extends TestCase
      *  dan seeder jalan SETELAH migrasi — gampang jadi 10 kolom / board kebangkitan. */
     public function test_seeder_memberi_satu_board_sales_saja(): void
     {
-        $this->seed(\Database\Seeders\PipelineSeeder::class);
+        $this->seed(PipelineSeeder::class);
 
         $this->assertSame(['sales'], Category::where('type', 'pipeline')->pluck('key')->all());
         $this->assertSame(
             ['lead', 'kontak', 'nego', 'closing', 'deal'],
-            \App\Models\BoardColumn::where('board_key', 'sales')->orderBy('position')->pluck('key')->all()
+            BoardColumn::where('board_key', 'sales')->orderBy('position')->pluck('key')->all()
         );
 
         // Kartu dummy: semua di board sales, stage valid, jenis valid.
@@ -384,7 +388,7 @@ class SalesPipelineTest extends TestCase
      */
     public function test_urutan_kolom_lintas_board_ditolak(): void
     {
-        $sales    = BoardColumn::forBoard('sales')->pluck('id')->all();
+        $sales = BoardColumn::forBoard('sales')->pluck('id')->all();
         $todolist = BoardColumn::where('board_key', 'todolist')->orderBy('id')->pluck('id')->all();
 
         $this->assertCount(3, $todolist, 'prasyarat: board todolist wajib punya 3 kolom');
@@ -431,7 +435,7 @@ class SalesPipelineTest extends TestCase
     public function test_kartu_dari_board_berbeda_ditolak(): void
     {
         $sales = $this->card('lead');
-        $lain  = Pipeline::create(['category' => 'endorse', 'progress' => 'editing', 'endorse' => 'X']);
+        $lain = Pipeline::create(['category' => 'endorse', 'progress' => 'editing', 'endorse' => 'X']);
 
         $this->actingAs($this->user('manager'))
             ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [$sales->id, $lain->id]])
@@ -445,6 +449,28 @@ class SalesPipelineTest extends TestCase
         $this->actingAs($this->user('manager'))
             ->patchJson('/pipelines/reorder', ['progress' => 'lead', 'ids' => [999999]])
             ->assertNotFound();
+    }
+
+    public function test_filter_date_marker_memakai_tanggal_kartu_dibuat(): void
+    {
+        $lama = $this->card('lead');
+        $lama->timestamps = false;
+        $lama->forceFill(['created_at' => '2026-07-01 10:00:00'])->saveQuietly();
+
+        $baru = $this->card('lead');
+        $baru->timestamps = false;
+        $baru->forceFill(['created_at' => '2026-07-21 10:00:00'])->saveQuietly();
+
+        $this->actingAs($this->user('manager'))
+            ->get('/pipelines?created_from=2026-07-20&created_to=2026-07-22')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('board.lead', 1)
+                ->where('board.lead.0.id', $baru->id)
+                ->where('board.lead.0.created_date', '2026-07-21')
+                ->where('dateFilters.created_from', '2026-07-20')
+                ->where('dateFilters.created_to', '2026-07-22')
+            );
     }
 
     /** Admin: boleh KELOLA (CRUD) sales/kanban/mindmap, tapi tertutup dari
@@ -510,6 +536,6 @@ class SalesPipelineTest extends TestCase
     {
         // NB: cek route, bukan status HTTP — GET /pipelines/report kini cocok dgn
         // pola /pipelines/{pipeline} sehingga membalas 405, bukan 404.
-        $this->assertFalse(\Illuminate\Support\Facades\Route::has('pipelines.report'));
+        $this->assertFalse(Route::has('pipelines.report'));
     }
 }
