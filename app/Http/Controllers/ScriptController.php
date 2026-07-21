@@ -96,7 +96,7 @@ class ScriptController extends Controller
     }
 
     /** Satu paket (brand + tanggal) jadi satu PDF — pengganti dokumen Drive
-     *  yang dulu dibuat agen. Paket upload manual mengunduh file PDF asli. */
+     *  yang dulu dibuat agen. PDF dibuka inline agar bisa ditinjau sebelum diunduh. */
     public function pdf(string $brand, string $date)
     {
         abort_unless(array_key_exists($brand, Script::BRANDS), 404, 'Brand tak dikenal.');
@@ -115,7 +115,7 @@ class ScriptController extends Controller
 
             return response(Storage::disk('public')->get($file), 200, [
                 'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'attachment; filename="Script-'.$nama.'-'.$date.'.pdf"',
+                'Content-Disposition' => 'inline; filename="Script-'.$nama.'-'.$date.'.pdf"',
             ]);
         }
 
@@ -124,6 +124,6 @@ class ScriptController extends Controller
             'tanggal' => Carbon::parse($date)->translatedFormat('d F Y'),
             'scripts' => $scripts,
         ])->setPaper('a4', 'portrait')
-            ->download("Script-{$nama}-{$date}.pdf");
+            ->stream("Script-{$nama}-{$date}.pdf");
     }
 }

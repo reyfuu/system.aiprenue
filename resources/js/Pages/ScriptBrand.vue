@@ -57,7 +57,7 @@ const upload = () => form.post(props.uploadUrl, { forceFormData: true, onSuccess
 
             <!-- Satu kartu = satu PDF utuh berisi seluruh naskah pada tanggal itu. -->
             <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                <a v-for="pack in packs" :key="pack.date" :href="pack.pdf"
+                <a v-for="pack in packs" :key="pack.date" :href="pack.pdf" target="_blank" rel="noopener"
                    class="group block bg-white rounded-2xl border border-brand-100 shadow-sm hover:border-brand-300 hover:shadow-md transition overflow-hidden">
                     <!-- Pratinjau visual sederhana seperti kartu berkas di Drive; isi PDF
                          tidak di-embed agar browser tidak mengunduh dokumen dua kali. -->
