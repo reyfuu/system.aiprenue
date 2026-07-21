@@ -32,8 +32,8 @@ class User extends Authenticatable
     public const MENU_ACCESS = [
         'owner'   => ['*'],
         'it'      => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan', 'prodpilot', 'akses'],
-        'admin'   => ['pipeline', 'kanban', 'mindmap'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan', 'insight', 'prodpilot', 'akses'],
+        'admin'   => ['pipeline', 'kanban', 'mindmap', 'insight'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
         'staff'   => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
@@ -49,6 +49,7 @@ class User extends Authenticatable
         'script'    => 'Script',
         'pembukuan' => 'Pembukuan',
         'user'      => 'User',
+        'insight'   => 'Insight',
         'prodpilot' => 'ProdPilot',
         'akses'     => 'Manajemen Akses',
     ];

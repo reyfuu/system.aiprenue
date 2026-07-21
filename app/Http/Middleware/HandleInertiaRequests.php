@@ -2,13 +2,42 @@
 
 namespace App\Http\Middleware;
 
+use Closure;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Symfony\Component\HttpFoundation\Response;
 
 class HandleInertiaRequests extends Middleware
 {
-    // Blade root yang memuat bundel React (@inertia ada di sini)
+    // Blade root yang memuat bundel Vue (@inertia ada di sini)
     protected $rootView = 'app';
+
+    /**
+     * Respons Inertia (bodinya JSON) TIDAK BOLEH disimpan browser.
+     *
+     * Gejalanya kalau tersimpan: user melihat JSON mentah memenuhi layar alih-alih
+     * halaman. Terjadinya begini — tab lama memegang versi aset lama, aset di-build
+     * ulang, permintaan berikutnya jadi tak cocok versi, dan browser menyajikan
+     * kembali bodi JSON yang tersimpan untuk URL itu ke navigasi dokumen.
+     *
+     * `no-cache` bawaan session TIDAK cukup: artinya "revalidasi dulu", bukan
+     * "jangan simpan". Yang dibutuhkan `no-store`.
+     *
+     * `Vary` juga dipasang di sini karena Inertia melewatkannya pada respons 409
+     * (versi aset tak cocok) — persis jalur yang memicu masalah ini. Tanpa `Vary`,
+     * browser tak membedakan varian Inertia dan varian dokumen untuk URL yang sama.
+     */
+    public function handle(Request $request, Closure $next): Response
+    {
+        $response = parent::handle($request, $next);
+
+        if ($request->header('X-Inertia')) {
+            $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            $response->headers->set('Vary', 'X-Inertia');
+        }
+
+        return $response;
+    }
 
     // Versi aset — untuk cache-busting otomatis Inertia
     public function version(Request $request): ?string
@@ -42,6 +71,7 @@ class HandleInertiaRequests extends Middleware
                         'script'    => $user->canSee('script'),
                         'pembukuan' => $user->canSee('pembukuan'),
                         'user'      => $user->canSee('user'),
+                        'insight'   => $user->canSee('insight'),      // Insight IG & YouTube
                         'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
                         'akses'     => $user->canSee('akses'),       // Manajemen Akses
                     ],
