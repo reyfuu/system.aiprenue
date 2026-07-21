@@ -98,7 +98,7 @@ const menuOpen = ref(null);                                  // key board yg men
                             </button>
                             <div v-if="menuOpen === b.key" class="absolute right-0 top-8 z-20 w-36 bg-white border border-brand-100 rounded-xl shadow-lg py-1 text-sm">
                                 <button @click.stop.prevent="menuOpen = null; openEdit(b)" class="w-full text-left px-4 py-2 hover:bg-brand-50 text-slate-600">Ubah board</button>
-                                <button @click.stop.prevent="menuOpen = null; deleteBoard(b)" class="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">Hapus board</button>
+                                <button v-if="b.key !== 'todolist'" @click.stop.prevent="menuOpen = null; deleteBoard(b)" class="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">Hapus board</button>
                             </div>
                         </div>
                     </div>

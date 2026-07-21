@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BoardColumn;
+use App\Models\Category;
+use App\Models\Label;
 use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class PipelineController extends Controller
@@ -34,17 +38,17 @@ class PipelineController extends Controller
     /** Kanban LUAR: galeri semua board dikelompokkan per section. */
     private function gallery()
     {
-        $boards = \App\Models\Category::where('type', 'kanban')->orderBy('name')->get();
+        $boards = Category::where('type', 'kanban')->orderBy('name')->get();
         $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category')->toArray();
 
         return Inertia::render('BoardGallery', [
             'boards' => $boards->map(fn ($b) => [
-                'key'              => $b->key,
-                'name'             => $b->name,
-                'section'          => $b->section ?: 'Tanpa Grup',      // grup galeri
+                'key' => $b->key,
+                'name' => $b->name,
+                'section' => $b->section ?: 'Tanpa Grup',      // grup galeri
                 'super_admin_only' => (bool) $b->super_admin_only,
-                'count'            => $counts[$b->key] ?? 0,             // jml task aktif
+                'count' => $counts[$b->key] ?? 0,             // jml task aktif
             ]),
             'canManage' => auth()->user()->canManage(),
         ]);
@@ -123,93 +127,98 @@ class PipelineController extends Controller
         $archivedCount = Pipeline::where('category', $category)->whereNotNull('archived_at')->count();
 
         // Kolom board ini + susun kartu per kolom (derivasi pindah dari blade @php)
-        $columns = \App\Models\BoardColumn::forBoard($category);
+        $columns = BoardColumn::forBoard($category);
         $colKeys = $columns->pluck('key')->all();
         $board = array_fill_keys($colKeys, []); // kolom kosong per key
         foreach ($pipelines as $p) {
             // kartu dgn kolom terhapus → jatuh ke kolom pertama
             $ck = in_array($p->progress, $colKeys, true) ? $p->progress : ($colKeys[0] ?? $p->progress);
             $board[$ck][] = [
-                'id'             => $p->id,
-                'code'           => 't_'.str_pad($p->id, 6, '0', STR_PAD_LEFT),
-                'endorse'        => $p->endorse,
-                'jenis'          => $p->jenis,                                               // key mentah (form edit)
-                'jenis_label'    => $p->jenis ? (Pipeline::JENIS[$p->jenis] ?? $p->jenis) : null,
-                'account'        => Pipeline::ACCOUNTS[$p->account] ?? $p->account,          // label akun
-                'account_color'  => Pipeline::ACCOUNT_COLORS[$p->account] ?? 'bg-slate-500 text-white',
-                'outputs'        => $p->outputs->pluck('name'),
-                'payment'        => Pipeline::PAYMENT[$p->payment_status] ?? $p->payment_status,
+                'id' => $p->id,
+                'code' => 't_'.str_pad($p->id, 6, '0', STR_PAD_LEFT),
+                'endorse' => $p->endorse,
+                'jenis' => $p->jenis,                                               // key mentah (form edit)
+                'jenis_label' => $p->jenis ? (Pipeline::JENIS[$p->jenis] ?? $p->jenis) : null,
+                'account' => Pipeline::ACCOUNTS[$p->account] ?? $p->account,          // label akun
+                'account_color' => Pipeline::ACCOUNT_COLORS[$p->account] ?? 'bg-slate-500 text-white',
+                'outputs' => $p->outputs->pluck('name'),
+                'payment' => Pipeline::PAYMENT[$p->payment_status] ?? $p->payment_status,
                 'payment_status' => $p->payment_status,
-                'amount_idr'     => $p->amount_idr,
-                'amount_usd'     => $p->amount_usd,
-                'assignee'       => $p->assignee?->name,
-                'link'           => $p->link,
-                'labels'         => $p->labels ?? [],
-                'done'           => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
+                'amount_idr' => $p->amount_idr,
+                'amount_usd' => $p->amount_usd,
+                // cicilan DP + berapa kali sudah DP (slot terisi & > 0)
+                'dp1' => $p->dp1,
+                'dp2' => $p->dp2,
+                'dp3' => $p->dp3,
+                'dp_count' => collect([$p->dp1, $p->dp2, $p->dp3])->filter(fn ($v) => (float) $v > 0)->count(),
+                'assignee' => $p->assignee?->name,
+                'link' => $p->link,
+                'labels' => $p->labels ?? [],
+                'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
                 // fitur kartu: deadline, deskripsi, arsip
-                'deadline'       => $p->deadline?->toDateString(),
-                'description'    => $p->description,
-                'archived'       => (bool) $p->archived_at,
+                'deadline' => $p->deadline?->toDateString(),
+                'description' => $p->description,
+                'archived' => (bool) $p->archived_at,
                 // komentar (terbaru dulu) + lampiran
-                'comments'       => $p->comments->sortByDesc('created_at')->values()->map(fn ($c) => [
-                    'id'      => $c->id,
-                    'body'    => $c->body,
-                    'user'    => $c->user?->name,
+                'comments' => $p->comments->sortByDesc('created_at')->values()->map(fn ($c) => [
+                    'id' => $c->id,
+                    'body' => $c->body,
+                    'user' => $c->user?->name,
                     'user_id' => $c->user_id,
-                    'time'    => $c->created_at?->diffForHumans(),
+                    'time' => $c->created_at?->diffForHumans(),
                 ]),
-                'comment_count'    => $p->comments->count(),
-                'attachments'      => $p->attachments->map(fn ($a) => [
-                    'id'   => $a->id,
+                'comment_count' => $p->comments->count(),
+                'attachments' => $p->attachments->map(fn ($a) => [
+                    'id' => $a->id,
                     'name' => $a->name,
-                    'url'  => $a->url,
+                    'url' => $a->url,
                     'size' => $a->size,
                     'user' => $a->user?->name,
                 ]),
                 'attachment_count' => $p->attachments->count(),
                 // field mentah utk form edit
-                'account_key'    => $p->account,
-                'assigned_to'    => $p->assigned_to,
-                'progress'       => $p->progress,
-                'output_ids'     => $p->outputs->pluck('id'),
-                'notes'          => $p->notes,
+                'account_key' => $p->account,
+                'assigned_to' => $p->assigned_to,
+                'progress' => $p->progress,
+                'output_ids' => $p->outputs->pluck('id'),
+                'notes' => $p->notes,
                 // kontak lead (WA / Gmail / DM IG) — tampil di modal detail
-                'kontak_wa'      => $p->kontak_wa,
-                'kontak_gmail'   => $p->kontak_gmail,
-                'kontak_ig'      => $p->kontak_ig,
+                'kontak_wa' => $p->kontak_wa,
+                'kontak_gmail' => $p->kontak_gmail,
+                'kontak_ig' => $p->kontak_ig,
             ];
         }
 
-        $currentBoard = \App\Models\Category::where('key', $category)->first();
+        $currentBoard = Category::where('key', $category)->first();
 
         return Inertia::render('Kanban', [
-            'category'      => $category,
-            'counts'        => $counts,
-            'categories'    => $categories,                                  // board select: sesuai type modul
-            'baseUrl'       => $baseUrl,                                     // '/pipelines' | '/pipelines/kanban'
-            'pageTitle'     => $title,
-            'showGallery'   => $showGallery,                                 // link galeri: kanban saja
+            'category' => $category,
+            'counts' => $counts,
+            'categories' => $categories,                                  // board select: sesuai type modul
+            'baseUrl' => $baseUrl,                                     // '/pipelines' | '/pipelines/kanban'
+            'pageTitle' => $title,
+            'showGallery' => $showGallery,                                 // link galeri: kanban saja
             // Board baru dari halaman ini harus bertipe sama, kalau tidak langsung hilang dari modul ini
-            'boardType'     => $currentBoard?->type ?? 'kanban',
+            'boardType' => $currentBoard?->type ?? 'kanban',
             // Kurs USD→IDR: nilai deal per stage dijumlahkan dalam IDR (kartu bisa USD).
-            'rate'          => $rate,
-            'boardTotal'    => $boardTotal,                                 // estimasi nilai SELURUH board (tak ikut filter)
-            'board'         => $board,                                       // kartu tersusun per kolom
-            'columns'       => $columns,                                     // kolom dinamis board ini
-            'jenis'         => $jenis,                                      // chip aktif (array; kosong = semua)
-            'jenisCounts'   => $jenisCounts,                                // angka di tiap chip
-            'showArchived'  => $showArchived,                               // sedang lihat arsip?
+            'rate' => $rate,
+            'boardTotal' => $boardTotal,                                 // estimasi nilai SELURUH board (tak ikut filter)
+            'board' => $board,                                       // kartu tersusun per kolom
+            'columns' => $columns,                                     // kolom dinamis board ini
+            'jenis' => $jenis,                                      // chip aktif (array; kosong = semua)
+            'jenisCounts' => $jenisCounts,                                // angka di tiap chip
+            'showArchived' => $showArchived,                               // sedang lihat arsip?
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
-            'staff'         => User::orderBy('name')->get(['id', 'name', 'role']),
-            'outputs'      => Output::orderBy('name')->get(),
-            'canManage'    => auth()->user()->canManage(),                   // super_admin/it → boleh CRUD
+            'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
+            'outputs' => Output::orderBy('name')->get(),
+            'canManage' => auth()->user()->canManage(),                   // owner/manager/it/admin → boleh CRUD
             'currentBoard' => $currentBoard,
             // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
-            'labels'       => \App\Models\Label::orderBy('id')->get(['id', 'name', 'color']),
+            'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),
             // Referensi untuk form tambah/edit kartu
-            'accounts'     => Pipeline::ACCOUNTS,
-            'jenisList'    => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
-            'payments'     => Pipeline::PAYMENT,
+            'accounts' => Pipeline::ACCOUNTS,
+            'jenisList' => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
+            'payments' => Pipeline::PAYMENT,
         ]);
     }
 
@@ -231,8 +240,8 @@ class PipelineController extends Controller
     {
         $data = $request->validate([
             'progress' => ['required', 'string'],
-            'ids'      => ['required', 'array', 'min:1'],
-            'ids.*'    => ['integer'],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
         ]);
 
         $cards = Pipeline::whereIn('id', $data['ids'])->get();
@@ -246,7 +255,7 @@ class PipelineController extends Controller
         $category = $cards->pluck('category')->unique();
         abort_if($category->count() > 1, 422, 'Kartu berasal dari board berbeda.');
 
-        $validKeys = \App\Models\BoardColumn::where('board_key', $category->first())->pluck('key')->all();
+        $validKeys = BoardColumn::where('board_key', $category->first())->pluck('key')->all();
         abort_unless(in_array($data['progress'], $validKeys, true), 422, 'Kolom tak dikenal di board ini.');
 
         // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
@@ -282,10 +291,10 @@ class PipelineController extends Controller
             $file = $request->file('newAttachment');
             $pipeline->attachments()->create([
                 'user_id' => $request->user()->id,
-                'path'    => $file->store('attachments', 'public'),
-                'name'    => $file->getClientOriginalName(),
-                'mime'    => $file->getClientMimeType(),
-                'size'    => $file->getSize(),
+                'path' => $file->store('attachments', 'public'),
+                'name' => $file->getClientOriginalName(),
+                'mime' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
             ]);
         }
 
@@ -319,36 +328,39 @@ class PipelineController extends Controller
 
     private function validated(Request $request): array
     {
-        $validProgress = \App\Models\BoardColumn::where('board_key', $request->category)->pluck('key')->all();
+        $validProgress = BoardColumn::where('board_key', $request->category)->pluck('key')->all();
 
         $data = $request->validate([
-            'category'        => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::categories()))],
-            'jenis'           => ['nullable', \Illuminate\Validation\Rule::in(array_keys(Pipeline::JENIS))],
-            'account'         => ['required', \Illuminate\Validation\Rule::in(array_keys(Pipeline::ACCOUNTS))],
-            'assigned_to'     => 'nullable|exists:users,id',
-            'link'            => 'nullable|url|max:2048',
+            'category' => ['required', Rule::in(array_keys(Pipeline::categories()))],
+            'jenis' => ['nullable', Rule::in(array_keys(Pipeline::JENIS))],
+            'account' => ['required', Rule::in(array_keys(Pipeline::ACCOUNTS))],
+            'assigned_to' => 'nullable|exists:users,id',
+            'link' => 'nullable|url|max:2048',
             // Kontak lead — string bebas, bukan url/email ketat: WA sering ditulis
             // '0812…' atau '+62…', IG '@akun'. Validasi kaku malah menolak isian wajar.
-            'kontak_wa'       => 'nullable|string|max:40',
-            'kontak_gmail'    => 'nullable|string|max:255',
-            'kontak_ig'       => 'nullable|string|max:100',
-            'labels'          => 'nullable|array',
-            'labels.*.name'   => 'required_with:labels|string|max:50',
-            'labels.*.color'  => 'required_with:labels|string|max:40',
-            'coaching'        => 'nullable|string|max:255',
-            'speaker'         => 'nullable|string|max:255',
-            'endorse'         => 'required|string|max:255',
-            'description'     => 'nullable|string',
-            'progress'        => ['required', \Illuminate\Validation\Rule::in($validProgress ?: ['script'])],
+            'kontak_wa' => 'nullable|string|max:40',
+            'kontak_gmail' => 'nullable|string|max:255',
+            'kontak_ig' => 'nullable|string|max:100',
+            'labels' => 'nullable|array',
+            'labels.*.name' => 'required_with:labels|string|max:50',
+            'labels.*.color' => 'required_with:labels|string|max:40',
+            'coaching' => 'nullable|string|max:255',
+            'speaker' => 'nullable|string|max:255',
+            'endorse' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'progress' => ['required', Rule::in($validProgress ?: ['script'])],
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
-            'deadline'        => 'nullable|date',
-            'payment_status'  => 'required|in:belum,dp,lunas',
-            'amount_idr'      => 'nullable|numeric|min:0',
-            'amount_usd'      => 'nullable|numeric|min:0',
-            'notes'           => 'nullable|string',
-            'outputs'         => 'array',
-            'outputs.*'       => 'exists:outputs,id',
+            'deadline' => 'nullable|date',
+            'payment_status' => 'required|in:belum,dp,lunas',
+            'amount_idr' => 'nullable|numeric|min:0',
+            'amount_usd' => 'nullable|numeric|min:0',
+            'dp1' => 'nullable|numeric|min:0',
+            'dp2' => 'nullable|numeric|min:0',
+            'dp3' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+            'outputs' => 'array',
+            'outputs.*' => 'exists:outputs,id',
         ]);
 
         return $data;

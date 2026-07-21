@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Pipeline extends Model
@@ -14,7 +15,7 @@ class Pipeline extends Model
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
-        'amount_idr', 'amount_usd', 'notes', 'link', 'todos', 'labels', 'done',
+        'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done',
         'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
     ];
 
@@ -25,6 +26,9 @@ class Pipeline extends Model
         'archived_at' => 'datetime',
         'amount_idr' => 'decimal:2',
         'amount_usd' => 'decimal:2',
+        'dp1' => 'decimal:2',
+        'dp2' => 'decimal:2',
+        'dp3' => 'decimal:2',
         'todos' => 'array',
         'labels' => 'array',
         'done' => 'boolean',
@@ -41,13 +45,13 @@ class Pipeline extends Model
     }
 
     /** Komentar kartu (terbaru dulu saat ditampilkan). */
-    public function comments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function comments(): HasMany
     {
         return $this->hasMany(PipelineComment::class);
     }
 
     /** Lampiran file kartu. */
-    public function attachments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function attachments(): HasMany
     {
         return $this->hasMany(PipelineAttachment::class);
     }
@@ -64,11 +68,11 @@ class Pipeline extends Model
      *  atribut kartu di board `sales`. String biasa (bukan enum) supaya bisa
      *  ditambah tanpa migrasi. null = kartu board kanban (bukan deal). */
     public const JENIS = [
-        'endorse'             => 'Endorse',
-        'coaching_1on1'       => 'Coaching 1-on-1',
+        'endorse' => 'Endorse',
+        'coaching_1on1' => 'Coaching 1-on-1',
         'coaching_perusahaan' => 'Coaching Perusahaan',
-        'agensi'              => 'Agensi',
-        'speaker'             => 'Speaker',
+        'agensi' => 'Agensi',
+        'speaker' => 'Speaker',
     ];
 
     /** Account = enum('fk','ai_preneur') di tabel pipelines.
@@ -80,12 +84,14 @@ class Pipeline extends Model
 
     /** Warna badge per account (kelas Tailwind). */
     public const ACCOUNT_COLORS = [
-        'fk'         => 'bg-brand-600 text-white',
+        'fk' => 'bg-brand-600 text-white',
         'ai_preneur' => 'bg-slate-500 text-white',
     ];
+
     public const PROGRESS = [
         'script' => 'Script', 'editing' => 'Editing', 'progress' => 'Progress',
         'pending' => 'Pending', 'done' => 'Done',
     ];
+
     public const PAYMENT = ['belum' => 'Belum', 'dp' => 'DP', 'lunas' => 'Lunas'];
 }

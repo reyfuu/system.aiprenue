@@ -78,6 +78,8 @@ const dragDisabled = computed(() => !props.canManage || props.showArchived); // 
 // Kartu bisa IDR, USD, atau dua-duanya → semua dijumlahkan dalam IDR pakai kurs.
 // amount_* datang sbg string (cast decimal:2), jadi wajib Number().
 const cardValue = (card) => Number(card.amount_idr || 0) + Number(card.amount_usd || 0) * props.rate;
+// Total DP yang sudah dibayar (IDR). dp* datang sbg string (cast decimal:2).
+const cardDpPaid = (card) => Number(card.dp1 || 0) + Number(card.dp2 || 0) + Number(card.dp3 || 0);
 const colValue = (key) => (cols.value[key] || []).reduce((sum, c) => sum + cardValue(c), 0);
 const boardValue = computed(() => Object.values(cols.value).flat().reduce((sum, c) => sum + cardValue(c), 0));
 const boardCount = computed(() => Object.values(cols.value).flat().length);
@@ -129,7 +131,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', dp1: '', dp2: '', dp3: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -146,6 +148,9 @@ const fillForm = (card) => {
     editForm.payment_status = card.payment_status ?? 'belum';
     editForm.amount_idr = card.amount_idr ?? '';
     editForm.amount_usd = card.amount_usd ?? '';
+    editForm.dp1 = card.dp1 ?? '';
+    editForm.dp2 = card.dp2 ?? '';
+    editForm.dp3 = card.dp3 ?? '';
     editForm.link = card.link ?? '';
     editForm.deadline = card.deadline ?? '';
     editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
@@ -169,6 +174,17 @@ const openDetail = (card) => {
 };
 const closeCard = () => { detailId.value = null; creating.value = false; };
 
+// Textarea Deskripsi/Notes mengikuti tinggi isi sampai 320px; setelah itu
+// scrollbar internal menjaga modal tidak tumbuh melewati layar.
+const resizeTextarea = (el) => {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 320) + 'px';
+};
+const vAutoResize = {
+    mounted: resizeTextarea,
+    updated: resizeTextarea,
+};
+
 // Tutup modal setelah simpan sukses (samakan dgn arsip/hapus & modal Order).
 // Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
 const submitCard = () => {
@@ -178,6 +194,7 @@ const submitCard = () => {
         // Board task tidak boleh membawa data deal tersembunyi dari form Sales.
         ...(isKanban.value ? {
             jenis: '', account: 'fk', payment_status: 'belum', amount_idr: '', amount_usd: '',
+            dp1: '', dp2: '', dp3: '',
             outputs: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '',
         } : {}),
     }));
@@ -549,6 +566,18 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                     <span v-if="isPipeline && card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
                                     <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
                                     <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
+                                    <span v-if="isPipeline && card.dp_count > 0" class="font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200" title="Sudah bayar DP berapa kali">DP {{ card.dp_count }}×</span>
+                                </div>
+                                <!-- Progres DP: uang yang sudah masuk vs total deal. Cuma tampil
+                                     kalau ada DP terbayar. -->
+                                <div v-if="isPipeline && card.dp_count > 0" class="mb-1.5">
+                                    <div class="flex items-center justify-between text-xs text-slate-500 mb-0.5">
+                                        <span class="font-medium">DP masuk</span>
+                                        <span class="font-semibold text-slate-700">{{ rp(cardDpPaid(card)) }} / {{ rp(cardValue(card)) }}</span>
+                                    </div>
+                                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                        <div class="h-full rounded-full bg-amber-400" :style="{ width: Math.min(100, cardValue(card) > 0 ? (cardDpPaid(card) / cardValue(card)) * 100 : 0) + '%' }"></div>
+                                    </div>
                                 </div>
                                 <!-- PJ + nilai deal + link (nilai = info utama kartu, ala Pipedrive) -->
                                 <div class="flex items-center justify-between gap-2 text-[10px] pt-1.5 border-t border-brand-50">
@@ -627,7 +656,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     <input v-model="editForm.endorse" required :autofocus="creating" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
                 <label class="col-span-2 block font-medium text-slate-600">Deskripsi
-                    <textarea v-model="editForm.description" rows="3" placeholder="Detail task…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
+                    <textarea v-model="editForm.description" v-auto-resize rows="3" placeholder="Detail task…" class="mt-1 w-full max-h-80 overflow-y-auto resize-y border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
                 </label>
                 <label class="block font-medium text-slate-600">Deadline
                     <input type="date" v-model="editForm.deadline" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
@@ -667,6 +696,19 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 <label v-if="isPipeline" class="block font-medium text-slate-600">Jumlah USD
                     <input type="number" step="0.01" v-model="editForm.amount_usd" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
+                <!-- Cicilan DP (IDR). Kosongkan slot yang belum dibayar; badge "DP N×" di kartu
+                     menghitung slot yang terisi. -->
+                <div v-if="isPipeline" class="col-span-2 grid grid-cols-3 gap-3">
+                    <label class="block font-medium text-slate-600">DP 1
+                        <input type="number" step="0.01" v-model="editForm.dp1" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                    <label class="block font-medium text-slate-600">DP 2
+                        <input type="number" step="0.01" v-model="editForm.dp2" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                    <label class="block font-medium text-slate-600">DP 3
+                        <input type="number" step="0.01" v-model="editForm.dp3" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    </label>
+                </div>
                 <label class="col-span-2 block font-medium text-slate-600">{{ isPipeline ? 'Link Video' : 'Tautan' }}
                     <input type="url" v-model="editForm.link" placeholder="https://…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
@@ -707,7 +749,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     </div>
                 </div>
                 <label class="col-span-2 block font-medium text-slate-600">Notes
-                    <textarea v-model="editForm.notes" rows="2" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
+                    <textarea v-model="editForm.notes" v-auto-resize rows="2" class="mt-1 w-full max-h-80 overflow-y-auto resize-y border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
                 </label>
                 <!-- Lampiran opsional saat membuat kartu — filenya ikut di request buat-kartu. -->
                 <div v-if="creating" class="col-span-2">

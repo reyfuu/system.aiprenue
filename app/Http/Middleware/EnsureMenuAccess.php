@@ -15,8 +15,11 @@ class EnsureMenuAccess
 
         // Route mutasi (CRUD kartu/board) hanya untuk super admin & IT.
         if ($name !== null && $this->isManageRoute($name)) {
-            if (! $user || ! $user->canManage()) {
-                abort(403, 'Hanya super admin & IT yang bisa mengubah data ini.');
+            $menuKelola = str_starts_with($name, 'content.') ? 'content' : null;
+            $bolehKelola = $menuKelola ? $user?->canManageMenu($menuKelola) : $user?->canManage();
+
+            if (! $bolehKelola) {
+                abort(403, 'Anda tidak punya izin untuk mengubah data ini.');
             }
         }
 
@@ -50,6 +53,7 @@ class EnsureMenuAccess
             || str_starts_with($name, 'attachments.') // komentar TIDAK di sini (staff boleh)
             || str_starts_with($name, 'transactions.')
             || str_starts_with($name, 'inventories.')
+            || in_array($name, ['content.store', 'content.update', 'content.destroy'], true)
             || $name === 'akses.update'          // ubah hak akses = mutasi
             || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true)
             // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
@@ -81,11 +85,13 @@ class EnsureMenuAccess
             str_starts_with($name, 'orders.') => ['order'],
             str_starts_with($name, 'mindmaps.') => ['mindmap'],
             str_starts_with($name, 'script.') => ['script'],
+            str_starts_with($name, 'content.') => ['content'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],
             str_starts_with($name, 'inventories.') => ['pembukuan'],
             str_starts_with($name, 'users.') => ['user'],
             str_starts_with($name, 'insight.') => ['insight'],
+            str_starts_with($name, 'upload.') => ['upload'],
             str_starts_with($name, 'akses.') => ['akses'],   // Manajemen Akses
             default => null,
         };
