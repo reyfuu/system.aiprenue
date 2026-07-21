@@ -17,6 +17,7 @@ use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ScriptController;
+use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
@@ -125,6 +126,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/content', [ContentController::class, 'store'])->name('content.store');
     Route::put('/content/{content}', [ContentController::class, 'update'])->name('content.update');
     Route::delete('/content/{content}', [ContentController::class, 'destroy'])->name('content.destroy');
+
+    // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
+    Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
 
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');

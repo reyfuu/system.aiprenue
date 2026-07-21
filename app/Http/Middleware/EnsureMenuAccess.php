@@ -86,6 +86,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'mindmaps.') => ['mindmap'],
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'content.') => ['content'],
+            str_starts_with($name, 'tracking.') => ['tracking'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],
             str_starts_with($name, 'inventories.') => ['pembukuan'],

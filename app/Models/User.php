@@ -33,7 +33,7 @@ class User extends Authenticatable
     public const MENU_ACCESS = [
         'owner' => ['*'],
         'it' => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'pembukuan', 'insight', 'upload', 'prodpilot', 'akses'],
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'prodpilot', 'akses'],
         'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
         'staff' => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
@@ -49,6 +49,7 @@ class User extends Authenticatable
         'mindmap' => 'Mindmap',
         'script' => 'Script',
         'content' => 'Content',
+        'tracking' => 'Tracking',
         'pembukuan' => 'Pembukuan',
         'user' => 'User',
         'insight' => 'Insight',
@@ -96,7 +97,7 @@ class User extends Authenticatable
     {
         // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
         // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
-        if ($menu === 'pembukuan') {
+        if (in_array($menu, ['pembukuan', 'tracking'], true)) {
             return in_array($this->role, ['owner', 'manager'], true);
         }
 
