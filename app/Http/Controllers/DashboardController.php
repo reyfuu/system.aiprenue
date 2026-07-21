@@ -229,6 +229,28 @@ class DashboardController extends Controller
                 'transaksi'   => Transaction::count(),
                 'invTotal'    => (float) $invTotal,
             ],
+
+            // Insight utama IG & YouTube — versi ringkas untuk sekilas pandang.
+            // Skor konten dihitung dgn logika yang sama dengan menu Insight
+            // (relatif thd kumpulan yg dibandingkan); di sini top 3 saja.
+            'insight' => (function () {
+                $konten = \App\Models\InsightContent::orderByDesc('published_at')->limit(200)->get();
+
+                return [
+                    'konten'       => $konten->count(),
+                    'views'        => (int) $konten->sum('views'),
+                    'followerGain' => (int) $konten->sum('followers_gained'),
+                    'top'          => \App\Models\InsightContent::beriSkor($konten)
+                        ->sortByDesc('skor')->take(3)->values()
+                        ->map(fn ($c) => [
+                            'platform' => $c->platform,
+                            'judul'    => $c->judul,
+                            'url'      => $c->url,
+                            'views'    => $c->views,
+                            'skor'     => $c->skor,
+                        ]),
+                ];
+            })(),
         ]);
     }
 }

@@ -14,6 +14,7 @@ const props = defineProps({
     category: String, counts: Object, categories: Object, board: Object, columns: Array,
     staff: Array, outputs: Array, canManage: Boolean, currentBoard: Object,
     showArchived: Boolean, archivedCount: Number, accounts: Object, jenisList: Object,
+    labels: { type: Array, default: () => [] },  // definisi label (dikelola owner)
     jenis: { type: Array, default: () => [] },   // chip jenis yang aktif (kosong = semua)
     jenisCounts: { type: Object, default: () => ({}) },
     boardTotal: { type: Number, default: 0 },    // estimasi nilai SELURUH board (tak ikut filter)
@@ -24,14 +25,9 @@ const props = defineProps({
     rate: { type: Number, default: 0 },               // kurs USD→IDR utk menjumlah nilai deal
 });
 
-// Preset label warna (Urgent = penanda mendesak)
-const LABEL_PRESETS = [
-    { name: 'Urgent', color: 'bg-red-500' },
-    { name: 'Penting', color: 'bg-amber-500' },
-    { name: 'Review', color: 'bg-purple-500' },
-    { name: 'Selesai', color: 'bg-emerald-500' },
-    { name: 'Info', color: 'bg-sky-500' },
-];
+// Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
+// Warna di luar daftar ini tak ter-generate Tailwind di produksi.
+const LABEL_COLORS = ['bg-red-500', 'bg-amber-500', 'bg-emerald-500', 'bg-sky-500', 'bg-purple-500', 'bg-teal-500', 'bg-indigo-500', 'bg-rose-500', 'bg-slate-500', 'bg-slate-400', 'bg-brand-600'];
 
 const authUser = usePage().props.auth.user;                        // user login (izin hapus komentar)
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || ''; // token utk fetch
@@ -72,7 +68,8 @@ watch(() => props.columns, (c) => { colOrder.value = [...c]; });
 
 const colMenu = ref(null);                                         // kolom yg menunya terbuka
 const colNames = computed(() => Object.fromEntries(props.columns.map((c) => [c.key, c.name]))); // key→nama kolom
-const isTodolist = computed(() => props.category === 'todolist'); // board todolist: sembunyikan nominal IDR/USD & payment
+// Semua board Kanban adalah pengelolaan task ala Trello; field deal hanya untuk Sales Pipeline.
+const isKanban = computed(() => props.boardType === 'kanban');
 
 const cardCount = (key) => (cols.value[key] || []).length;         // jml kartu per kolom
 const dragDisabled = computed(() => !props.canManage || props.showArchived); // nonaktif saat view-only / mode arsip
@@ -132,7 +129,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '' });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -175,9 +172,17 @@ const closeCard = () => { detailId.value = null; creating.value = false; };
 // Tutup modal setelah simpan sukses (samakan dgn arsip/hapus & modal Order).
 // Gagal validasi → modal TETAP terbuka supaya form.errors kelihatan.
 const submitCard = () => {
-    const form = editForm.transform(({ progressKey, ...rest }) => ({ ...rest, progress: progressKey }));
+    const form = editForm.transform(({ progressKey, ...rest }) => ({
+        ...rest,
+        progress: progressKey,
+        // Board task tidak boleh membawa data deal tersembunyi dari form Sales.
+        ...(isKanban.value ? {
+            jenis: '', account: 'fk', payment_status: 'belum', amount_idr: '', amount_usd: '',
+            outputs: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '',
+        } : {}),
+    }));
     if (creating.value) {
-        form.post('/pipelines', { preserveScroll: true, onSuccess: closeCard });
+        form.post('/pipelines', { preserveScroll: true, forceFormData: true, onSuccess: closeCard });
     } else {
         form.put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: closeCard });
     }
@@ -216,6 +221,23 @@ const submitAttach = () => {
     attachForm.post(`/pipelines/${detailId.value}/attachments`, { forceFormData: true, preserveScroll: true, onSuccess: () => attachForm.reset('file') });
 };
 const deleteAttachment = (id) => router.delete(`/attachments/${id}`, { preserveScroll: true });
+
+// ---- Kelola label (OWNER only) — CRUD definisi label di tabel `labels` ----
+const isOwner = computed(() => authUser?.role === 'owner');
+const labelManageOpen = ref(false);
+const labelForm = useForm({ name: '', color: LABEL_COLORS[0] });            // form tambah
+const labelEditId = ref(null);                                             // id label yg sedang diedit
+const labelEditForm = useForm({ name: '', color: LABEL_COLORS[0] });        // form edit inline
+const addLabel = () => {
+    if (!labelForm.name.trim()) return;
+    labelForm.post('/labels', { preserveScroll: true, onSuccess: () => labelForm.reset() });
+};
+const startEditLabel = (l) => { labelEditId.value = l.id; labelEditForm.name = l.name; labelEditForm.color = l.color; };
+const saveEditLabel = () => labelEditForm.put(`/labels/${labelEditId.value}`, { preserveScroll: true, onSuccess: () => { labelEditId.value = null; } });
+const deleteLabel = (id) => {
+    if (!confirm('Hapus label ini? Kartu yang sudah memakainya tidak berubah.')) return;
+    router.delete(`/labels/${id}`, { preserveScroll: true });
+};
 
 // ---- Modal board & kolom ----
 const boardCreateOpen = ref(false);
@@ -291,7 +313,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 </div>
                 <!-- Ringkasan board: jml + total nilai -->
                 <span class="text-sm text-slate-400 mt-5">
-                    {{ boardCount }} {{ isTodolist ? 'task' : 'deal' }}<template v-if="!isTodolist"> · <span class="font-semibold text-slate-600">{{ rp(boardValue) }}</span></template>
+                    {{ boardCount }} {{ isKanban ? 'task' : 'deal' }}<template v-if="!isKanban"> · <span class="font-semibold text-slate-600">{{ rp(boardValue) }}</span></template>
                 </span>
 
                 <!-- Aksi board (manager, mode aktif) -->
@@ -304,7 +326,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                         <button @click="boardForm.name = currentBoard.name; boardEditOpen = true" title="Ubah nama board" class="p-2 rounded-lg text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
                         </button>
-                        <button @click="deleteBoard" title="Hapus board" class="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition">
+                        <button v-if="currentBoard.key !== 'todolist'" @click="deleteBoard" title="Hapus board" class="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                         </button>
                     </template>
@@ -374,7 +396,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 <span :class="['text-xs', showArchived ? 'text-amber-700' : 'text-emerald-700']">{{ showArchived ? `${archivedCount} kartu terarsip · buka kartu untuk mengembalikan` : (filterAktif ? `${boardCount} kartu tersaring dari ${counts[category] ?? 0}` : `${counts[category] ?? 0} kartu aktif di board ini`) }}</span>
                 <!-- Nilai yang TERSARING — cuma saat filter aktif. Tanpa ini, "Estimasi
                      board" yang diam saat chip dipilih terbaca seperti angka macet. -->
-                <span v-if="filterAktif && !showArchived && !isTodolist" class="text-xs font-semibold text-emerald-800">
+                <span v-if="filterAktif && !showArchived && !isKanban" class="text-xs font-semibold text-emerald-800">
                     · {{ rp(boardValue) }} tersaring
                 </span>
                 <button @click="router.reload()" title="Muat ulang" class="ml-auto inline-flex items-center gap-1 bg-white/70 hover:bg-white border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
@@ -446,8 +468,8 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                     <h2 class="text-sm font-bold text-slate-700">{{ col.name }}</h2>
                                 </div>
                                 <p class="text-xs text-slate-400 mt-0.5 pl-4.5">
-                                    <span v-if="!isTodolist" class="font-semibold text-slate-500">{{ rpShort(colValue(col.key)) }}</span>
-                                    <span v-if="!isTodolist"> · </span>{{ cardCount(col.key) }} {{ isTodolist ? 'task' : 'deal' }}
+                                    <span v-if="!isKanban" class="font-semibold text-slate-500">{{ rpShort(colValue(col.key)) }}</span>
+                                    <span v-if="!isKanban"> · </span>{{ cardCount(col.key) }} {{ isKanban ? 'task' : 'deal' }}
                                 </p>
                             </div>
                             <div v-if="canManage && !showArchived" class="flex items-center gap-0.5">
@@ -517,16 +539,16 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                 </div>
 
                                 <!-- Output tags -->
-                                <div v-if="card.outputs.length" class="flex flex-wrap gap-1 mb-2">
+                                <div v-if="isPipeline && card.outputs.length" class="flex flex-wrap gap-1 mb-2">
                                     <span v-for="o in card.outputs" :key="o" class="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700 border border-brand-200">{{ o }}</span>
                                 </div>
 
                                 <!-- Badge jenis + akun + pembayaran -->
                                 <div class="flex items-center gap-1.5 text-[10px] mb-1.5">
                                     <!-- jenis deal: dulu board sendiri, kini atribut kartu -->
-                                    <span v-if="card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
-                                    <span :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
-                                    <span v-if="!isTodolist" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
+                                    <span v-if="isPipeline && card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
+                                    <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
+                                    <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
                                 </div>
                                 <!-- PJ + nilai deal + link (nilai = info utama kartu, ala Pipedrive) -->
                                 <div class="flex items-center justify-between gap-2 text-[10px] pt-1.5 border-t border-brand-50">
@@ -540,7 +562,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                             <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                                             Link
                                         </a>
-                                        <span v-if="!isTodolist" :class="['font-bold text-xs', cardValue(card) > 0 ? 'text-slate-700' : 'text-slate-300']">{{ rp(cardValue(card)) }}</span>
+                                        <span v-if="isPipeline" :class="['font-bold text-xs', cardValue(card) > 0 ? 'text-slate-700' : 'text-slate-300']">{{ rp(cardValue(card)) }}</span>
                                     </span>
                                 </div>
                                     </div>
@@ -593,7 +615,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
             <!-- Kontak lead yang bisa langsung dihubungi. Tampil utk kartu yg sudah ada
                  (bukan saat membuat) di mode form MAUPUN read-only, jadi manager/admin pun
                  dapat tautan klik-hubungi, bukan cuma kolom isian. -->
-            <div v-if="detailCard && (detailCard.kontak_wa || detailCard.kontak_gmail || detailCard.kontak_ig)" class="flex flex-wrap gap-2 mb-3">
+            <div v-if="isPipeline && detailCard && (detailCard.kontak_wa || detailCard.kontak_gmail || detailCard.kontak_ig)" class="flex flex-wrap gap-2 mb-3">
                 <a v-if="detailCard.kontak_wa" :href="waLink(detailCard.kontak_wa)" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">WA · {{ detailCard.kontak_wa }}</a>
                 <a v-if="detailCard.kontak_gmail" :href="'mailto:' + detailCard.kontak_gmail" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Gmail · {{ detailCard.kontak_gmail }}</a>
                 <a v-if="detailCard.kontak_ig" :href="igLink(detailCard.kontak_ig)" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 hover:bg-fuchsia-100">IG · {{ detailCard.kontak_ig }}</a>
@@ -601,7 +623,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
 
             <!-- Form lengkap (manager) — sama persis untuk buat & edit -->
             <form v-if="canManage" @submit.prevent="submitCard" class="grid grid-cols-2 gap-3 text-sm mb-2">
-                <label class="col-span-2 block font-medium text-slate-600">Judul / Endorse
+                <label class="col-span-2 block font-medium text-slate-600">{{ isPipeline ? 'Judul / Endorse' : 'Judul kartu' }}
                     <input v-model="editForm.endorse" required :autofocus="creating" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
                 <label class="col-span-2 block font-medium text-slate-600">Deskripsi
@@ -615,7 +637,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                         <option v-for="c in columns" :key="c.key" :value="c.key">{{ c.name }}</option>
                     </select>
                 </label>
-                <label class="block font-medium text-slate-600">Account
+                <label v-if="isPipeline" class="block font-medium text-slate-600">Account
                     <select v-model="editForm.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                     </select>
@@ -632,26 +654,26 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                         <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                 </label>
-                <label v-if="!isTodolist" class="block font-medium text-slate-600">Payment
+                <label v-if="isPipeline" class="block font-medium text-slate-600">Payment
                     <select v-model="editForm.payment_status" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                         <option value="belum">Belum</option>
                         <option value="dp">DP</option>
                         <option value="lunas">Lunas</option>
                     </select>
                 </label>
-                <label v-if="!isTodolist" class="block font-medium text-slate-600">Jumlah IDR
+                <label v-if="isPipeline" class="block font-medium text-slate-600">Jumlah IDR
                     <input type="number" step="0.01" v-model="editForm.amount_idr" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
-                <label v-if="!isTodolist" class="block font-medium text-slate-600">Jumlah USD
+                <label v-if="isPipeline" class="block font-medium text-slate-600">Jumlah USD
                     <input type="number" step="0.01" v-model="editForm.amount_usd" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
-                <label class="col-span-2 block font-medium text-slate-600">Link Video
+                <label class="col-span-2 block font-medium text-slate-600">{{ isPipeline ? 'Link Video' : 'Tautan' }}
                     <input type="url" v-model="editForm.link" placeholder="https://…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </label>
-                <!-- Kontak lead: WA / Gmail / DM Instagram. Cuma di board sales (bukan todolist).
+                <!-- Kontak lead: WA / Gmail / DM Instagram. Cuma di Sales Pipeline.
                      String bebas — WA boleh '0812…'/'+62…', IG boleh '@akun'; server tak
                      memvalidasi ketat, jadi placeholder saja yang memandu format. -->
-                <div v-if="!isTodolist" class="col-span-2 grid grid-cols-3 gap-3">
+                <div v-if="isPipeline" class="col-span-2 grid grid-cols-3 gap-3">
                     <label class="block font-medium text-slate-600">WhatsApp
                         <input v-model="editForm.kontak_wa" placeholder="0812…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                     </label>
@@ -663,7 +685,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     </label>
                 </div>
                 <!-- Output -->
-                <div class="col-span-2">
+                <div v-if="isPipeline" class="col-span-2">
                     <p class="font-medium text-slate-600 mb-1.5">Output</p>
                     <div class="flex flex-wrap gap-2">
                         <label v-for="out in outputs" :key="out.id" class="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-100 rounded-lg px-3 py-1.5 cursor-pointer">
@@ -673,16 +695,33 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 </div>
                 <!-- Label -->
                 <div class="col-span-2">
-                    <p class="font-medium text-slate-600 mb-1.5">Label</p>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <p class="font-medium text-slate-600">Label</p>
+                        <button v-if="isOwner" type="button" @click="labelManageOpen = true" class="text-xs text-brand-600 hover:underline font-medium">Kelola label</button>
+                    </div>
                     <div class="flex flex-wrap gap-2">
-                        <button v-for="lp in LABEL_PRESETS" :key="lp.color" type="button" @click="toggleLabel(lp)" :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition', hasLabel(lp.color) ? 'border-brand-400 bg-brand-50 text-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50']">
+                        <button v-for="lp in labels" :key="lp.id" type="button" @click="toggleLabel(lp)" :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition', hasLabel(lp.color) ? 'border-brand-400 bg-brand-50 text-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50']">
                             <span :class="['w-3 h-3 rounded-full', lp.color]"></span><span>{{ lp.name }}</span><span v-if="hasLabel(lp.color)">✓</span>
                         </button>
+                        <p v-if="!labels.length" class="text-xs text-slate-400 self-center">Belum ada label{{ isOwner ? ' — klik "Kelola label".' : '.' }}</p>
                     </div>
                 </div>
                 <label class="col-span-2 block font-medium text-slate-600">Notes
                     <textarea v-model="editForm.notes" rows="2" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
                 </label>
+                <!-- Lampiran opsional saat membuat kartu — filenya ikut di request buat-kartu. -->
+                <div v-if="creating" class="col-span-2">
+                    <p class="font-medium text-slate-600 mb-1">Lampiran <span class="font-normal text-slate-400 text-xs">(opsional · jpeg, png, pdf, dll · maks 10 MB)</span></p>
+                    <input id="new-attach" type="file" @change="editForm.newAttachment = $event.target.files[0]" class="hidden" />
+                    <div class="flex items-center gap-2">
+                        <label for="new-attach" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                            Pilih file
+                        </label>
+                        <span class="flex-1 text-xs text-slate-500 truncate">{{ editForm.newAttachment ? editForm.newAttachment.name : 'Belum ada file dipilih' }}</span>
+                    </div>
+                    <p v-if="editForm.errors.newAttachment" class="text-xs text-red-600 mt-1">{{ editForm.errors.newAttachment }}</p>
+                </div>
                 <div class="col-span-2 flex justify-end gap-2">
                     <button v-if="creating" type="button" @click="closeCard" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
                     <button type="submit" :disabled="editForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">{{ creating ? 'Buat kartu' : 'Simpan perubahan' }}</button>
@@ -752,6 +791,46 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
         </ModalWrap>
 
         <!-- ===== Modal board baru ===== -->
+        <!-- Kelola label — OWNER only. CRUD definisi label; warna dikunci ke palet safelist. -->
+        <ModalWrap v-if="isOwner && labelManageOpen" width="max-w-md" @close="labelManageOpen = false">
+            <h3 class="text-lg font-bold text-slate-800 mb-3">Kelola Label</h3>
+            <div class="space-y-2 mb-4 max-h-72 overflow-y-auto">
+                <div v-for="l in labels" :key="l.id" class="flex items-center gap-2">
+                    <!-- Baris sedang diedit -->
+                    <template v-if="labelEditId === l.id">
+                        <span :class="['w-5 h-5 rounded-full flex-shrink-0', labelEditForm.color]"></span>
+                        <select v-model="labelEditForm.color" class="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
+                            <option v-for="c in LABEL_COLORS" :key="c" :value="c">{{ c.replace('bg-', '').replace('-500', '') }}</option>
+                        </select>
+                        <input v-model="labelEditForm.name" @keydown.enter.prevent="saveEditLabel" class="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
+                        <button type="button" @click="saveEditLabel" class="text-xs font-semibold text-emerald-600 hover:underline">Simpan</button>
+                        <button type="button" @click="labelEditId = null" class="text-xs text-slate-400 hover:underline">Batal</button>
+                    </template>
+                    <!-- Baris tampilan -->
+                    <template v-else>
+                        <span :class="['w-4 h-4 rounded-full flex-shrink-0', l.color]"></span>
+                        <span class="flex-1 text-sm text-slate-700">{{ l.name }}</span>
+                        <button type="button" @click="startEditLabel(l)" class="text-xs text-brand-600 hover:underline">Edit</button>
+                        <button type="button" @click="deleteLabel(l.id)" class="text-xs text-red-500 hover:underline">Hapus</button>
+                    </template>
+                </div>
+                <p v-if="!labels.length" class="text-sm text-slate-400">Belum ada label.</p>
+            </div>
+            <!-- Tambah label baru -->
+            <div class="border-t border-slate-100 pt-3">
+                <p class="text-xs font-semibold text-slate-500 mb-1.5">Tambah label</p>
+                <div class="flex items-center gap-2">
+                    <span :class="['w-5 h-5 rounded-full flex-shrink-0', labelForm.color]"></span>
+                    <select v-model="labelForm.color" class="border border-slate-200 rounded-lg px-2 py-2 text-sm">
+                        <option v-for="c in LABEL_COLORS" :key="c" :value="c">{{ c.replace('bg-', '').replace('-500', '') }}</option>
+                    </select>
+                    <input v-model="labelForm.name" @keydown.enter.prevent="addLabel" placeholder="Nama label…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                    <button type="button" @click="addLabel" :disabled="labelForm.processing" class="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50">Tambah</button>
+                </div>
+                <p v-if="labelForm.errors.name" class="text-xs text-red-600 mt-1">{{ labelForm.errors.name }}</p>
+            </div>
+        </ModalWrap>
+
         <ModalWrap v-if="canManage && boardCreateOpen" width="max-w-sm" @close="boardCreateOpen = false">
             <h2 class="text-lg font-bold text-brand-800 mb-4">Board Baru</h2>
             <form @submit.prevent="submitBoardCreate" class="space-y-3">

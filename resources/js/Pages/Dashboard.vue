@@ -18,6 +18,7 @@ const props = defineProps({
     mindmap: { type: Object, default: () => ({}) },     // { total, latest }
     script: { type: Object, default: () => ({}) },      // { folders, files }
     pembukuan: { type: Object, default: () => ({}) },   // { pemasukan, pengeluaran, laba, transaksi, invTotal }
+    insight: { type: Object, default: () => ({}) },     // { konten, views, followerGain, top[] } — IG & YouTube
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
     daftar: { type: Object, default: null },            // drill-down: null = tampilkan grafik
 });
@@ -60,6 +61,14 @@ const menus = computed(() => page.props.auth?.user?.menus ?? {});
 
 // Helper format Rupiah: 1234567 → "Rp 1.234.567"
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+// Angka besar → ringkas (13.239.017 → 13,2jt). Dipakai kartu Insight.
+const ringkas = (n) => {
+    const v = Number(n || 0);
+    if (v >= 1_000_000) return (v / 1_000_000).toFixed(1).replace('.0', '') + 'jt';
+    if (v >= 1_000) return (v / 1_000).toFixed(1).replace('.0', '') + 'rb';
+    return v.toLocaleString('id-ID');
+};
 
 // ---- Grafik omzet per bulan: satu garis per akun ----
 const adaMonthly = computed(() => props.monthly.length > 0);
@@ -323,6 +332,25 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
             <!-- ===== Kartu ringkasan per modul ===== -->
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <!-- ---- Insight: performa konten IG & YouTube (ringkas) ---- -->
+                <Link v-if="menus.insight" href="/insight" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">Insight</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">{{ ringkas(insight.views) }} <span class="text-sm text-slate-400 font-medium">views</span></p>
+                    <p class="text-xs text-slate-400 mt-1">{{ insight.konten ?? 0 }} konten · <span class="text-emerald-600 font-semibold">+{{ ringkas(insight.followerGain) }}</span> follower</p>
+                    <!-- Top 3 konten. Skor RELATIF thd kumpulan (sama spt menu Insight). -->
+                    <div v-if="insight.top && insight.top.length" class="mt-4 space-y-2">
+                        <div v-for="(k, i) in insight.top" :key="i" class="flex items-center gap-2 text-sm">
+                            <span :class="['w-2 h-2 rounded-full flex-shrink-0', k.platform === 'youtube' ? 'bg-red-500' : 'bg-pink-500']"></span>
+                            <span class="flex-1 text-slate-600 truncate">{{ k.judul || '(tanpa judul)' }}</span>
+                            <span class="text-xs font-bold text-brand-700 tabular-nums">{{ k.skor }}</span>
+                        </div>
+                    </div>
+                    <p v-else class="mt-4 text-xs text-slate-400">Belum ada data konten.</p>
+                </Link>
 
                 <!-- ---- Pipeline: entri per board + omzet ---- -->
                 <Link v-if="menus.pipeline" href="/pipelines" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">

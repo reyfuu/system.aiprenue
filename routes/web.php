@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\LabelController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
@@ -67,6 +68,11 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // Lampiran kartu — hanya super admin/IT (dibatasi EnsureMenuAccess)
     Route::post('/pipelines/{pipeline}/attachments', [AttachmentController::class, 'store'])->name('attachments.store');
     Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
+
+    // Kelola definisi label kartu — gate owner-only ada di LabelController.
+    Route::post('/labels', [LabelController::class, 'store'])->name('labels.store');
+    Route::put('/labels/{label}', [LabelController::class, 'update'])->name('labels.update');
+    Route::delete('/labels/{label}', [LabelController::class, 'destroy'])->name('labels.destroy');
 
     // Board (kategori) — CRUD hanya super admin & IT
     Route::post('/boards', [BoardController::class, 'store'])->name('boards.store');
