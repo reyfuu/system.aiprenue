@@ -109,7 +109,6 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // Tinjau satu paket sebagai PDF. Ditulis sebelum /script/{brand} supaya tanggal
     // tidak ditangkap sebagai brand oleh router.
     Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])->name('script.pdf');
-    Route::post('/script/{brand}/upload', [ScriptController::class, 'upload'])->name('script.upload');
     Route::get('/script/{brand}', [ScriptController::class, 'show'])->name('script.show');
     // Insight — performa konten Instagram & YouTube. Datanya dikirim agen luar
     // lewat POST /api/insights (belum ada; lihat docs/insight-instagram-youtube.md).

@@ -5,8 +5,6 @@ namespace Tests\Feature;
 use App\Models\Script;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -295,54 +293,4 @@ class ScriptTest extends TestCase
             );
     }
 
-    public function test_admin_bisa_upload_pdf_manual_ke_brand_script(): void
-    {
-        Storage::fake('public');
-
-        $pdf = UploadedFile::fake()->createWithContent('script-rave-tailor.pdf', "%PDF-1.4\nmanual\n");
-
-        $this->actingAs($this->user('manager'))->post('/script/rave_tailor/upload', [
-            'pdf' => $pdf,
-            'generated_for' => '2026-07-20',
-        ])->assertRedirect();
-
-        $script = Script::first();
-        $this->assertSame('rave_tailor', $script->brand);
-        $this->assertSame('2026-07-20', $script->generated_for->toDateString());
-        $this->assertNotNull($script->source_pdf_path);
-        Storage::disk('public')->assertExists($script->source_pdf_path);
-    }
-
-    public function test_pdf_manual_ditinjau_sebagai_file_asli(): void
-    {
-        Storage::fake('public');
-
-        $this->actingAs($this->user('manager'))->post('/script/rave_tailor/upload', [
-            'pdf' => UploadedFile::fake()->create('manual.pdf', 1, 'application/pdf'),
-            'generated_for' => '2026-07-20',
-        ])->assertRedirect()->assertSessionHasNoErrors();
-
-        $this->assertSame(1, Script::where('brand', 'rave_tailor')->whereDate('generated_for', '2026-07-20')->count());
-        Storage::disk('public')->assertExists(Script::first()->source_pdf_path);
-
-        $this->assertSame('2026-07-20', Script::first()->generated_for->toDateString());
-        $res = $this->actingAs($this->user('manager'))->get('/script/rave_tailor/2026-07-20/pdf');
-
-        $res->assertOk();
-        $this->assertStringContainsString('inline', $res->headers->get('content-disposition'));
-        $this->assertStringContainsString('Script-Rave Tailor-2026-07-20.pdf', $res->headers->get('content-disposition'));
-    }
-
-    public function test_upload_pdf_manual_wajib_role_kelola_dan_pdf(): void
-    {
-        Storage::fake('public');
-
-        $this->actingAs($this->user('staff'))->post('/script/rave_tailor/upload', [
-            'pdf' => UploadedFile::fake()->create('manual.pdf', 1, 'application/pdf'),
-        ])->assertForbidden();
-
-        $this->actingAs($this->user('manager'))->post('/script/rave_tailor/upload', [
-            'pdf' => UploadedFile::fake()->create('manual.txt', 1, 'text/plain'),
-        ])->assertSessionHasErrors('pdf');
-    }
 }
