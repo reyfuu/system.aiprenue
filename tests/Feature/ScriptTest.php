@@ -230,11 +230,11 @@ class ScriptTest extends TestCase
         $this->get('/script')->assertRedirect('/login');
     }
 
-    // ---- Unduh PDF ----
+    // ---- Pratinjau PDF ----
     // Menggantikan dokumen Google Drive: agen tak lagi mengunggah ke Drive, jadi
     // PDF ini satu-satunya cara memegang paket utuh dalam satu berkas.
 
-    public function test_paket_bisa_diunduh_sebagai_pdf(): void
+    public function test_paket_bisa_ditinjau_sebagai_pdf(): void
     {
         $this->kirim();
 
@@ -242,7 +242,7 @@ class ScriptTest extends TestCase
 
         $res->assertOk();
         $this->assertSame('application/pdf', $res->headers->get('content-type'));
-        $this->assertStringContainsString('attachment', $res->headers->get('content-disposition'));
+        $this->assertStringContainsString('inline', $res->headers->get('content-disposition'));
         $this->assertStringContainsString('Script-Raveloux-2026-07-18.pdf', $res->headers->get('content-disposition'));
         $this->assertStringStartsWith('%PDF-', $res->getContent(), 'isinya harus PDF sungguhan, bukan halaman error');
     }
@@ -313,7 +313,7 @@ class ScriptTest extends TestCase
         Storage::disk('public')->assertExists($script->source_pdf_path);
     }
 
-    public function test_pdf_manual_diunduh_sebagai_file_asli(): void
+    public function test_pdf_manual_ditinjau_sebagai_file_asli(): void
     {
         Storage::fake('public');
 
@@ -329,6 +329,7 @@ class ScriptTest extends TestCase
         $res = $this->actingAs($this->user('manager'))->get('/script/rave_tailor/2026-07-20/pdf');
 
         $res->assertOk();
+        $this->assertStringContainsString('inline', $res->headers->get('content-disposition'));
         $this->assertStringContainsString('Script-Rave Tailor-2026-07-20.pdf', $res->headers->get('content-disposition'));
     }
 
