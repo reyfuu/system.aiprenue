@@ -90,10 +90,12 @@ class PipelineController extends Controller
             ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
-            // position = urutan hasil drag. `id` sbg pemecah seri: kartu baru
-            // sama-sama position 0, tanpa ini urutannya diserahkan ke DB & bisa
-            // berubah tiap muat ulang tanpa ada yang menyentuhnya.
-            ->orderBy('position')->orderBy('id')->get();
+            // position = urutan hasil drag. `id` DESC sbg pemecah seri: saat banyak
+            // kartu sama-sama position 0 (baru dibuat, belum pernah di-drag), yang
+            // TERBARU (id terbesar) muncul paling atas — kartu baru itu yang sedang
+            // dikerjakan, bukan yang terlupakan di dasar tumpukan. Sesudah di-drag,
+            // position jadi distinct sehingga tie-break ini tak lagi terpakai.
+            ->orderBy('position')->orderBy('id', 'desc')->get();
 
         // Jumlah kartu per jenis untuk angka di chip — TIDAK ikut $jenis, kalau ikut
         // angkanya jadi 0 begitu chip lain dipilih & tak bisa dipakai memilih.
