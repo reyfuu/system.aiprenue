@@ -2,14 +2,15 @@
 
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
-use App\Http\Controllers\LabelController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\ContentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PasswordResetController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
@@ -109,11 +111,20 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // Tinjau satu paket sebagai PDF. Ditulis sebelum /script/{brand} supaya tanggal
     // tidak ditangkap sebagai brand oleh router.
     Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])->name('script.pdf');
-    Route::post('/script/{brand}/upload', [ScriptController::class, 'upload'])->name('script.upload');
     Route::get('/script/{brand}', [ScriptController::class, 'show'])->name('script.show');
     // Insight — performa konten Instagram & YouTube. Datanya dikirim agen luar
     // lewat POST /api/insights (belum ada; lihat docs/insight-instagram-youtube.md).
     Route::get('/insight', [InsightController::class, 'index'])->name('insight.index');
+
+    // Upload — publikasi konten ke TikTok/YouTube/Instagram. TEMPLATE dulu
+    // (baru YouTube yang bisa dicoba); belum ada aksi upload sungguhan.
+    Route::get('/upload', [UploadController::class, 'index'])->name('upload.index');
+
+    // Content — kalender produksi mingguan + CRUD tabel operasional.
+    Route::get('/content', [ContentController::class, 'index'])->name('content.index');
+    Route::post('/content', [ContentController::class, 'store'])->name('content.store');
+    Route::put('/content/{content}', [ContentController::class, 'update'])->name('content.update');
+    Route::delete('/content/{content}', [ContentController::class, 'destroy'])->name('content.destroy');
 
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');

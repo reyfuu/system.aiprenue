@@ -1,18 +1,13 @@
 <script setup>
 // Galeri paket PDF satu brand. Agen tetap menyimpan 30 naskah sebagai baris
 // terpisah, tetapi pengguna cukup melihat satu berkas per tanggal paket.
-import { useForm, Link } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
 import Layout from '../Layout.vue';
 
-const props = defineProps({
+defineProps({
     brand: Object,                              // { key, name }
     packs: { type: Array, default: () => [] },  // [{ date, label, count, name, pdf }]
-    canManage: Boolean,                         // role kelola boleh upload PDF manual
-    uploadUrl: String,                          // proyek tanpa Ziggy: URL dikirim controller
 });
-
-const form = useForm({ pdf: null, generated_for: new Date().toISOString().slice(0, 10) });
-const upload = () => form.post(props.uploadUrl, { forceFormData: true, onSuccess: () => form.reset('pdf') });
 </script>
 
 <template>
@@ -31,25 +26,6 @@ const upload = () => form.post(props.uploadUrl, { forceFormData: true, onSuccess
         </header>
 
         <div class="px-6 py-6">
-            <!-- Upload manual untuk paket PDF script brand ini. Satu tanggal = satu paket;
-                 upload tanggal sama akan mengganti paket lama agar tidak dobel. -->
-            <form v-if="canManage" @submit.prevent="upload" class="mb-6 bg-white rounded-2xl border border-brand-100 shadow-sm p-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
-                <label class="text-sm font-medium text-slate-600">
-                    Upload PDF script
-                    <input type="file" accept="application/pdf" @input="form.pdf = $event.target.files[0]"
-                           class="mt-1 block w-full text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-brand-700 file:font-semibold hover:file:bg-brand-100" />
-                    <span v-if="form.errors.pdf" class="block mt-1 text-xs text-red-600">{{ form.errors.pdf }}</span>
-                </label>
-                <label class="text-sm font-medium text-slate-600">
-                    Tanggal paket
-                    <input v-model="form.generated_for" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none" />
-                    <span v-if="form.errors.generated_for" class="block mt-1 text-xs text-red-600">{{ form.errors.generated_for }}</span>
-                </label>
-                <button :disabled="form.processing || !form.pdf" class="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">
-                    {{ form.processing ? 'Mengupload…' : 'Upload PDF' }}
-                </button>
-            </form>
-
             <!-- Kosong: brand tetap terlihat di galeri walau agen belum mengirim paket. -->
             <p v-if="!packs.length" class="text-sm text-slate-400 py-12 text-center">
                 Belum ada paket PDF untuk brand ini.

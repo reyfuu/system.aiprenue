@@ -56,24 +56,26 @@ class HandleInertiaRequests extends Middleware
             // Data auth yang dipakai Sidebar & guard UI
             'auth' => [
                 'user' => $user ? [
-                    'id'        => $user->id,                 // id user
-                    'name'      => $user->name,               // nama tampil
-                    'email'     => $user->email,              // email
-                    'role'      => $user->role,               // role mentah
+                    'id' => $user->id,                 // id user
+                    'name' => $user->name,               // nama tampil
+                    'email' => $user->email,              // email
+                    'role' => $user->role,               // role mentah
                     'canManage' => $user->canManage(),        // boleh CRUD?
                     // Peta menu yang boleh dilihat → dipakai Sidebar
-                    'menus'     => [
+                    'menus' => [
                         'dashboard' => $user->canSee('dashboard'),
-                        'pipeline'  => $user->canSee('pipeline'),
-                        'kanban'    => $user->canSee('kanban'),
-                        'order'     => $user->canSee('order'),
-                        'mindmap'   => $user->canSee('mindmap'),
-                        'script'    => $user->canSee('script'),
+                        'pipeline' => $user->canSee('pipeline'),
+                        'kanban' => $user->canSee('kanban'),
+                        'order' => $user->canSee('order'),
+                        'mindmap' => $user->canSee('mindmap'),
+                        'script' => $user->canSee('script'),
+                        'content' => $user->canSee('content'),     // kalender produksi konten
                         'pembukuan' => $user->canSee('pembukuan'),
-                        'user'      => $user->canSee('user'),
-                        'insight'   => $user->canSee('insight'),      // Insight IG & YouTube
+                        'user' => $user->canSee('user'),
+                        'insight' => $user->canSee('insight'),      // Insight IG & YouTube
+                        'upload' => $user->canSee('upload'),       // Upload konten multi-platform (template)
                         'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
-                        'akses'     => $user->canSee('akses'),       // Manajemen Akses
+                        'akses' => $user->canSee('akses'),       // Manajemen Akses
                     ],
                 ] : null,
             ],

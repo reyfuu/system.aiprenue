@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BoardColumn;
 use App\Models\Category;
 use App\Models\Pipeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class BoardController extends Controller
 {
@@ -17,28 +17,26 @@ class BoardController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'    => 'required|string|max:100',
+            'name' => 'required|string|max:100',
             'section' => 'nullable|string|max:100',
         ]);
 
         $key = $this->uniqueKey($data['name']);
         Category::create([
-            'key'     => $key,
-            'name'    => trim($data['name']),
-            'type'    => 'kanban',
+            'key' => $key,
+            'name' => trim($data['name']),
+            'type' => 'kanban',
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
         ]);
 
-        // Seed kolom default agar board baru langsung bisa dipakai (ada tombol +task).
+        // Setiap proyek baru langsung punya alur task sederhana ala Trello.
         $defaults = [
-            ['key' => 'script', 'name' => 'Script', 'color' => 'bg-purple-500'],
-            ['key' => 'editing', 'name' => 'Editing', 'color' => 'bg-sky-500'],
-            ['key' => 'progress', 'name' => 'Progress', 'color' => 'bg-brand-600'],
-            ['key' => 'pending', 'name' => 'Pending', 'color' => 'bg-amber-500'],
-            ['key' => 'done', 'name' => 'Done', 'color' => 'bg-emerald-500'],
+            ['key' => 'todo', 'name' => 'To Do', 'color' => 'bg-slate-400'],
+            ['key' => 'progress', 'name' => 'Dikerjakan', 'color' => 'bg-sky-500'],
+            ['key' => 'done', 'name' => 'Selesai', 'color' => 'bg-emerald-500'],
         ];
         foreach ($defaults as $i => $col) {
-            \App\Models\BoardColumn::create([
+            BoardColumn::create([
                 'board_key' => $key,
                 'key' => $col['key'],
                 'name' => $col['name'],
@@ -54,11 +52,11 @@ class BoardController extends Controller
     public function update(Request $request, Category $board)
     {
         $data = $request->validate([
-            'name'    => 'required|string|max:100',
+            'name' => 'required|string|max:100',
             'section' => 'nullable|string|max:100',
         ]);
         $board->update([
-            'name'    => trim($data['name']),
+            'name' => trim($data['name']),
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
         ]);
 
@@ -71,6 +69,11 @@ class BoardController extends Controller
 
     public function destroy(Category $board)
     {
+        // Todo List adalah board bawaan permanen dan selalu tersedia di Kanban.
+        if ($board->key === 'todolist') {
+            return back()->with('status', 'Board Todo List bawaan tidak bisa dihapus.');
+        }
+
         // Board sales tak boleh hilang: menu Sales Pipeline langsung mati (404) tanpanya.
         // Penjagaan "board terakhir" di bawah tak menolong — ia cuma menghitung SEMUA
         // board, jadi sales tetap bisa dihapus selama masih ada board kanban lain.

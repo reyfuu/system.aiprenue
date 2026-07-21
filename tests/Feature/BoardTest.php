@@ -19,7 +19,7 @@ class BoardTest extends TestCase
         return User::factory()->create(['role' => $role]);
     }
 
-    public function test_buat_board_kanban_dapat_kolom_produksi(): void
+    public function test_buat_board_kanban_dapat_daftar_task_default(): void
     {
         $this->actingAs($this->user())->post('/boards', ['name' => 'Board Uji'])
             ->assertSessionHasNoErrors();
@@ -28,7 +28,7 @@ class BoardTest extends TestCase
         $this->assertNotNull($board);
         $this->assertSame('kanban', $board->type);   // default bila type tak dikirim
         $this->assertSame(
-            ['script', 'editing', 'progress', 'pending', 'done'],
+            ['todo', 'progress', 'done'],
             BoardColumn::where('board_key', 'board_uji')->orderBy('position')->pluck('key')->all()
         );
     }
@@ -44,7 +44,7 @@ class BoardTest extends TestCase
         // terbuat, tapi sebagai kanban — `type` dari request diabaikan
         $this->assertSame('kanban', Category::where('key', 'sales_b')->value('type'));
         $this->assertSame(
-            ['script', 'editing', 'progress', 'pending', 'done'],
+            ['todo', 'progress', 'done'],
             BoardColumn::where('board_key', 'sales_b')->orderBy('position')->pluck('key')->all()
         );
 
@@ -59,7 +59,7 @@ class BoardTest extends TestCase
     {
         $owner = $this->user();
         // sales kosong & masih ada board kanban lain → dua penjagaan lama sama-sama lolos
-        \App\Models\Pipeline::where('category', 'sales')->delete();
+        Pipeline::where('category', 'sales')->delete();
         $this->assertGreaterThan(1, Category::count());
 
         $this->actingAs($owner)->delete('/boards/sales');
@@ -97,11 +97,20 @@ class BoardTest extends TestCase
         $this->assertNotNull(Category::where('key', 'todolist')->first(), 'board berisi kartu tak boleh hilang');
     }
 
-    public function test_board_kosong_bisa_dihapus(): void
+    public function test_board_todolist_permanen_walau_kosong(): void
     {
         $this->actingAs($this->user())->delete('/boards/todolist');
 
-        $this->assertNull(Category::where('key', 'todolist')->first());
+        $this->assertNotNull(Category::where('key', 'todolist')->first());
+    }
+
+    public function test_board_proyek_lain_yang_kosong_bisa_dihapus(): void
+    {
+        $owner = $this->user();
+        $this->actingAs($owner)->post('/boards', ['name' => 'Proyek Sementara']);
+        $this->actingAs($owner)->delete('/boards/proyek_sementara');
+
+        $this->assertNull(Category::where('key', 'proyek_sementara')->first());
     }
 
     public function test_board_terakhir_tak_bisa_dihapus(): void
@@ -123,6 +132,34 @@ class BoardTest extends TestCase
         $this->actingAs($staff)->delete('/boards/todolist')->assertForbidden();
 
         $this->assertSame('Todolist', Category::where('key', 'todolist')->value('name'));
+    }
+
+    public function test_admin_bisa_crud_kartu_kanban(): void
+    {
+        $admin = $this->user('admin');
+
+        $this->actingAs($admin)->post('/pipelines', [
+            'category' => 'todolist',
+            'endorse' => 'Kartu admin',
+            'progress' => 'todo',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+        ])->assertSessionHasNoErrors();
+
+        $card = Pipeline::firstWhere('endorse', 'Kartu admin');
+        $this->assertNotNull($card);
+
+        $this->actingAs($admin)->put('/pipelines/'.$card->id, [
+            'category' => 'todolist',
+            'endorse' => 'Kartu admin diperbarui',
+            'progress' => 'doing',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('Kartu admin diperbarui', $card->fresh()->endorse);
+
+        $this->actingAs($admin)->delete('/pipelines/'.$card->id)->assertRedirect();
+        $this->assertSoftDeleted('pipelines', ['id' => $card->id]);
     }
 
     public function test_nama_board_wajib(): void

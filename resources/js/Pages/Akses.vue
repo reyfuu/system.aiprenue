@@ -9,6 +9,7 @@ const props = defineProps({
     roles:    Object,   // key peran -> label ("owner" -> "Owner")
     menus:    Object,   // key menu  -> label ("kanban" -> "Kanban")
     akses:    Object,   // matriks saat ini: peran -> [menu yang dicentang]
+    kelola:   Object,   // matriks menu dengan level CRUD
     terkunci: Array,    // peran yang tak bisa diubah (owner) — pagar anti-kekunci
 });
 
@@ -19,10 +20,15 @@ const form = useForm({
     akses: Object.fromEntries(
         Object.keys(props.roles).map((r) => [r, [...(props.akses[r] || [])]]),
     ),
+    kelola: Object.fromEntries(
+        Object.keys(props.roles).map((r) => [r, [...(props.kelola[r] || [])]]),
+    ),
 });
 
 const dikunci = (role) => props.terkunci.includes(role);          // owner: selalu penuh
 const dicentang = (role, menu) => dikunci(role) || form.akses[role].includes(menu);
+const izinTetap = (role, menu) => menu === 'pembukuan';
+const izinTetapAktif = (role, menu) => menu === 'pembukuan' && ['owner', 'manager'].includes(role);
 
 // Toggle satu sel. Peran terkunci diabaikan — owner selalu boleh semua, dan
 // server pun membuang kiriman untuk owner (jangan andalkan UI saja).
@@ -34,12 +40,28 @@ const toggle = (role, menu) => {
     else list.splice(i, 1);
 };
 
+// Content punya tiga level: tidak ada baris = nonaktif, ada baris biasa = lihat,
+// ada baris + can_manage = CRUD. Ubah kedua array secara bersamaan.
+const levelContent = (role) => {
+    if (dikunci(role)) return 'crud';
+    if (!form.akses[role].includes('content')) return 'off';
+    return form.kelola[role].includes('content') ? 'crud' : 'view';
+};
+const setLevelContent = (role, level) => {
+    form.akses[role] = form.akses[role].filter((menu) => menu !== 'content');
+    form.kelola[role] = form.kelola[role].filter((menu) => menu !== 'content');
+    if (level !== 'off') form.akses[role].push('content');
+    if (level === 'crud') form.kelola[role].push('content');
+};
+
 // Centang/hapus seluruh baris peran sekaligus — 10 menu × 5 peran terlalu banyak
 // untuk diklik satu-satu saat memberi peran baru akses penuh.
 const toggleBaris = (role) => {
     if (dikunci(role)) return;
     const semua = Object.keys(props.menus);
-    form.akses[role] = form.akses[role].length === semua.length ? [] : [...semua];
+    const kosongkan = form.akses[role].length === semua.length;
+    form.akses[role] = kosongkan ? [] : [...semua];
+    if (kosongkan) form.kelola[role] = [];
 };
 
 const simpan = () => form.put('/akses', { preserveScroll: true });
@@ -85,8 +107,17 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
                                 </span>
                             </td>
                             <td v-for="(label, key) in menus" :key="key" class="px-3 py-3 text-center">
-                                <input type="checkbox" class="accent-brand-600 w-4 h-4 disabled:opacity-40"
-                                       :checked="dicentang(role, key)" :disabled="dikunci(role)"
+                                <!-- Content memakai level akses, menu lama tetap checkbox lihat/tidak. -->
+                                <select v-if="key === 'content'" :value="levelContent(role)" :disabled="dikunci(role)"
+                                        @change="setLevelContent(role, $event.target.value)"
+                                        class="border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white disabled:opacity-50">
+                                    <option value="off">Nonaktif</option>
+                                    <option value="view">Lihat saja</option>
+                                    <option value="crud">CRUD</option>
+                                </select>
+                                <input v-else type="checkbox" class="accent-brand-600 w-4 h-4 disabled:opacity-40"
+                                       :checked="izinTetap(role, key) ? izinTetapAktif(role, key) : dicentang(role, key)"
+                                       :disabled="dikunci(role) || izinTetap(role, key)"
                                        :aria-label="`${labelRole} boleh lihat ${label}`"
                                        @change="toggle(role, key)" />
                             </td>

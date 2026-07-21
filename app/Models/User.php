@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable(['name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
@@ -30,11 +31,11 @@ class User extends Authenticatable
      * - staff = VIEW-ONLY (lihat canManage()): tanpa menu 'user' & 'pembukuan' (keuangan).
      */
     public const MENU_ACCESS = [
-        'owner'   => ['*'],
-        'it'      => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'pembukuan', 'insight', 'prodpilot', 'akses'],
-        'admin'   => ['pipeline', 'kanban', 'mindmap', 'insight'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
-        'staff'   => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
+        'owner' => ['*'],
+        'it' => ['*'],           // IT = akses penuh teknis
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'pembukuan', 'insight', 'upload', 'prodpilot', 'akses'],
+        'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
+        'staff' => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
     /** Semua menu yang bisa diatur di halaman Manajemen Akses (key => label).
@@ -42,16 +43,18 @@ class User extends Authenticatable
      *  itu tak akan pernah muncul di halaman pengaturan. */
     public const MENUS = [
         'dashboard' => 'Dashboard',
-        'pipeline'  => 'Sales',
-        'kanban'    => 'Kanban',
-        'order'     => 'Order',
-        'mindmap'   => 'Mindmap',
-        'script'    => 'Script',
+        'pipeline' => 'Sales',
+        'kanban' => 'Kanban',
+        'order' => 'Order',
+        'mindmap' => 'Mindmap',
+        'script' => 'Script',
+        'content' => 'Content',
         'pembukuan' => 'Pembukuan',
-        'user'      => 'User',
-        'insight'   => 'Insight',
+        'user' => 'User',
+        'insight' => 'Insight',
+        'upload' => 'Upload',
         'prodpilot' => 'ProdPilot',
-        'akses'     => 'Manajemen Akses',
+        'akses' => 'Manajemen Akses',
     ];
 
     /** Cache per-instance: `menus` dibangun dgn ~10 kali canSee() pada user yang
@@ -67,7 +70,7 @@ class User extends Authenticatable
             return $this->izinCache ?: null;
         }
         try {
-            $rows = \Illuminate\Support\Facades\DB::table('role_menu_access')
+            $rows = DB::table('role_menu_access')
                 ->where('role', $this->role)->pluck('menu')->all();
         } catch (\Throwable) {
             return $this->izinCache = null;   // migrasi belum jalan → jangan pecah
@@ -91,6 +94,12 @@ class User extends Authenticatable
      */
     public function canSee(string $menu): bool
     {
+        // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
+        // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
+        if ($menu === 'pembukuan') {
+            return in_array($this->role, ['owner', 'manager'], true);
+        }
+
         if ($this->role === 'owner') {
             return true;
         }
@@ -112,14 +121,37 @@ class User extends Authenticatable
         return in_array($this->role, ['owner', 'manager', 'it', 'admin'], true);
     }
 
+    /** Izin CRUD khusus per menu. Owner selalu penuh; Content memakai level
+     *  dari Manajemen Akses, menu lama tetap mengikuti aturan canManage(). */
+    public function canManageMenu(string $menu): bool
+    {
+        if ($this->role === 'owner') {
+            return true;
+        }
+
+        if ($menu !== 'content') {
+            return $this->canManage();
+        }
+
+        try {
+            return DB::table('role_menu_access')
+                ->where('role', $this->role)
+                ->where('menu', $menu)
+                ->where('can_manage', true)
+                ->exists();
+        } catch (\Throwable) {
+            return $this->canManage() && $this->canSee($menu);
+        }
+    }
+
     /** Route landing pertama yang boleh diakses user. */
     public function homeRoute(): string
     {
         return match (true) {
             $this->canSee('dashboard') => 'dashboard',
-            $this->canSee('script')    => 'script.index',
-            $this->canSee('kanban')    => 'pipelines.kanban',
-            default                    => 'pipelines.kanban',
+            $this->canSee('script') => 'script.index',
+            $this->canSee('kanban') => 'pipelines.kanban',
+            default => 'pipelines.kanban',
         };
     }
 
