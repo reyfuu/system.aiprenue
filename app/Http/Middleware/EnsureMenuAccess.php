@@ -85,6 +85,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'transactions.') => ['pembukuan'],
             str_starts_with($name, 'inventories.') => ['pembukuan'],
             str_starts_with($name, 'users.') => ['user'],
+            str_starts_with($name, 'insight.') => ['insight'],
             str_starts_with($name, 'akses.') => ['akses'],   // Manajemen Akses
             default => null,
         };

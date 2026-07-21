@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\InsightIngestController;
 use App\Http\Controllers\Api\ScriptIngestController;
 use Illuminate\Support\Facades\Route;
 
@@ -10,3 +11,10 @@ use Illuminate\Support\Facades\Route;
 Route::post('/scripts', [ScriptIngestController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('api.scripts.store');
+
+// Pintu masuk agen Insight (cron di VPS) → metrik Instagram & YouTube.
+// Sama polanya dengan /scripts: di luar web.php, gerbangnya bearer token
+// (INSIGHT_AGENT_TOKEN). throttle longgar tapi menutup tebakan token brute force.
+Route::post('/insights', [InsightIngestController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('api.insights.store');

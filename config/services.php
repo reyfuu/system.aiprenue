@@ -24,6 +24,12 @@ return [
         'token' => env('SCRIPT_AGENT_TOKEN'),
     ],
 
+    // Agen Insight (cron di VPS) → POST /api/insights.
+    // Kosong = endpointnya menolak semua permintaan; jangan taruh nilainya di sini.
+    'insight_agent' => [
+        'token' => env('INSIGHT_AGENT_TOKEN'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

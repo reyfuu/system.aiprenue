@@ -7,6 +7,7 @@ use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InsightController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\OrderController;
@@ -104,6 +105,10 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])->name('script.pdf');
     Route::post('/script/{brand}/upload', [ScriptController::class, 'upload'])->name('script.upload');
     Route::get('/script/{brand}', [ScriptController::class, 'show'])->name('script.show');
+    // Insight — performa konten Instagram & YouTube. Datanya dikirim agen luar
+    // lewat POST /api/insights (belum ada; lihat docs/insight-instagram-youtube.md).
+    Route::get('/insight', [InsightController::class, 'index'])->name('insight.index');
+
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');
     Route::get('/pembukuan/report', [PembukuanController::class, 'report'])->name('pembukuan.report');
