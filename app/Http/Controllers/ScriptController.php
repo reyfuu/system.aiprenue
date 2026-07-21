@@ -5,8 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Script;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
@@ -45,8 +43,6 @@ class ScriptController extends Controller
 
         return Inertia::render('ScriptBrand', [
             'brand' => ['key' => $brand, 'name' => $nama],
-            'canManage' => request()->user()->canManage(),
-            'uploadUrl' => route('script.upload', $brand),
             'packs' => $packs->map(function ($pack) use ($brand, $nama) {
                 $tanggal = $pack->generated_for->toDateString();
 
@@ -60,39 +56,6 @@ class ScriptController extends Controller
                 ];
             }),
         ]);
-    }
-
-    /** Upload PDF manual untuk paket script brand. MVP: sistem menyimpan file
-     *  asli agar bisa diunduh dari menu Script; isi PDF tidak diparse jadi 30
-     *  naskah karena PHP/Laravel app ini belum punya parser PDF di dependency. */
-    public function upload(Request $request, string $brand)
-    {
-        abort_unless(array_key_exists($brand, Script::BRANDS), 404, 'Brand tak dikenal.');
-        abort_unless($request->user()->canManage(), 403);
-
-        $data = $request->validate([
-            'pdf' => ['required', 'file', 'mimes:pdf', 'max:25600'],
-            'generated_for' => ['nullable', 'date'],
-        ]);
-
-        $tanggal = Carbon::parse($data['generated_for'] ?? today())->toDateString();
-        $path = $request->file('pdf')->store("scripts/{$brand}", 'public');
-
-        DB::transaction(function () use ($brand, $tanggal, $path) {
-            $lama = Script::where('brand', $brand)->where('generated_for', $tanggal)->pluck('source_pdf_path')->filter()->unique();
-            Script::where('brand', $brand)->where('generated_for', $tanggal)->delete();
-            $lama->each(fn ($file) => Storage::disk('public')->delete($file));
-
-            Script::create([
-                'brand' => $brand,
-                'title' => 'PDF Upload Manual',
-                'body' => 'Paket ini berasal dari PDF yang diupload manual.',
-                'generated_for' => $tanggal,
-                'source_pdf_path' => $path,
-            ]);
-        });
-
-        return back()->with('status', 'PDF script berhasil diupload.');
     }
 
     /** Satu paket (brand + tanggal) jadi satu PDF — pengganti dokumen Drive
