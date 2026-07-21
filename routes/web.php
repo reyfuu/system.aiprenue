@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\LabelController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
@@ -68,6 +69,11 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines/{pipeline}/attachments', [AttachmentController::class, 'store'])->name('attachments.store');
     Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
 
+    // Kelola definisi label kartu — gate owner-only ada di LabelController.
+    Route::post('/labels', [LabelController::class, 'store'])->name('labels.store');
+    Route::put('/labels/{label}', [LabelController::class, 'update'])->name('labels.update');
+    Route::delete('/labels/{label}', [LabelController::class, 'destroy'])->name('labels.destroy');
+
     // Board (kategori) — CRUD hanya super admin & IT
     Route::post('/boards', [BoardController::class, 'store'])->name('boards.store');
     Route::put('/boards/{board}', [BoardController::class, 'update'])->name('boards.update');
@@ -100,7 +106,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Script — isinya dikirim agen Daily Script Rave lewat POST /api/scripts (routes/api.php)
     Route::get('/script', [ScriptController::class, 'index'])->name('script.index');
-    // Unduh satu paket sebagai PDF. Ditulis sebelum /script/{brand} supaya tanggal
+    // Tinjau satu paket sebagai PDF. Ditulis sebelum /script/{brand} supaya tanggal
     // tidak ditangkap sebagai brand oleh router.
     Route::get('/script/{brand}/{date}/pdf', [ScriptController::class, 'pdf'])->name('script.pdf');
     Route::post('/script/{brand}/upload', [ScriptController::class, 'upload'])->name('script.upload');

@@ -204,6 +204,8 @@ class PipelineController extends Controller
             'outputs'      => Output::orderBy('name')->get(),
             'canManage'    => auth()->user()->canManage(),                   // super_admin/it → boleh CRUD
             'currentBoard' => $currentBoard,
+            // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
+            'labels'       => \App\Models\Label::orderBy('id')->get(['id', 'name', 'color']),
             // Referensi untuk form tambah/edit kartu
             'accounts'     => Pipeline::ACCOUNTS,
             'jenisList'    => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
@@ -271,6 +273,21 @@ class PipelineController extends Controller
         $data = $this->validated($request);
         $pipeline = Pipeline::create($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
+
+        // Lampiran opsional saat membuat kartu (jpeg/pdf/dll). Kartu belum punya id
+        // sebelum dibuat, jadi filenya ikut di request buat-kartu — bukan endpoint
+        // /attachments terpisah. Logika sama dgn AttachmentController::store.
+        if ($request->hasFile('newAttachment')) {
+            $request->validate(['newAttachment' => 'file|max:10240']);   // maks 10 MB
+            $file = $request->file('newAttachment');
+            $pipeline->attachments()->create([
+                'user_id' => $request->user()->id,
+                'path'    => $file->store('attachments', 'public'),
+                'name'    => $file->getClientOriginalName(),
+                'mime'    => $file->getClientMimeType(),
+                'size'    => $file->getSize(),
+            ]);
+        }
 
         return redirect()->back()->with('status', 'Entri ditambahkan.');
     }
