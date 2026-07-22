@@ -122,6 +122,14 @@ class User extends Authenticatable
         return in_array($this->role, ['owner', 'manager', 'it', 'admin'], true);
     }
 
+    /** Kelola papan Kanban (kartu, kolom, board, lampiran). Sengaja lebih longgar
+     *  dari canManage(): Kanban itu kerja tim harian, jadi 'staff' pun boleh CRUD
+     *  di sini — beda dari menu lain (order, pembukuan, dst) yang tetap view-only. */
+    public function canManageKanban(): bool
+    {
+        return $this->canManage() || $this->role === 'staff';
+    }
+
     /** Izin CRUD khusus per menu. Owner selalu penuh; Content memakai level
      *  dari Manajemen Akses, menu lama tetap mengikuti aturan canManage(). */
     public function canManageMenu(string $menu): bool

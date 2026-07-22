@@ -497,9 +497,11 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                  force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
                  (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
                  Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
-            <!-- Scrollbar atas tersinkron dengan board: pengguna tidak perlu turun
-                 sampai kartu paling bawah hanya untuk bergeser ke kolom kanan. -->
-            <div ref="topScroll" class="overflow-x-auto h-4 mb-2" @scroll="syncScroll($event.target, boardScroll)">
+            <!-- Scrollbar atas tersinkron dengan board. `sticky top-0` menempelkannya
+                 ke tepi atas viewport: sejauh apa pun halaman digulir ke bawah, batang
+                 geser kanan-kiri tetap kelihatan — jadi tak perlu turun ke kartu paling
+                 bawah dulu untuk bergeser ke kolom kanan. bg + z supaya tak tembus kolom. -->
+            <div ref="topScroll" class="overflow-x-auto h-4 mb-2 sticky top-0 z-10 bg-brand-50" @scroll="syncScroll($event.target, boardScroll)">
                 <div ref="topScrollInner" class="h-px"></div>
             </div>
             <div ref="boardScroll" class="overflow-x-auto pb-4" @scroll="syncScroll($event.target, topScroll)">
