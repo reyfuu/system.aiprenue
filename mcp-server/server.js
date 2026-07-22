@@ -90,8 +90,8 @@ function buildServer() {
             }
 
             const [result] = await db.query(
-                `INSERT INTO pipelines (category, endorse, progress, account, payment_status, ke_gilang, done, created_at, updated_at)
-                 VALUES (?, ?, ?, 'fk', 'belum', 'belum', 0, NOW(), NOW())`,
+                `INSERT INTO pipelines (category, endorse, progress, account, payment_status, done, created_at, updated_at)
+                 VALUES (?, ?, ?, 'fk', 'belum', 0, NOW(), NOW())`,
                 [board, title, col]
             );
             return jsonText({ ok: true, task: { id: result.insertId, board, title, column: col } });
