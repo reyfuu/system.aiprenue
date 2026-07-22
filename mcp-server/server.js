@@ -2,6 +2,7 @@
 // Satu server standar → dipakai ChatGPT, Claude, & Hermes Agent (semua bicara protokol MCP).
 // Transport: Streamable HTTP (stateless). Data: langsung ke MariaDB `pipeline`.
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 import mysql from 'mysql2/promise';
 import { z } from 'zod';
@@ -10,6 +11,79 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 const PORT = process.env.MCP_PORT || 8765;
 const TOKEN = process.env.MCP_TOKEN || ''; // kosong = tanpa auth (khusus dev lokal)
+
+// ── OAuth 2.1 owner-tunggal, tanpa dependency (crypto bawaan Node) ────────────
+// ChatGPT & Claude hp/web butuh OAuth (UI mereka tak bisa kirim bearer statis).
+// Server MCP ini jadi authorization server-nya sekaligus; owner login pakai
+// MCP_TOKEN sbg password. Access token = JWT HMAC (stateless, tahan restart).
+// Klien lama (Claude Code/Hermes/task.js) yg kirim `Bearer <MCP_TOKEN>` tetap jalan.
+const OAUTH_SECRET = crypto.createHash('sha256').update('mcp-oauth:' + TOKEN).digest();
+const codes = new Map(); // ponytail: authorization code in-memory TTL 60s — hilang saat restart, cukup krn ephemeral
+
+const b64url = (s) => Buffer.from(s).toString('base64url');
+const now = () => Math.floor(Date.now() / 1000);
+
+function signJwt(claims, ttlSec) {
+    const head = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const body = b64url(JSON.stringify({ ...claims, iat: now(), exp: now() + ttlSec }));
+    const sig = crypto.createHmac('sha256', OAUTH_SECRET).update(head + '.' + body).digest('base64url');
+    return `${head}.${body}.${sig}`;
+}
+function verifyJwt(token) {
+    try {
+        const [h, b, s] = String(token).split('.');
+        if (!h || !b || !s) return null;
+        const expect = crypto.createHmac('sha256', OAUTH_SECRET).update(h + '.' + b).digest('base64url');
+        if (s.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(s), Buffer.from(expect))) return null;
+        const claims = JSON.parse(Buffer.from(b, 'base64url').toString());
+        return claims.exp && claims.exp >= now() ? claims : null;
+    } catch { return null; }
+}
+const pkceOk = (verifier, challenge) =>
+    crypto.createHash('sha256').update(String(verifier)).digest('base64url') === challenge;
+
+// URL publik server (buat metadata OAuth). Set MCP_PUBLIC_URL di produksi.
+function baseUrl(req) {
+    if (process.env.MCP_PUBLIC_URL) return process.env.MCP_PUBLIC_URL.replace(/\/$/, '');
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    return `${proto}://${req.headers.host}`;
+}
+
+// Access token diterima: JWT OAuth (ChatGPT/hp/web) ATAU token statis (Claude Code/Hermes/CLI).
+function authOk(req) {
+    if (!TOKEN) return true; // dev tanpa token
+    const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
+    if (!m) return false;
+    return m[1] === TOKEN || !!verifyJwt(m[1]);
+}
+
+function tokenSet() {
+    return {
+        access_token: signJwt({ sub: 'owner' }, 3600),
+        token_type: 'Bearer',
+        expires_in: 3600,
+        refresh_token: signJwt({ sub: 'owner', typ: 'refresh' }, 60 * 60 * 24 * 30),
+    };
+}
+
+function loginPage({ redirect_uri, code_challenge, state, client_id, err }) {
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Login MCP — AI Preneur</title>
+<body style="font-family:system-ui;max-width:340px;margin:12vh auto;padding:0 20px">
+<h2>MCP Pipeline</h2>
+<p style="color:#64748b">Masuk untuk menghubungkan Claude.</p>
+${err ? `<p style="color:#dc2626">${esc(err)}</p>` : ''}
+<form method=post action=/authorize>
+<input type=hidden name=redirect_uri value="${esc(redirect_uri)}">
+<input type=hidden name=code_challenge value="${esc(code_challenge)}">
+<input type=hidden name=state value="${esc(state)}">
+<input type=hidden name=client_id value="${esc(client_id)}">
+<input type=password name=password placeholder="Password (MCP_TOKEN)" autofocus required
+ style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box">
+<button style="width:100%;margin-top:12px;padding:10px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600">Masuk</button>
+</form>`;
+}
 
 // Pool koneksi MariaDB (dipakai bersama semua request)
 const db = mysql.createPool({
@@ -138,12 +212,77 @@ function buildServer() {
 }
 
 const app = express();
+app.set('trust proxy', true); // hormati X-Forwarded-Proto dari nginx (TLS)
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // form login & token endpoint
 
-// Auth bearer (kalau MCP_TOKEN di-set)
+// ── OAuth endpoints (publik, tak butuh auth) ─────────────────────────────────
+// Discovery: resource → authorization server
+app.get('/.well-known/oauth-protected-resource', (req, res) =>
+    res.json({ resource: `${baseUrl(req)}/mcp`, authorization_servers: [baseUrl(req)] }));
+app.get(['/.well-known/oauth-authorization-server', '/.well-known/openid-configuration'], (req, res) => {
+    const u = baseUrl(req);
+    res.json({
+        issuer: u,
+        authorization_endpoint: `${u}/authorize`,
+        token_endpoint: `${u}/token`,
+        registration_endpoint: `${u}/register`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['none'],
+    });
+});
+
+// Dynamic Client Registration (RFC 7591) — ChatGPT/Claude daftar sendiri.
+// Owner-tunggal: client_id bukan rahasia; keamanan dari password owner + PKCE + tanda tangan JWT.
+app.post('/register', (req, res) =>
+    res.status(201).json({
+        client_id: 'c_' + crypto.randomBytes(12).toString('hex'),
+        client_id_issued_at: now(),
+        redirect_uris: req.body?.redirect_uris || [],
+        token_endpoint_auth_method: 'none',
+    }));
+
+// Authorize — form login owner
+app.get('/authorize', (req, res) => {
+    const { redirect_uri, code_challenge, state = '', client_id = '' } = req.query;
+    if (!redirect_uri || !code_challenge) return res.status(400).send('invalid_request');
+    res.type('html').send(loginPage({ redirect_uri, code_challenge, state, client_id, err: '' }));
+});
+app.post('/authorize', (req, res) => {
+    const { redirect_uri, code_challenge, state = '', client_id = '', password = '' } = req.body;
+    if (!redirect_uri || !code_challenge) return res.status(400).send('invalid_request');
+    if (!TOKEN || password !== TOKEN)
+        return res.status(401).type('html').send(loginPage({ redirect_uri, code_challenge, state, client_id, err: 'Password salah.' }));
+    const code = crypto.randomBytes(24).toString('base64url');
+    codes.set(code, { code_challenge, redirect_uri, exp: now() + 60 });
+    const sep = redirect_uri.includes('?') ? '&' : '?';
+    res.redirect(`${redirect_uri}${sep}code=${code}&state=${encodeURIComponent(state)}`);
+});
+
+// Token — tukar code (PKCE) atau refresh_token jadi access token
+app.post('/token', (req, res) => {
+    const { grant_type } = req.body;
+    if (grant_type === 'authorization_code') {
+        const entry = codes.get(req.body.code);
+        codes.delete(req.body.code);
+        if (!entry || entry.exp < now()) return res.status(400).json({ error: 'invalid_grant' });
+        if (!pkceOk(req.body.code_verifier, entry.code_challenge)) return res.status(400).json({ error: 'invalid_grant' });
+        return res.json(tokenSet());
+    }
+    if (grant_type === 'refresh_token') {
+        const claims = verifyJwt(req.body.refresh_token);
+        if (!claims || claims.typ !== 'refresh') return res.status(400).json({ error: 'invalid_grant' });
+        return res.json(tokenSet());
+    }
+    res.status(400).json({ error: 'unsupported_grant_type' });
+});
+
+// Auth /mcp: token statis (Claude Code/Hermes/CLI) ATAU JWT OAuth (ChatGPT/hp/web)
 app.use('/mcp', (req, res, next) => {
-    if (!TOKEN) return next(); // dev tanpa token
-    if (req.headers.authorization === `Bearer ${TOKEN}`) return next();
+    if (authOk(req)) return next();
+    res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`);
     res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });
 });
 
@@ -165,4 +304,17 @@ app.delete('/mcp', (_req, res) => res.status(405).json({ error: 'Method Not Allo
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'pipeline-mcp' }));
 
-app.listen(PORT, () => console.log(`MCP server jalan di http://127.0.0.1:${PORT}/mcp  (auth: ${TOKEN ? 'token' : 'none'})`));
+// Self-check OAuth (tanpa DB/HTTP): node server.js --selftest
+if (process.argv.includes('--selftest')) {
+    const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exit(1); } };
+    const t = signJwt({ sub: 'owner' }, 60);
+    ok(verifyJwt(t)?.sub === 'owner', 'jwt round-trip');
+    ok(verifyJwt(t + 'x') === null, 'jwt tamper ditolak');
+    ok(verifyJwt(signJwt({ sub: 'owner' }, -1)) === null, 'jwt kadaluarsa ditolak');
+    const v = 'verifier-abc', ch = crypto.createHash('sha256').update(v).digest('base64url');
+    ok(pkceOk(v, ch) && !pkceOk('salah', ch), 'pkce S256');
+    console.log('OAuth self-check OK');
+    process.exit(0);
+}
+
+app.listen(PORT, () => console.log(`MCP server jalan di http://127.0.0.1:${PORT}/mcp  (auth: ${TOKEN ? 'token+oauth' : 'none'})`));
