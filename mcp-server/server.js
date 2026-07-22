@@ -90,11 +90,47 @@ function buildServer() {
             }
 
             const [result] = await db.query(
-                `INSERT INTO pipelines (category, endorse, progress, account, payment_status, ke_gilang, done, created_at, updated_at)
-                 VALUES (?, ?, ?, 'fk', 'belum', 'belum', 0, NOW(), NOW())`,
+                `INSERT INTO pipelines (category, endorse, progress, account, payment_status, done, created_at, updated_at)
+                 VALUES (?, ?, ?, 'fk', 'belum', 0, NOW(), NOW())`,
                 [board, title, col]
             );
             return jsonText({ ok: true, task: { id: result.insertId, board, title, column: col } });
+        }
+    );
+
+    // 4) Ubah task yang sudah ada (by id): deadline, column, done, atau title
+    server.registerTool(
+        'update_task',
+        {
+            title: 'Update Task',
+            description: 'Ubah field task by id. Isi minimal satu: deadline (YYYY-MM-DD atau null untuk hapus), column, done, title.',
+            inputSchema: {
+                id: z.number().int().describe('id task (dari list_tasks)'),
+                deadline: z.string().nullable().optional().describe('YYYY-MM-DD, atau null untuk hapus'),
+                column: z.string().optional().describe('key kolom tujuan'),
+                done: z.boolean().optional().describe('tandai selesai'),
+                title: z.string().optional().describe('judul/endorse baru'),
+            },
+        },
+        async ({ id, deadline, column, done, title }) => {
+            const [[task]] = await db.query(`SELECT category FROM pipelines WHERE id=? AND archived_at IS NULL`, [id]);
+            if (!task) return errText(`Task id ${id} tidak ditemukan.`);
+
+            const sets = [], vals = [];
+            if (deadline !== undefined) { sets.push('deadline=?'); vals.push(deadline || null); }
+            if (done !== undefined) { sets.push('done=?'); vals.push(done ? 1 : 0); }
+            if (title !== undefined) { sets.push('endorse=?'); vals.push(title); }
+            if (column !== undefined) {
+                const [[c]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`, [task.category, column]);
+                if (!c) return errText(`Kolom "${column}" tidak ada di board "${task.category}".`);
+                sets.push('progress=?'); vals.push(column);
+            }
+            if (!sets.length) return errText('Tidak ada field yang diubah.');
+
+            sets.push('updated_at=NOW()');
+            await db.query(`UPDATE pipelines SET ${sets.join(', ')} WHERE id=?`, [...vals, id]);
+            const [[row]] = await db.query(`SELECT id, endorse AS title, progress AS column_key, done, deadline FROM pipelines WHERE id=?`, [id]);
+            return jsonText({ ok: true, task: row });
         }
     );
 
