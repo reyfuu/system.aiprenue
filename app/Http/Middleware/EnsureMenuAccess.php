@@ -13,10 +13,15 @@ class EnsureMenuAccess
         $name = $request->route()?->getName();
         $user = $request->user();
 
-        // Route mutasi (CRUD kartu/board) hanya untuk super admin & IT.
+        // Route mutasi → cek izin kelola sesuai jenis menunya.
+        // Kanban lebih longgar (staff boleh, lihat canManageKanban); Content pakai
+        // level per-peran dari Manajemen Akses; sisanya butuh canManage() penuh.
         if ($name !== null && $this->isManageRoute($name)) {
-            $menuKelola = str_starts_with($name, 'content.') ? 'content' : null;
-            $bolehKelola = $menuKelola ? $user?->canManageMenu($menuKelola) : $user?->canManage();
+            $bolehKelola = match (true) {
+                str_starts_with($name, 'content.') => $user?->canManageMenu('content'),
+                $this->isKanbanManageRoute($name) => $user?->canManageKanban(),
+                default => $user?->canManage(),
+            };
 
             if (! $bolehKelola) {
                 abort(403, 'Anda tidak punya izin untuk mengubah data ini.');
@@ -38,6 +43,19 @@ class EnsureMenuAccess
         }
 
         abort(403, 'Anda tidak punya akses ke halaman ini.');
+    }
+
+    /** Mutasi yang berasal dari papan Kanban (kartu, kolom, board, lampiran).
+     *  Dipisah supaya bisa dicek dgn canManageKanban() yang mengizinkan staff. */
+    private function isKanbanManageRoute(string $name): bool
+    {
+        return in_array($name, [
+            'pipelines.store', 'pipelines.update', 'pipelines.destroy',
+            'pipelines.reorder', 'pipelines.todos', 'pipelines.archive', 'pipelines.done',
+        ], true)
+            || str_starts_with($name, 'boards.')
+            || str_starts_with($name, 'columns.')
+            || str_starts_with($name, 'attachments.');
     }
 
     /** Route yang mengubah data (create/update/delete) → butuh canManage. */

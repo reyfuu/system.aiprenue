@@ -42,6 +42,10 @@ class PipelineController extends Controller
         $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category')->toArray();
 
+        // ponytail: canManage di galeri board ikut canManageKanban supaya staff
+        // yang boleh CRUD kanban juga bisa buat/hapus board di sini (konsisten
+        // dgn gate route boards.* di EnsureMenuAccess). Naikkan ke canManage()
+        // biasa kalau board mau dikunci lagi ke tim manajemen.
         return Inertia::render('BoardGallery', [
             'boards' => $boards->map(fn ($b) => [
                 'key' => $b->key,
@@ -50,7 +54,7 @@ class PipelineController extends Controller
                 'super_admin_only' => (bool) $b->super_admin_only,
                 'count' => $counts[$b->key] ?? 0,             // jml task aktif
             ]),
-            'canManage' => auth()->user()->canManage(),
+            'canManage' => auth()->user()->canManageKanban(),
         ]);
     }
 
@@ -217,7 +221,7 @@ class PipelineController extends Controller
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
             'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
             'outputs' => Output::orderBy('name')->get(),
-            'canManage' => auth()->user()->canManage(),                   // owner/manager/it/admin → boleh CRUD
+            'canManage' => auth()->user()->canManageKanban(),             // semua tim termasuk staff → boleh CRUD kanban
             'currentBoard' => $currentBoard,
             // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
             'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),

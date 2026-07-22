@@ -88,10 +88,9 @@ const submit = () => {
                         </div>
                     </div>
 
-                    <!-- Ingat saya + jalan keluar kalau lupa password.
-                         Ditaruh sebaris & tepat di bawah field password: di situlah
-                         orang menyadari dirinya lupa, bukan di footer halaman. -->
-                    <div class="flex items-center justify-between">
+                    <!-- Ingat saya. Tak ada "lupa password lewat email": reset dilakukan
+                         admin dari halaman User, atau user ganti sendiri dari sidebar. -->
+                    <div class="flex items-center">
                         <label class="flex items-center gap-2 text-sm text-slate-600">
                             <input
                                 type="checkbox"
@@ -99,9 +98,6 @@ const submit = () => {
                                 class="accent-brand-600"
                             /> Ingat saya
                         </label>
-                        <Link href="/forgot-password" class="text-sm font-medium text-brand-600 hover:text-brand-800">
-                            Lupa password?
-                        </Link>
                     </div>
 
                     <!-- Tombol submit (disable saat proses) -->
