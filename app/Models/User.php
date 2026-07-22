@@ -95,6 +95,12 @@ class User extends Authenticatable
      */
     public function canSee(string $menu): bool
     {
+        // Absensi terbuka untuk SEMUA peran (pengajuan cuti/sakit/izin) — sengaja
+        // di luar role_menu_access supaya tak bisa tak sengaja dicabut.
+        if ($menu === 'absensi') {
+            return true;
+        }
+
         // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
         // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
         if (in_array($menu, ['pembukuan', 'tracking'], true)) {
@@ -122,12 +128,20 @@ class User extends Authenticatable
         return in_array($this->role, ['owner', 'manager', 'it', 'admin'], true);
     }
 
-    /** Kelola papan Kanban (kartu, kolom, board, lampiran). Sengaja lebih longgar
-     *  dari canManage(): Kanban itu kerja tim harian, jadi 'staff' pun boleh CRUD
-     *  di sini — beda dari menu lain (order, pembukuan, dst) yang tetap view-only. */
-    public function canManageKanban(): bool
+    /** Boleh kelola board TERTENTU. Kunci keamanannya: route kartu/kolom/board
+     *  DIPAKAI BERSAMA oleh Sales (board tipe `pipeline`) dan Kanban (tipe
+     *  `kanban`). Staff cuma boleh papan kanban — JANGAN sampai bisa mengutak-atik
+     *  deal Sales lewat route yang sama. owner/manager/it/admin: semua board. */
+    public function canManageBoard(?string $boardKey): bool
     {
-        return $this->canManage() || $this->role === 'staff';
+        if ($this->canManage()) {
+            return true;
+        }
+        if ($this->role !== 'staff' || $boardKey === null) {
+            return false;
+        }
+
+        return Category::where('key', $boardKey)->where('type', 'kanban')->exists();
     }
 
     /** Izin CRUD khusus per menu. Owner selalu penuh; Content memakai level
@@ -151,6 +165,12 @@ class User extends Authenticatable
         } catch (\Throwable) {
             return $this->canManage() && $this->canSee($menu);
         }
+    }
+
+    /** Pengajuan absensi (cuti/sakit/izin) milik user ini. */
+    public function absences()
+    {
+        return $this->hasMany(Absence::class);
     }
 
     /** Route landing pertama yang boleh diakses user.

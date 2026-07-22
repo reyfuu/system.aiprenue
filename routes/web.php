@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AbsenceController;
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AuthController;
@@ -124,6 +125,13 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
+
+    // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
+    // Approve/tolak dibatasi canManage() di dalam AbsenceController.
+    Route::get('/absensi', [AbsenceController::class, 'index'])->name('absensi.index');
+    Route::post('/absensi', [AbsenceController::class, 'store'])->name('absensi.store');
+    Route::patch('/absensi/{absence}/status', [AbsenceController::class, 'updateStatus'])->name('absensi.status');
+    Route::delete('/absensi/{absence}', [AbsenceController::class, 'destroy'])->name('absensi.destroy');
 
     // Pembukuan (rekap keuangan)
     Route::get('/pembukuan', [PembukuanController::class, 'index'])->name('pembukuan.index');

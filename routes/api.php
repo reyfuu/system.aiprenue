@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\InsightIngestController;
 use App\Http\Controllers\Api\ScriptIngestController;
+use App\Http\Controllers\Api\TaskIngestController;
 use Illuminate\Support\Facades\Route;
 
 // Pintu masuk agen Daily Script Rave. Sengaja di luar routes/web.php: tak perlu
@@ -18,3 +19,8 @@ Route::post('/scripts', [ScriptIngestController::class, 'store'])
 Route::post('/insights', [InsightIngestController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('api.insights.store');
+
+// Pintu masuk "buat tugas dari AI" (MCP Claude/Gemini, Custom GPT ChatGPT) → kartu Kanban.
+// Gerbang bearer token (TASK_AGENT_TOKEN). throttle longgar utk pemakaian owner.
+Route::get('/boards', [TaskIngestController::class, 'boards'])->middleware('throttle:60,1')->name('api.boards');
+Route::post('/tasks', [TaskIngestController::class, 'store'])->middleware('throttle:60,1')->name('api.tasks.store');

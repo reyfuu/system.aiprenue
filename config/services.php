@@ -30,6 +30,10 @@ return [
         'token' => env('INSIGHT_AGENT_TOKEN'),
     ],
 
+    'task_agent' => [
+        'token' => env('TASK_AGENT_TOKEN'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

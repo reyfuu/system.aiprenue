@@ -42,10 +42,8 @@ class PipelineController extends Controller
         $counts = Pipeline::whereNull('archived_at')->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category')->toArray();
 
-        // ponytail: canManage di galeri board ikut canManageKanban supaya staff
-        // yang boleh CRUD kanban juga bisa buat/hapus board di sini (konsisten
-        // dgn gate route boards.* di EnsureMenuAccess). Naikkan ke canManage()
-        // biasa kalau board mau dikunci lagi ke tim manajemen.
+        // Buat/hapus BOARD = struktur, tetap owner/manager/it/admin (BoardTest).
+        // Staff cuma mengelola KARTU di dalam board, bukan bikin board baru.
         return Inertia::render('BoardGallery', [
             'boards' => $boards->map(fn ($b) => [
                 'key' => $b->key,
@@ -54,7 +52,7 @@ class PipelineController extends Controller
                 'super_admin_only' => (bool) $b->super_admin_only,
                 'count' => $counts[$b->key] ?? 0,             // jml task aktif
             ]),
-            'canManage' => auth()->user()->canManageKanban(),
+            'canManage' => auth()->user()->canManage(),
         ]);
     }
 
@@ -221,7 +219,8 @@ class PipelineController extends Controller
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
             'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
             'outputs' => Output::orderBy('name')->get(),
-            'canManage' => auth()->user()->canManageKanban(),             // semua tim termasuk staff → boleh CRUD kanban
+            'canManage' => auth()->user()->canManageBoard($category),      // KARTU: staff boleh di board kanban, bukan Sales
+            'canManageStructure' => auth()->user()->canManage(),           // KOLOM/BOARD/LAMPIRAN: owner/manager/it/admin saja
             'currentBoard' => $currentBoard,
             // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
             'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),

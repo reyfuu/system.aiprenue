@@ -12,7 +12,7 @@ import draggable from 'vuedraggable';                              // drag-drop 
 // '/pipelines' (Sales Pipeline, tanpa galeri) & '/pipelines/kanban' (Kanban, pakai galeri).
 const props = defineProps({
     category: String, counts: Object, categories: Object, board: Object, columns: Array,
-    staff: Array, outputs: Array, canManage: Boolean, currentBoard: Object,
+    staff: Array, outputs: Array, canManage: Boolean, canManageStructure: Boolean, currentBoard: Object,
     showArchived: Boolean, archivedCount: Number, accounts: Object, jenisList: Object,
     labels: { type: Array, default: () => [] },  // definisi label (dikelola owner)
     jenis: { type: Array, default: () => [] },   // chip jenis yang aktif (kosong = semua)
@@ -91,7 +91,9 @@ const colNames = computed(() => Object.fromEntries(props.columns.map((c) => [c.k
 const isKanban = computed(() => props.boardType === 'kanban');
 
 const cardCount = (key) => (cols.value[key] || []).length;         // jml kartu per kolom
-const dragDisabled = computed(() => !props.canManage || props.showArchived); // nonaktif saat view-only / mode arsip
+const dragDisabled = computed(() => !props.canManage || props.showArchived); // drag KARTU: staff boleh di board kanban
+// drag KOLOM = struktur (columns.reorder) → cuma owner/manager/it/admin, bukan staff.
+const colDragDisabled = computed(() => !props.canManageStructure || props.showArchived);
 
 // ---- Nilai deal (ala Pipedrive: tiap stage punya total) ----
 // Kartu bisa IDR, USD, atau dua-duanya → semua dijumlahkan dalam IDR pakai kurs.
@@ -290,7 +292,7 @@ const submitBoardEdit = () => boardForm.put('/boards/' + props.currentBoard.key,
 const submitColCreate = () => colForm.post('/columns', { onSuccess: () => (colCreateOpen.value = false) });
 const submitColEdit = () => colForm.put('/columns/' + colEditId.value, { onSuccess: () => (colEditOpen.value = false) });
 const openColEdit = (id, name) => { colEditId.value = id; colForm.name = name; colEditOpen.value = true; };
-const deleteColumn = (id) => { if (props.canManage && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
+const deleteColumn = (id) => { if (props.canManageStructure && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
 const deleteBoard = () => { if (confirm(`Hapus board "${props.currentBoard.name}"? (hanya bila kosong)`)) router.delete('/boards/' + props.currentBoard.key); };
 const switchBoard = (e) => router.get(props.baseUrl, {
     category: e.target.value,
@@ -375,7 +377,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                 </span>
 
                 <!-- Aksi board (manager, mode aktif) -->
-                <div v-if="canManage && !showArchived" class="flex items-center gap-1.5 mt-5">
+                <div v-if="canManageStructure && !showArchived" class="flex items-center gap-1.5 mt-5">
                     <button @click="boardForm.name = ''; boardCreateOpen = true" class="inline-flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
                         Board
@@ -510,7 +512,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     :list="colOrder"
                     :group="{ name: 'columns' }"
                     item-key="key"
-                    :disabled="dragDisabled"
+                    :disabled="colDragDisabled"
                     filter="button, a, .col-cards"
                     :prevent-on-filter="false"
                     :force-auto-scroll-fallback="true"
@@ -539,7 +541,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                              cursor-grab cuma DI SINI walau kolom bisa diseret dari mana saja:
                              memasangnya di akar kolom bikin kursor grab ikut muncul di sela-sela
                              kartu, tempat drag kolom justru tak aktif (difilter) — sinyal palsu. -->
-                        <div :class="['flex items-start justify-between mb-3', dragDisabled ? '' : 'cursor-grab active:cursor-grabbing']">
+                        <div :class="['flex items-start justify-between mb-3', colDragDisabled ? '' : 'cursor-grab active:cursor-grabbing']">
                             <div>
                                 <div class="flex items-center gap-2">
                                     <span :class="['w-2.5 h-2.5 rounded-full', col.color]"></span>
@@ -552,7 +554,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                             </div>
                             <div v-if="canManage && !showArchived" class="flex items-center gap-0.5">
                                 <button @click="openAdd(col.key)" title="Tambah task" class="w-6 h-6 flex items-center justify-center rounded-md bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold leading-none transition">+</button>
-                                <div class="relative">
+                                <div v-if="canManageStructure" class="relative">
                                     <button @click.stop="colMenu = colMenu === col.key ? null : col.key" title="Menu kolom" class="w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 transition">
                                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 6a2 2 0 110-4 2 2 0 010 4zm0 8a2 2 0 110-4 2 2 0 010 4zm0 8a2 2 0 110-4 2 2 0 010 4z" /></svg>
                                     </button>
@@ -671,7 +673,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                      ikut jadi item), tapi menaruhnya di luar berarti tombol ini tak punya
                      urusan sama sekali dgn SortableJS — satu variabel dugaan lebih sedikit
                      saat tombolnya bermasalah. -->
-                <div v-if="canManage && !showArchived" class="w-64 flex-shrink-0">
+                <div v-if="canManageStructure && !showArchived" class="w-64 flex-shrink-0">
                     <button @click="colForm.board_key = category; colForm.name = ''; colCreateOpen = true" class="w-full flex items-center gap-2 bg-white/70 hover:bg-white border border-dashed border-brand-200 hover:border-brand-300 text-slate-500 hover:text-brand-700 rounded-2xl px-4 py-3 text-sm font-semibold transition">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
                         Add another list
@@ -864,11 +866,11 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                         <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                         <a :href="a.url" target="_blank" rel="noreferrer" class="flex-1 text-brand-700 hover:underline truncate">{{ a.name }}</a>
                         <span class="text-[10px] text-slate-400">{{ fmtSize(a.size) }}</span>
-                        <button v-if="canManage" @click="deleteAttachment(a.id)" class="text-slate-300 hover:text-red-500 text-lg leading-none">&times;</button>
+                        <button v-if="canManageStructure" @click="deleteAttachment(a.id)" class="text-slate-300 hover:text-red-500 text-lg leading-none">&times;</button>
                     </div>
                     <p v-if="detailCard.attachments.length === 0" class="text-xs text-slate-400">Belum ada lampiran.</p>
                 </div>
-                <form v-if="canManage" @submit.prevent="submitAttach" class="flex items-center gap-2">
+                <form v-if="canManageStructure" @submit.prevent="submitAttach" class="flex items-center gap-2">
                     <!-- input file disembunyikan, dipicu label bergaya tombol -->
                     <input id="attach-file" type="file" @change="attachForm.file = $event.target.files[0]" class="hidden" />
                     <label for="attach-file" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition">
