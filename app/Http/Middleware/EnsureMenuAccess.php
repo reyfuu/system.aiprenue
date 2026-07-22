@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Pipeline;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,7 +20,10 @@ class EnsureMenuAccess
         if ($name !== null && $this->isManageRoute($name)) {
             $bolehKelola = match (true) {
                 str_starts_with($name, 'content.') => $user?->canManageMenu('content'),
-                $this->isKanbanManageRoute($name) => $user?->canManageKanban(),
+                // Route KARTU dipakai bersama Sales & Kanban. Cek TIPE board yang
+                // tersentuh: staff boleh kelola kartu di papan kanban, TAPI tidak di
+                // Sales. Struktur (board/kolom/lampiran) tetap canManage() penuh.
+                $this->isKanbanManageRoute($name) => $user?->canManageBoard($this->kanbanBoardKey($request, $name)),
                 default => $user?->canManage(),
             };
 
@@ -45,17 +49,36 @@ class EnsureMenuAccess
         abort(403, 'Anda tidak punya akses ke halaman ini.');
     }
 
-    /** Mutasi yang berasal dari papan Kanban (kartu, kolom, board, lampiran).
-     *  Dipisah supaya bisa dicek dgn canManageKanban() yang mengizinkan staff. */
+    /** Kunci board yang tersentuh route KARTU, untuk menilai tipe board-nya
+     *  (kanban vs Sales). Tahan urutan binding: terima model ATAU id mentah.
+     *  null = tak terpetakan → penilai jatuh ke canManage() ketat. */
+    private function kanbanBoardKey(Request $request, string $name): ?string
+    {
+        if (($p = $request->route('pipeline')) !== null) {
+            $p = $p instanceof Pipeline ? $p : Pipeline::find($p);
+
+            return $p?->category;
+        }
+        if ($name === 'pipelines.store') {
+            return $request->input('category');
+        }
+        if ($name === 'pipelines.reorder') {
+            return Pipeline::whereIn('id', (array) $request->input('ids'))->value('category');
+        }
+
+        return null;
+    }
+
+    /** Mutasi KARTU (bukan struktur board/kolom/lampiran). Dipisah supaya bisa
+     *  dicek dgn canManageBoard() yang mengizinkan staff HANYA di papan kanban.
+     *  Board/kolom/lampiran sengaja TIDAK di sini — itu tetap canManage() penuh
+     *  (owner/manager/it/admin), lihat BoardTest & ColumnTest. */
     private function isKanbanManageRoute(string $name): bool
     {
         return in_array($name, [
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
             'pipelines.reorder', 'pipelines.todos', 'pipelines.archive', 'pipelines.done',
-        ], true)
-            || str_starts_with($name, 'boards.')
-            || str_starts_with($name, 'columns.')
-            || str_starts_with($name, 'attachments.');
+        ], true);
     }
 
     /** Route yang mengubah data (create/update/delete) → butuh canManage. */
@@ -94,7 +117,10 @@ class EnsureMenuAccess
             $name === 'pipelines.kanban' => ['kanban'],
             $name === 'pipelines.index' => ['pipeline'],
             in_array($name, ['pipelines.reorder', 'pipelines.todos', 'pipelines.archive', 'pipelines.done'], true) => ['kanban', 'pipeline'],
-            $name === 'pipelines.store' => ['kanban', 'pipeline'],
+            // store/update/destroy dipakai dari Kanban DAN Sales. Dulu update/destroy
+            // jatuh ke catch-all ['pipeline'] di bawah → staff (kanban saja) 403 saat
+            // mengedit/menghapus kartu dari Kanban. Kartu bisa dikelola dari salah satu menu.
+            in_array($name, ['pipelines.store', 'pipelines.update', 'pipelines.destroy'], true) => ['kanban', 'pipeline'],
             str_starts_with($name, 'boards.') => ['kanban', 'pipeline'],
             str_starts_with($name, 'columns.') => ['kanban', 'pipeline'],
             str_starts_with($name, 'comments.') => ['kanban', 'pipeline'],     // komentar kartu
@@ -105,6 +131,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'content.') => ['content'],
             str_starts_with($name, 'tracking.') => ['tracking'],
+            str_starts_with($name, 'absensi.') => ['absensi'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],
             str_starts_with($name, 'inventories.') => ['pembukuan'],

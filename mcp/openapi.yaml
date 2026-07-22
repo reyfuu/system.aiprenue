@@ -1,0 +1,57 @@
+# OpenAPI untuk "Custom GPT Action" di ChatGPT.
+# ChatGPT tak menjalankan MCP stdio lokal, jadi ia memanggil API HTTP langsung.
+# Cara pakai: ChatGPT → Create a GPT → Configure → Actions → Import,
+#   tempel isi file ini, ganti `url` server ke domain aplikasi kamu,
+#   lalu Authentication → API Key → Bearer → isi TASK_AGENT_TOKEN.
+openapi: 3.1.0
+info:
+  title: System AI Preneur — Tasks
+  description: Buat tugas Kanban di System AI Preneur dari chat.
+  version: 1.0.0
+servers:
+  - url: https://GANTI-KE-DOMAIN-ANDA
+paths:
+  /api/boards:
+    get:
+      operationId: listBoards
+      summary: Daftar board Kanban, kolom, dan user (untuk memilih yang valid).
+      responses:
+        "200":
+          description: OK
+  /api/tasks:
+    post:
+      operationId: createTask
+      summary: Buat satu kartu tugas di Kanban.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  description: Judul tugas (wajib).
+                description:
+                  type: string
+                  description: Detail tugas (opsional).
+                board:
+                  type: string
+                  description: Key board (mis. "kerja"). Kosong = board default.
+                column:
+                  type: string
+                  description: Key kolom (mis. "todo"). Kosong = kolom todo/pertama.
+                assignee:
+                  type: string
+                  description: Nama atau email penerima tugas (opsional).
+      responses:
+        "201":
+          description: Tugas dibuat.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+security:
+  - bearerAuth: []

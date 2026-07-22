@@ -52,7 +52,7 @@
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "resources/css/app.css": {
-    "file": "assets/app-C4ePUe-q.css",
+    "file": "assets/app-BkaiuNzW.css",
     "name": "app",
     "names": [
       "app.css"
@@ -61,13 +61,13 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-CtjiTqa4.js",
+    "file": "assets/app-OHA_mN8x.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "css": [
-      "assets/app-D5RUh3kd.css",
-      "assets/app-C4ePUe-q.css"
+      "assets/app-6eYDd0Cg.css",
+      "assets/app-BkaiuNzW.css"
     ]
   }
 }

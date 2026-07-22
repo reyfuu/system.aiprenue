@@ -36,3 +36,10 @@ Thumbs.db
 # Tooling lokal — tidak untuk repo
 /.github
 /.claude
+
+# MCP server deps (dipasang lokal di laptop)
+/mcp/node_modules
+
+# graphify: graf hasil-generate (besar) + config tool platform lain — jangan di-commit
+/graphify-out
+/.agents
