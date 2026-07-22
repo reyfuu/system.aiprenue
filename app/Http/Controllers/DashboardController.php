@@ -6,9 +6,9 @@ use App\Models\Inventory;
 use App\Models\Mindmap;
 use App\Models\Order;
 use App\Models\Pipeline;
+use App\Models\Script;
 use App\Models\Transaction;
 use App\Support\ExchangeRate;
-use Illuminate\Support\Facades\File;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -103,12 +103,12 @@ class DashboardController extends Controller
         // ---- Kanban: task di board bertipe 'kanban' (BUKAN entri pipeline) ----
         $kanban = Pipeline::whereIn('category', array_keys($kanbanBoards))->get();
 
-        // ---- Script: folder & naskah di public/scripts (dotfile spt .gitkeep diabaikan) ----
-        $scriptDir     = public_path('scripts');
-        $scriptFolders = File::isDirectory($scriptDir) ? count(File::directories($scriptDir)) : 0;
-        $scriptFiles   = File::isDirectory($scriptDir)
-            ? count(array_filter(File::allFiles($scriptDir), fn ($f) => ! str_starts_with($f->getFilename(), '.')))
-            : 0;
+        // ---- Script: folder (brand) & naskah dari DB, sama sumbernya dgn menu Script ----
+        // (dulu baca folder di public/scripts yg selalu kosong → naskah kehitung 0).
+        // 1 naskah = 1 PDF = 1 pack (brand + generated_for), bukan per-baris — satu
+        // tanggal digabung jadi satu PDF di ScriptController::show/pdf.
+        $scriptFiles   = Script::select('brand', 'generated_for')->distinct()->get()->count();
+        $scriptFolders = Script::distinct()->count('brand');
 
         // ---- Drill-down: klik kartu ringkasan → daftar order menggantikan grafik ----
         // Sengaja menyaring $orders (koleksi yang SUDAH terfilter bulan), bukan query

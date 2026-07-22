@@ -91,18 +91,41 @@ URL final: `https://mcp.domainkamu.com/mcp`
 
 ## Hubungkan client
 
-Semua pakai URL + header `Authorization: Bearer <MCP_TOKEN>`.
+Dua mekanisme auth, satu server:
 
-- **Claude** (app/claude.ai): Settings → Connectors → *Add custom connector* → URL `https://mcp.domainkamu.com/mcp`.
-- **ChatGPT** (HP/web): Settings → Connectors (developer mode) → remote MCP server → URL yang sama.
-- **Hermes Agent**: tambahkan sebagai MCP server di konfigurasinya (URL + token).
+- **OAuth 2.1** (ChatGPT & Claude hp/web) — UI mereka tak bisa kirim bearer statis, jadi
+  server ini jadi authorization server sendiri (owner-tunggal, tanpa dependency). Owner
+  login pakai `MCP_TOKEN` sebagai password. Wajib set `MCP_PUBLIC_URL` di produksi.
+- **Bearer statis** (Claude Code, Hermes, `task.js`) — header `Authorization: Bearer <MCP_TOKEN>`.
+
+### Claude (fokus utama — app/claude.ai, plan berbayar spt Max)
+1. Claude → Settings → **Connectors** → **Add custom connector**.
+2. Isi URL: `https://mcp.aipreneur.co.id/mcp`. Claude otomatis discovery + daftar sendiri (DCR).
+3. Muncul halaman login server → masukkan **`MCP_TOKEN`** sebagai password → **Masuk**.
+4. Selesai — connector sync ke semua device (web, iOS, Android, desktop).
+   Tool `list_boards`, `list_tasks`, `create_task`, `update_task` siap dipakai.
+
+### Claude Code / Hermes
+- Tambah sebagai MCP server dengan URL + header `Authorization: Bearer <MCP_TOKEN>`.
+
+### ChatGPT (butuh plan yang mendukung MCP connector)
+- Flow-nya identik (OAuth). Hanya tersedia di plan ChatGPT yang mengizinkan custom/remote
+  MCP connector (Pro/Business/Enterprise). Plan tanpa fitur ini tidak bisa memakainya.
+
+**Cek cepat OAuth (opsional):**
+```bash
+curl https://mcp.aipreneur.co.id/.well-known/oauth-protected-resource
+node server.js --selftest   # verifikasi JWT + PKCE tanpa DB/HTTP
+```
 
 ## Catatan keamanan
-- **Selalu set `MCP_TOKEN`** (acak, panjang) di produksi. Tanpa token = terbuka.
+- **Selalu set `MCP_TOKEN`** (acak, panjang) di produksi. Kosong = terbuka **dan** OAuth mati.
+- OAuth: access token = JWT HMAC (kunci diturunkan dari `MCP_TOKEN`), TTL 1 jam + refresh 30 hari.
+  Authorization code in-memory (TTL 60 dtk) — restart server → login ulang sekali. Cukup utk owner-tunggal.
 - MCP server konek DB pakai kredensial di `.env` — jangan commit `.env` (sudah di `.gitignore`).
-- Tool tulis (`create_task`) bypass logika/validasi Laravel (insert langsung). Untuk produksi, pertimbangkan arahkan lewat API Laravel + OAuth.
+- Tool tulis (`create_task`/`update_task`) bypass validasi Laravel (insert langsung). Batas kerusakan: tabel kanban.
 
 ## Roadmap
-- Tools tambahan: update/move/complete task, baca pipeline & omzet, mindmap.
-- OAuth 2.1 (buat connector ChatGPT publik yang paling mulus).
+- Rate limit + audit log per tool call.
+- Tools tambahan: move/complete task, baca pipeline & omzet, mindmap.
 - Routing lewat API Laravel (hormati validasi & audit) alih-alih DB langsung.

@@ -15,7 +15,8 @@ class ScriptController extends Controller
     /** Galeri brand + jumlah naskahnya. */
     public function index()
     {
-        $counts = Script::selectRaw('brand, COUNT(*) as total')->groupBy('brand')->pluck('total', 'brand');
+        // Hitung PDF (pack), bukan baris: 1 tanggal = 1 PDF gabungan (lihat show/pdf).
+        $counts = Script::selectRaw('brand, COUNT(DISTINCT generated_for) as total')->groupBy('brand')->pluck('total', 'brand');
         $latest = Script::selectRaw('brand, MAX(generated_for) as tgl')->groupBy('brand')->pluck('tgl', 'brand');
 
         return Inertia::render('Script', [
