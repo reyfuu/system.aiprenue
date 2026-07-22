@@ -22,6 +22,7 @@ const roleColors = {                                    // map role -> kelas bad
 const open = ref(false);                                // status modal terbuka
 const mode = ref('create');                             // mode form: create/edit
 const editId = ref(null);                               // id user yang sedang diedit
+const showPassword = ref(false);                        // tampilkan/sembunyikan teks password di form
 
 // Form Inertia dengan field sesuai blade
 const form = useForm({                                  // inisialisasi useForm
@@ -35,6 +36,7 @@ const form = useForm({                                  // inisialisasi useForm
 const openCreate = () => {                              // handler tambah
     mode.value = 'create';                              // set mode create
     editId.value = null;                                // tidak ada id edit
+    showPassword.value = false;                         // sembunyikan password lagi tiap buka form
     form.reset();                                       // kosongkan field
     form.clearErrors();                                 // bersihkan error lama
     open.value = true;                                  // tampilkan modal
@@ -44,6 +46,7 @@ const openCreate = () => {                              // handler tambah
 const openEdit = (u) => {                               // handler edit
     mode.value = 'edit';                                // set mode edit
     editId.value = u.id;                                // simpan id user
+    showPassword.value = false;                         // sembunyikan password lagi tiap buka form
     form.clearErrors();                                 // bersihkan error lama
     form.name = u.name;                                 // isi nama dari user
     form.email = u.email;                               // isi email dari user
@@ -66,6 +69,17 @@ const submit = () => {                                  // handler submit
         form.put('/users/' + editId.value, done);       // kirim PUT
     }                                                   // akhir cabang mode
 };                                                      // akhir submit
+
+// Reset password cepat: minta password baru lalu kirim ke endpoint update.
+// Sengaja pakai router.put (bukan modal edit) supaya admin bisa reset tanpa
+// membuka form penuh — field lain diambil apa adanya dari data user.
+const resetPassword = (u) => {                          // handler reset password
+    const pw = prompt('Password baru untuk "' + u.name + '":'); // minta password baru
+    if (pw === null) return;                            // batal bila dialog ditutup
+    if (pw.length < 6) { alert('Password minimal 6 karakter.'); return; } // validasi minimal
+    router.put('/users/' + u.id, { name: u.name, email: u.email, role: u.role, password: pw },
+        { preserveScroll: true });                      // kirim PUT, jaga posisi scroll
+};                                                      // akhir resetPassword
 
 // Hapus user dengan konfirmasi
 const destroy = (u) => {                                // handler hapus
@@ -123,6 +137,9 @@ const destroy = (u) => {                                // handler hapus
                                     <!-- tombol edit -->
                                     <button @click="openEdit(u)"
                                             class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">Edit</button>
+                                    <!-- tombol reset password -->
+                                    <button type="button" @click="resetPassword(u)"
+                                            class="bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition">Reset Password</button>
                                     <!-- tombol hapus -->
                                     <button type="button" @click="destroy(u)"
                                             class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">Hapus</button>
@@ -158,9 +175,17 @@ const destroy = (u) => {                                // handler hapus
                     </label> <!-- akhir field email -->
                     <label class="block font-medium text-slate-600"> <!-- field password -->
                         <span>{{ mode === 'create' ? 'Password' : 'Password (kosongkan bila tidak diubah)' }}</span> <!-- teks label dinamis -->
-                        <input type="password" name="password" v-model="form.password"
-                               :required="mode === 'create'" autocomplete="new-password"
-                               class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                        <div class="relative mt-1"> <!-- bungkus input + tombol mata -->
+                            <!-- type ikut showPassword: text = kelihatan, password = tersembunyi -->
+                            <input :type="showPassword ? 'text' : 'password'" name="password" v-model="form.password"
+                                   :required="mode === 'create'" autocomplete="new-password"
+                                   class="w-full border border-slate-200 rounded-xl px-3 py-2 pr-11 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <!-- tombol toggle tampil/sembunyi password -->
+                            <button type="button" @click="showPassword = !showPassword"
+                                    class="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-600 text-xs font-medium">
+                                {{ showPassword ? 'Sembunyikan' : 'Lihat' }}
+                            </button>
+                        </div> <!-- akhir bungkus password -->
                         <span v-if="form.errors.password" class="text-xs text-red-600">{{ form.errors.password }}</span> <!-- error password -->
                     </label> <!-- akhir field password -->
                     <label class="block font-medium text-slate-600">Status <!-- field role -->

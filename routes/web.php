@@ -13,7 +13,6 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\OrderController;
-use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ScriptController;
@@ -37,24 +36,20 @@ Route::middleware('throttle:6,1')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('register.store');
 });
 
-// Lupa password — user memasang passwordnya sendiri lewat tautan di email.
-// Nama route `password.reset` WAJIB persis begitu: notifikasi bawaan Laravel
-// membangun URL tautannya dengan route('password.reset', ...). Ganti namanya =
-// email terkirim tapi tautannya mati.
-// throttle: pintu ini mengirim email & bisa dipakai menebak-nebak alamat,
-// jadi dibatasi 6 permintaan/menit per IP.
-Route::middleware('throttle:6,1')->group(function () {
-    Route::get('/forgot-password', [PasswordResetController::class, 'showRequest'])->name('password.request');
-    Route::post('/forgot-password', [PasswordResetController::class, 'sendLink'])->name('password.email');
-    Route::get('/reset-password/{token}', [PasswordResetController::class, 'showReset'])->name('password.reset');
-    Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('password.update');
-});
-
 Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->homeRoute() : 'login'));
 
 // Pipeline (butuh login) + batasan akses per role
 Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Ganti password sendiri (self-service). Bukan menu → cukup dijaga 'auth'
+    // dari grup ini; tak perlu masuk gating EnsureMenuAccess per-menu.
+    Route::put('/profile/password', [AuthController::class, 'updatePassword'])->name('profile.password');
+
+    // "Masuk sebagai" peran lain (intip fitur). Gerbang owner-only ada di controller.
+    // /stop didaftarkan lebih dulu supaya tak tertangkap sbg {role}.
+    Route::post('/impersonate/stop', [AuthController::class, 'stopImpersonate'])->name('impersonate.stop');
+    Route::post('/impersonate/{role}', [AuthController::class, 'impersonate'])->name('impersonate.start');
 
     Route::get('/pipelines', [PipelineController::class, 'index'])->name('pipelines.index');
     Route::get('/pipelines/kanban', [PipelineController::class, 'kanban'])->name('pipelines.kanban');

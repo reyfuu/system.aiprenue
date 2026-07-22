@@ -1,7 +1,7 @@
 <script setup>
 // Sidebar navigasi. Menu digating oleh auth.user.menus (dibagikan HandleInertiaRequests).
-import { computed } from 'vue';                          // computed untuk turunan reaktif
-import { Link, usePage, router } from '@inertiajs/vue3'; // Link nav, usePage props, router aksi
+import { computed, ref } from 'vue';                     // computed turunan reaktif, ref state modal
+import { Link, usePage, router, useForm } from '@inertiajs/vue3'; // Link nav, usePage props, router aksi, useForm form
 
 // Daftar menu: key cocok dgn auth.user.menus, href tujuan, path ikon SVG.
 const ITEMS = [
@@ -38,6 +38,32 @@ const activeHref = computed(() => ITEMS.filter((it) => matchHref(it.href)).reduc
 const visibleItems = computed(() => ITEMS.filter((it) => user.value?.menus[it.key]));
 
 const logout = () => router.post('/logout');                // POST /logout (CSRF otomatis)
+
+// Ganti password sendiri (self-service). Modal kecil dari footer sidebar —
+// verifikasi pakai password lama, tanpa email/SMTP.
+const pwOpen = ref(false);                                  // status modal ganti password
+const showPw = ref(false);                                  // toggle lihat/sembunyi isian
+const pwForm = useForm({                                    // form 3 field
+    current_password: '',                                  // password lama (diverifikasi server)
+    password: '',                                          // password baru
+    password_confirmation: '',                             // konfirmasi password baru
+});
+
+// Buka modal: reset field & error dulu supaya bersih tiap dibuka
+const openPw = () => {                                      // handler buka modal
+    showPw.value = false;                                  // mulai tersembunyi
+    pwForm.reset();                                         // kosongkan field
+    pwForm.clearErrors();                                   // bersihkan error lama
+    pwOpen.value = true;                                   // tampilkan modal
+};                                                          // akhir openPw
+
+// Submit: PUT /profile/password; tutup & kosongkan bila sukses
+const submitPw = () => {                                    // handler submit
+    pwForm.put('/profile/password', {                      // kirim PUT
+        preserveScroll: true,                              // jangan lompat scroll
+        onSuccess: () => { pwOpen.value = false; pwForm.reset(); }, // sukses → tutup & reset
+    });                                                    // akhir put
+};                                                          // akhir submitPw
 </script>
 
 <template>
@@ -67,14 +93,61 @@ const logout = () => router.post('/logout');                // POST /logout (CSR
                 {{ it.label }}
             </component>
         </nav>
-        <!-- Footer: nama user + tombol logout -->
+        <!-- Footer: nama user + ganti password + tombol logout -->
         <div class="p-3 border-t border-white/10 flex items-center justify-between">
             <span class="text-[11px] text-brand-200 truncate">{{ user.name }}</span>
-            <form @submit.prevent="logout">
-                <button class="text-brand-200 hover:text-white" title="Keluar">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            <div class="flex items-center gap-2"> <!-- grup aksi akun -->
+                <!-- tombol ganti password sendiri (ikon kunci) -->
+                <button type="button" @click="openPw" class="text-brand-200 hover:text-white" title="Ganti password">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                 </button>
-            </form>
+                <!-- tombol logout -->
+                <form @submit.prevent="logout">
+                    <button class="text-brand-200 hover:text-white" title="Keluar">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    </button>
+                </form>
+            </div> <!-- akhir grup aksi -->
         </div>
     </aside>
+
+    <!-- Modal ganti password sendiri: tampil hanya saat pwOpen true -->
+    <div v-if="pwOpen" class="fixed inset-0 bg-brand-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+         @click="pwOpen = false"> <!-- klik backdrop menutup -->
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-t-4 border-brand-600 text-slate-700"
+             @click.stop> <!-- cegah tutup saat klik dalam -->
+            <div class="flex items-center justify-between mb-5"> <!-- header modal -->
+                <h2 class="text-lg font-bold text-brand-800">Ganti Password</h2>
+                <button type="button" @click="pwOpen = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+            </div>
+            <!-- form ganti password: cegah default lalu submitPw() -->
+            <form @submit.prevent="submitPw" class="space-y-3 text-sm">
+                <!-- password lama (diverifikasi server via rule current_password) -->
+                <label class="block font-medium text-slate-600">Password Lama
+                    <input :type="showPw ? 'text' : 'password'" v-model="pwForm.current_password" required autocomplete="current-password"
+                           class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <span v-if="pwForm.errors.current_password" class="text-xs text-red-600">{{ pwForm.errors.current_password }}</span>
+                </label>
+                <!-- password baru -->
+                <label class="block font-medium text-slate-600">Password Baru
+                    <input :type="showPw ? 'text' : 'password'" v-model="pwForm.password" required autocomplete="new-password"
+                           class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <span v-if="pwForm.errors.password" class="text-xs text-red-600">{{ pwForm.errors.password }}</span>
+                </label>
+                <!-- konfirmasi password baru -->
+                <label class="block font-medium text-slate-600">Ulangi Password Baru
+                    <input :type="showPw ? 'text' : 'password'" v-model="pwForm.password_confirmation" required autocomplete="new-password"
+                           class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                </label>
+                <!-- toggle lihat/sembunyi semua isian -->
+                <label class="flex items-center gap-2 text-xs text-slate-500">
+                    <input type="checkbox" v-model="showPw" class="accent-brand-600" /> Lihat password
+                </label>
+                <div class="flex justify-end gap-2 pt-2"> <!-- tombol aksi -->
+                    <button type="button" @click="pwOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
+                    <button type="submit" :disabled="pwForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </template>

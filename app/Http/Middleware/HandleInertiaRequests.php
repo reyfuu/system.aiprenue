@@ -86,6 +86,9 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
             ],
+
+            // True saat owner sedang "masuk sebagai" peran lain → tampilkan bilah "Kembali".
+            'impersonating' => $request->session()->has('impersonator_id'),
         ];
     }
 }

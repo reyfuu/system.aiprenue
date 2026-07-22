@@ -145,15 +145,44 @@ class User extends Authenticatable
         }
     }
 
-    /** Route landing pertama yang boleh diakses user. */
+    /** Route landing pertama yang boleh diakses user.
+     *
+     *  Wajib mengembalikan route yang benar-benar DIBOLEHKAN: kalau bukan,
+     *  EnsureMenuAccess langsung menolak (403) begitu user mendarat. Ini
+     *  menggigit peran yang aksesnya dipangkas dari Manajemen Akses — dan
+     *  paling kentara saat owner "masuk sebagai" peran itu. Jadi telusuri
+     *  menu berurut prioritas, ambil yang PERTAMA lolos canSee(); jangan
+     *  pernah jatuh ke default keras yang bisa 403. (prodpilot dilewati:
+     *  itu tautan eksternal, bukan halaman internal.) */
     public function homeRoute(): string
     {
-        return match (true) {
-            $this->canSee('dashboard') => 'dashboard',
-            $this->canSee('script') => 'script.index',
-            $this->canSee('kanban') => 'pipelines.kanban',
-            default => 'pipelines.kanban',
-        };
+        $kandidat = [
+            'dashboard' => 'dashboard',
+            'kanban'    => 'pipelines.kanban',
+            'pipeline'  => 'pipelines.index',
+            'order'     => 'orders.index',
+            'script'    => 'script.index',
+            'insight'   => 'insight.index',
+            'content'   => 'content.index',
+            'tracking'  => 'tracking.index',
+            'pembukuan' => 'pembukuan.index',
+            'upload'    => 'upload.index',
+            'mindmap'   => 'mindmaps.index',
+            'user'      => 'users.index',
+            'akses'     => 'akses.index',
+        ];
+
+        foreach ($kandidat as $menu => $route) {
+            if ($this->canSee($menu)) {
+                return $route;
+            }
+        }
+
+        // Tak ada satu menu pun yang boleh dilihat (peran salah konfigurasi).
+        // Balikkan 'dashboard' saja: berujung 403 yang bersih. JANGAN 'login' —
+        // showLogin memantulkan user terautentikasi kembali ke homeRoute(), jadi
+        // 'login' di sini malah bikin loop redirect tak berujung.
+        return 'dashboard';
     }
 
     /**

@@ -2,8 +2,15 @@
 // Halaman Manajemen Akses: matriks centang peran × menu.
 // Sumber kebenaran hak akses ada di tabel `role_menu_access` (lihat User::canSee),
 // halaman ini yang mengubahnya — jadi aturan bisa diganti tanpa deploy ulang.
-import { useForm } from '@inertiajs/vue3';               // useForm: kirim matriks + state processing
+import { computed } from 'vue';                          // computed: cek peran user login
+import { useForm, usePage, router } from '@inertiajs/vue3'; // useForm matriks, usePage auth, router aksi
 import Layout from '../Layout.vue';                      // layout bersama (sidebar + toast)
+
+// Hanya owner asli yang boleh "masuk sebagai" (gerbang sebenarnya di server).
+const page = usePage();
+const isOwner = computed(() => page.props.auth?.user?.role === 'owner');
+// Masuk sebagai contoh user peran tsb untuk mengintip fiturnya.
+const masukSebagai = (role) => router.post('/impersonate/' + role);
 
 const props = defineProps({
     roles:    Object,   // key peran -> label ("owner" -> "Owner")
@@ -121,11 +128,18 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
                                        :aria-label="`${labelRole} boleh lihat ${label}`"
                                        @change="toggle(role, key)" />
                             </td>
-                            <td class="px-3 py-3 text-right">
-                                <button v-if="!dikunci(role)" type="button" @click="toggleBaris(role)"
-                                        class="text-xs font-medium text-brand-600 hover:text-brand-800 whitespace-nowrap">
-                                    semua / kosong
-                                </button>
+                            <td class="px-3 py-3 text-right whitespace-nowrap">
+                                <div class="flex items-center justify-end gap-3">
+                                    <!-- Masuk sebagai contoh user peran ini (owner saja, bukan baris owner). -->
+                                    <button v-if="isOwner && role !== 'owner'" type="button" @click="masukSebagai(role)"
+                                            class="text-xs font-medium text-amber-600 hover:text-amber-800 whitespace-nowrap">
+                                        masuk sebagai
+                                    </button>
+                                    <button v-if="!dikunci(role)" type="button" @click="toggleBaris(role)"
+                                            class="text-xs font-medium text-brand-600 hover:text-brand-800 whitespace-nowrap">
+                                        semua / kosong
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
