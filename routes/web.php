@@ -11,8 +11,10 @@ use App\Http\Controllers\ContentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InsightController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\KpiController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
+use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
@@ -125,6 +127,24 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
+
+    // OKR perusahaan (view/subscriber/omset). TERKUNCI owner & manager di
+    // User::canSee() — isinya omset, sejajar pembukuan & tracking.
+    Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
+    Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
+    Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
+    Route::put('/okr/objectives/{objective}', [OkrController::class, 'updateObjective'])->name('okr.objectives.update');
+    Route::delete('/okr/objectives/{objective}', [OkrController::class, 'destroyObjective'])->name('okr.objectives.destroy');
+    Route::post('/okr/key-results', [OkrController::class, 'storeKeyResult'])->name('okr.key-results.store');
+    Route::put('/okr/key-results/{keyResult}', [OkrController::class, 'updateKeyResult'])->name('okr.key-results.update');
+    Route::delete('/okr/key-results/{keyResult}', [OkrController::class, 'destroyKeyResult'])->name('okr.key-results.destroy');
+    Route::patch('/okr/key-results/{keyResult}/actual', [OkrController::class, 'updateActual'])->name('okr.key-results.actual');
+
+    // KPI board Kanban — data operasional, audiens lebih luas (izin dinamis
+    // lewat menu 'kpi'). Penetapan target dibatasi canManage() di
+    // EnsureMenuAccess (kpi.targets.* terdaftar sbg route mutasi di sana).
+    Route::get('/kpi', [KpiController::class, 'index'])->name('kpi.index');
+    Route::post('/kpi/targets', [KpiController::class, 'storeTarget'])->name('kpi.targets.store');
 
     // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
     // Approve/tolak dibatasi canManage() di dalam AbsenceController.

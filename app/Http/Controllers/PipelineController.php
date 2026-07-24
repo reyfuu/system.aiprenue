@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\BoardColumn;
+use App\Models\BoardQuarterTarget;
 use App\Models\Category;
 use App\Models\Label;
 use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
+use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -92,10 +94,22 @@ class PipelineController extends Controller
             array_keys(Pipeline::JENIS)
         ));
 
+        // Filter KUARTAL (?q=YYYY-Qn). Dasarnya DEADLINE kartu — kuartal di sini
+        // menjawab "apa yang harus selesai periode ini", bukan "apa yang
+        // kebetulan dibuat periode ini". Konsekuensinya kartu TANPA deadline
+        // tak pernah muncul saat filter aktif; itu disengaja, dan panel target
+        // di UI menyebutkan jumlahnya supaya tak terlihat seperti kartu hilang.
+        // Tanpa ?q → tidak menyaring apa pun; panel target tetap memakai kuartal
+        // berjalan supaya halaman selalu punya angka acuan.
+        $quarterPilih = Quarter::parse($request->query('q'));      // null = tak menyaring
+        $quarterPanel = $quarterPilih ?? Quarter::current();
+        [$qStart, $qEnd] = Quarter::range($quarterPanel['year'], $quarterPanel['quarter']);
+
         $pipelines = Pipeline::where('category', $category)
-            ->with(['outputs', 'assignee', 'comments.user', 'attachments.user'])
+            ->with(['outputs', 'assignee', 'creator', 'comments.user', 'attachments.user'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
+            ->when($quarterPilih, fn ($q) => $q->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()]))
             // Date Marker = tanggal kartu dibuat, bukan deadline. Batas awal/akhir
             // berdiri sendiri supaya pengguna boleh mengisi salah satunya saja.
             ->when($request->filled('created_from'), fn ($q) => $q->whereDate('created_at', '>=', $request->created_from))
@@ -159,6 +173,12 @@ class PipelineController extends Controller
                 'dp3' => $p->dp3,
                 'dp_count' => collect([$p->dp1, $p->dp2, $p->dp3])->filter(fn ($v) => (float) $v > 0)->count(),
                 'assignee' => $p->assignee?->name,
+                // Pembuat kartu. null = kartu lama (dibuat sebelum kolomnya ada) —
+                // UI menampilkannya sbg '—', bukan menebak siapa pun.
+                'created_by_name' => $p->creator?->name,
+                // Ketepatan waktu: 'tepat' | 'terlambat' | 'lewat' | null.
+                'ketepatan' => $p->ketepatan(),
+                'completed_at' => $p->completed_at?->toDateString(),
                 'link' => $p->link,
                 'labels' => $p->labels ?? [],
                 'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
@@ -198,7 +218,63 @@ class PipelineController extends Controller
 
         $currentBoard = Category::where('key', $category)->first();
 
+        // ---- Panel kuartal: target KPI + capaian + ketepatan waktu ----
+        // ---- Capaian kuartal board: HANYA untuk peran pengelola ----
+        //
+        // Ini penilaian kinerja tim (berapa target tercapai, berapa kali telat),
+        // bukan alat kerja. Staff punya menu `kanban`, jadi tanpa gerbang ini ia
+        // ikut membaca rapor seluruh board.
+        //
+        // Gerbangnya di SERVER, bukan `v-if` di Vue: props Inertia terbaca utuh
+        // di source halaman (`data-page`), jadi menyembunyikannya di frontend
+        // tidak menutup apa pun. Query-nya pun tak dijalankan — percuma
+        // menghitung yang tak akan dikirim.
+        //
+        // Dipakai canManage() (owner/manager/it/admin), BUKAN canSee('kpi'):
+        // menu `kpi` kini terbuka untuk staff supaya ia bisa membuka rapornya
+        // sendiri, sehingga canSee('kpi') akan meloloskan staff di sini juga.
+        $quarterStats = null;
+        if (auth()->user()->canManage()) {
+            // Sengaja query TERPISAH yang tak ikut $jenis/$showArchived/filter tanggal,
+            // dgn alasan yang sama seperti $boardTotal di atas: ini capaian BOARD pada
+            // kuartal itu, bukan capaian dari apa yang kebetulan sedang tersaring di
+            // layar. Rumusnya dijaga identik dgn KpiController::statistik() — kalau
+            // menyimpang, angka board di halaman Kanban & halaman KPI akan berselisih
+            // untuk kuartal yang sama.
+            $kartuKuartal = Pipeline::where('category', $category)
+                ->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()])
+                ->get(['id', 'deadline', 'completed_at']);
+            $selesaiKuartal = $kartuKuartal->whereNotNull('completed_at')->count();
+            $target = (int) (BoardQuarterTarget::for($category, $quarterPanel['year'], $quarterPanel['quarter'])?->target_done ?? 0);
+
+            $quarterStats = [
+                'total' => $kartuKuartal->count(),
+                'done' => $selesaiKuartal,
+                'target' => $target,
+                // null saat target belum ditetapkan — bedakan dari 0%, lihat KpiController.
+                'percent' => $target > 0 ? round($selesaiKuartal / $target * 100, 1) : null,
+                // Kartu tanpa deadline: tak masuk kuartal mana pun. Jumlahnya dikirim
+                // supaya UI bisa menjelaskan selisih antara isi board & isi panel —
+                // tanpa ini, filter kuartal terlihat seperti menghilangkan kartu.
+                'no_deadline' => Pipeline::where('category', $category)
+                    ->whereNull('archived_at')->whereNull('deadline')->count(),
+                'ketepatan' => KpiController::hitungKetepatan($kartuKuartal),
+            ];
+        }
+
         return Inertia::render('Kanban', [
+            // Kuartal yang sedang dipakai panel + status apakah kartunya ikut disaring.
+            'quarter' => [
+                'year' => $quarterPanel['year'],
+                'quarter' => $quarterPanel['quarter'],
+                'key' => $quarterPanel['year'].'-Q'.$quarterPanel['quarter'],
+                'label' => Quarter::label($quarterPanel['year'], $quarterPanel['quarter']),
+                'filtering' => $quarterPilih !== null,     // false = panel saja, kartu tak disaring
+            ],
+            'quarterOptions' => Quarter::options(),
+            // null = peran ini tak berhak melihat capaian board. Vue merendernya
+            // dgn v-if; filter kuartal di atas tetap tampil untuk semua.
+            'quarterStats' => $quarterStats,
             'category' => $category,
             'counts' => $counts,
             'categories' => $categories,                                  // board select: sesuai type modul
@@ -222,6 +298,8 @@ class PipelineController extends Controller
             'canManage' => auth()->user()->canManageBoard($category),      // KARTU: staff boleh di board kanban, bukan Sales
             'canManageStructure' => auth()->user()->canManage(),           // KOLOM/BOARD/LAMPIRAN: owner/manager/it/admin saja
             'currentBoard' => $currentBoard,
+            // Pembuat board. null utk board bawaan seeder & board lama.
+            'boardCreator' => $currentBoard?->creator?->name,
             // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
             'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),
             // Referensi untuk form tambah/edit kartu
@@ -264,13 +342,34 @@ class PipelineController extends Controller
         $category = $cards->pluck('category')->unique();
         abort_if($category->count() > 1, 422, 'Kartu berasal dari board berbeda.');
 
-        $validKeys = BoardColumn::where('board_key', $category->first())->pluck('key')->all();
+        // Terurut posisi (forBoard), bukan pluck mentah: kolom TERAKHIR dipakai
+        // sbg penanda "pekerjaan rampung" di bawah, dan urutan hasil query tanpa
+        // ORDER BY tidak dijamin — "terakhir" bisa jadi kolom yang keliru.
+        $kolom = BoardColumn::forBoard($category->first());
+        $validKeys = $kolom->pluck('key')->all();
         abort_unless(in_array($data['progress'], $validKeys, true), 422, 'Kolom tak dikenal di board ini.');
 
+        // Kolom paling kanan = tahap selesai. Memakai POSISI, bukan mencocokkan
+        // nama/key 'done': kolom board dinamis & bisa dinamai apa saja
+        // ('Published', 'Tayang', 'Selesai'), jadi pencocokan kata akan gagal
+        // diam-diam di board yang tak memakai kata itu.
+        $kolomSelesai = $kolom->last()?->key;
+        $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
+
         // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
-        DB::transaction(function () use ($data) {
+        DB::transaction(function () use ($data, $cards, $keKolomSelesai) {
             foreach ($data['ids'] as $i => $id) {
-                Pipeline::where('id', $id)->update(['progress' => $data['progress'], 'position' => $i]);
+                $ubah = ['progress' => $data['progress'], 'position' => $i];
+
+                // Drag masuk/keluar kolom terakhir ikut menggerakkan stempel
+                // selesai — tanpa ini, kartu yang diselesaikan lewat drag (cara
+                // paling lazim) tak pernah punya completed_at & luput dari
+                // analitik ketepatan. Stempel lama dipertahankan, lihat
+                // stempelSelesai().
+                $kartu = $cards->firstWhere('id', $id);
+                $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
+
+                Pipeline::where('id', $id)->update($ubah);
             }
         });
 
@@ -281,15 +380,40 @@ class PipelineController extends Controller
     public function updateDone(Request $request, Pipeline $pipeline)
     {
         $data = $request->validate(['done' => 'required|boolean']);
-        $pipeline->update($data);
+        $pipeline->update($data + ['completed_at' => $this->stempelSelesai($pipeline, $data['done'])]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Nilai baru `completed_at` saat status selesai kartu berubah.
+     *
+     *  Dibatalkan → null: kartu yang dibuka lagi tak boleh menyisakan stempel
+     *  selesai, kalau tidak ia terhitung di analitik ketepatan padahal
+     *  pekerjaannya masih berjalan.
+     *
+     *  Diselesaikan → stempel LAMA dipertahankan bila sudah ada. Kartu yang
+     *  ditandai selesai dua kali (mis. lewat tombol lalu lewat drag ke kolom
+     *  terakhir) harus tetap memakai waktu penyelesaian pertama — kalau
+     *  ditimpa, kartu terlambat bisa "dirapikan" jadi tepat waktu hanya dgn
+     *  menekan tombolnya ulang.
+     */
+    private function stempelSelesai(Pipeline $pipeline, bool $selesai): ?string
+    {
+        if (! $selesai) {
+            return null;
+        }
+
+        return ($pipeline->completed_at ?? now())->toDateTimeString();
     }
 
     public function store(Request $request)
     {
         $data = $this->validated($request);
-        $pipeline = Pipeline::create($data);
+        // Pencatat kartu = user yang menekan simpan. Diambil dari sesi, tak
+        // pernah dari request: kalau dari request, siapa pun bisa mengaku
+        // sbg orang lain hanya dgn menyisipkan satu field.
+        $pipeline = Pipeline::create($data + ['created_by' => $request->user()?->id]);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
         // Lampiran opsional saat membuat kartu (jpeg/pdf/dll). Kartu belum punya id

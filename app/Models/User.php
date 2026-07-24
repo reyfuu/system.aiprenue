@@ -33,8 +33,8 @@ class User extends Authenticatable
     public const MENU_ACCESS = [
         'owner' => ['*'],
         'it' => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'prodpilot', 'akses'],
-        'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'okr', 'kpi', 'prodpilot', 'akses'],
+        'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight', 'kpi'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
         'staff' => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
@@ -50,6 +50,8 @@ class User extends Authenticatable
         'script' => 'Script',
         'content' => 'Content',
         'tracking' => 'Tracking',
+        'okr' => 'OKR',
+        'kpi' => 'KPI Board',
         'pembukuan' => 'Pembukuan',
         'user' => 'User',
         'insight' => 'Insight',
@@ -103,7 +105,10 @@ class User extends Authenticatable
 
         // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
         // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
-        if (in_array($menu, ['pembukuan', 'tracking'], true)) {
+        // 'okr' ikut di sini: isinya target & realisasi omset serta pertumbuhan
+        // audiens — angka tingkat perusahaan. KPI board sengaja TIDAK dikunci
+        // di sini; ia menu terpisah ('kpi') berisi data operasional papan saja.
+        if (in_array($menu, ['pembukuan', 'tracking', 'okr'], true)) {
             return in_array($this->role, ['owner', 'manager'], true);
         }
 
@@ -193,6 +198,8 @@ class User extends Authenticatable
             'insight'   => 'insight.index',
             'content'   => 'content.index',
             'tracking'  => 'tracking.index',
+            'kpi'       => 'kpi.index',
+            'okr'       => 'okr.index',
             'pembukuan' => 'pembukuan.index',
             'upload'    => 'upload.index',
             'mindmap'   => 'mindmaps.index',

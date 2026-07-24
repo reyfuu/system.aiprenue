@@ -14,6 +14,10 @@ const ITEMS = [
     { key: 'upload',    label: 'Upload',    href: '/upload',           icon: 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4' },
     { key: 'content',   label: 'Content',   href: '/content',          icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
     { key: 'tracking',  label: 'Tracking',  href: '/tracking',         icon: 'M4 19V9m5 10V5m5 14v-7m5 7V3' },
+    // KPI board = operasional papan (audiens luas). OKR = omset & pertumbuhan
+    // audiens, terkunci owner+manager di User::canSee(). Sengaja dua menu.
+    { key: 'kpi',       label: 'KPI Board', href: '/kpi',              icon: 'M9 19v-6m4 6V9m4 10v-4M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z' },
+    { key: 'okr',       label: 'OKR',       href: '/okr',              icon: 'M12 12m-9 0a9 9 0 1018 0 9 9 0 10-18 0M12 12m-5 0a5 5 0 1010 0 5 5 0 10-10 0M12 12m-1 0a1 1 0 102 0 1 1 0 10-2 0' },
     { key: 'absensi',   label: 'Absensi',   href: '/absensi',          icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
     { key: 'mindmap',   label: 'Mindmap',   href: '/mindmaps',         icon: 'M4 6a2 2 0 114 0 2 2 0 01-4 0zm12-2a2 2 0 100 4 2 2 0 000-4zm0 12a2 2 0 100 4 2 2 0 000-4zM8 6h4a2 2 0 012 2v0m0 8a2 2 0 00-2-2H8m0-8v8' },
     { key: 'script',    label: 'Script',    href: '/script',           icon: 'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z' },
@@ -71,13 +75,24 @@ const submitPw = () => {                                    // handler submit
 <template>
     <!-- Render hanya bila ada user login -->
     <aside v-if="user" class="hidden md:flex flex-col fixed left-0 top-0 h-screen w-56 bg-brand-800 text-brand-100 z-40">
-        <!-- Header brand -->
-        <div class="px-5 py-5 border-b border-white/10">
+        <!-- Header brand. shrink-0: tanpa ini header ikut memampat saat daftar
+             menu panjang, dan judulnya terpotong sebelum menunya sempat scroll. -->
+        <div class="shrink-0 px-5 py-5 border-b border-white/10">
             <p class="text-white font-bold leading-tight">SYSTEM AI PRENEUR</p>
             <p class="text-[11px] text-brand-200">Pipeline endorsement</p>
         </div>
-        <!-- Navigasi -->
-        <nav class="flex-1 p-3 space-y-1 text-sm">
+        <!-- Navigasi — SCROLL SENDIRI.
+             Sidebar tingginya dikunci h-screen, sedangkan daftar menu tumbuh
+             mengikuti peran (owner melihat semuanya). Di layar pendek (mis.
+             1366×768) menu terakhir & footer "Ganti Password" jatuh di luar
+             layar tanpa cara apa pun untuk menggapainya.
+
+             `min-h-0` WAJIB berpasangan dgn overflow-y-auto di sini: anak flex
+             punya min-height:auto secara bawaan, jadi ia menolak menyusut lebih
+             kecil dari isinya & overflow-nya tak pernah aktif. Ini penyebab
+             paling sering "sudah dikasih overflow-auto tapi tetap tak bisa
+             discroll". -->
+        <nav class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-1 text-sm [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.25)_transparent]">
             <!-- <a> utk tautan eksternal (tab baru), <Link> Inertia utk menu internal.
                  target/rel cuma diisi saat eksternal supaya menu internal tetap navigasi SPA. -->
             <component
@@ -95,8 +110,10 @@ const submitPw = () => {                                    // handler submit
                 {{ it.label }}
             </component>
         </nav>
-        <!-- Footer: nama user + logout, lalu tombol ganti password berlabel di paling bawah -->
-        <div class="p-3 border-t border-white/10 space-y-2">
+        <!-- Footer: nama user + logout, lalu tombol ganti password berlabel di paling
+             bawah. shrink-0 supaya ia tetap menempel di dasar & tak ikut terdorong
+             keluar layar oleh daftar menu yang panjang. -->
+        <div class="shrink-0 p-3 border-t border-white/10 space-y-2">
             <div class="flex items-center justify-between">
                 <span class="text-[11px] text-brand-200 truncate">{{ user.name }}</span>
                 <!-- tombol logout -->
