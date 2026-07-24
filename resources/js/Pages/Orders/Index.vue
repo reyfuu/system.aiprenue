@@ -214,20 +214,20 @@ const destroy = (o) => {
                 <input v-model="f.search" placeholder="Cari nama / telepon / email / kota..."
                        @keydown.enter="applyFilters({ search: f.search })"
                        @blur="applyFilters({ search: f.search })"
-                       class="border border-slate-200 rounded-xl px-3 py-2 w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
-                <select v-model="f.tipe_order" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                       class="border border-slate-200 rounded-xl px-2.5 py-2 w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
+                <select v-model="f.tipe_order" @change="applyFilters()" class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Tipe Order</option>
                     <option v-for="(v, k) in tipeOrder" :key="k" :value="k">{{ v }}</option>
                 </select>
-                <select v-model="f.account" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.account" @change="applyFilters()" class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Akun</option>
                     <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                 </select>
-                <select v-model="f.output" @change="applyFilters()" title="Filter output" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.output" @change="applyFilters()" title="Filter output" class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Output</option>
                     <option v-for="out in outputList" :key="out.id" :value="out.id">{{ out.name }}</option>
                 </select>
-                <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Pembayaran</option>
                     <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                 </select>
@@ -235,10 +235,10 @@ const destroy = (o) => {
                 <div class="flex items-center gap-1.5">
                     <span class="text-xs text-slate-500 font-medium">Deadline</span>
                     <input v-model="f.date_from" type="date" @change="applyFilters()" title="Deadline dari"
-                           class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                           class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                     <span class="text-slate-400">–</span>
                     <input v-model="f.date_to" type="date" @change="applyFilters()" title="Deadline sampai"
-                           class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                           class="border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                 </div>
                 <Link href="/orders" class="text-brand-600 hover:text-brand-800 px-2 font-medium">Reset</Link>
             </div>
@@ -248,48 +248,48 @@ const destroy = (o) => {
                 <table class="min-w-full text-sm">
                     <thead>
                         <tr class="bg-brand-700 text-white text-xs uppercase tracking-wide">
-                            <th class="px-4 py-3 text-left">Customer</th>
-                            <th class="px-4 py-3 text-left">Kontak</th>
-                            <th class="px-4 py-3 text-left">Tipe Order</th>
-                            <th class="px-4 py-3 text-left">Akun</th>
-                            <th class="px-4 py-3 text-left">Output</th>
-                            <th class="px-4 py-3 text-left">Deadline</th>
-                            <th class="px-4 py-3 text-left">Pembayaran</th>
-                            <th class="px-4 py-3 text-right">Total</th>
-                            <th class="px-4 py-3 text-center">Berkas</th>
-                            <th class="px-4 py-3 text-center">Aksi</th>
+                            <th class="px-2.5 py-3 text-left">Customer</th>
+                            <th class="px-2.5 py-3 text-left">Kontak</th>
+                            <th class="px-2.5 py-3 text-left">Tipe Order</th>
+                            <th class="px-2.5 py-3 text-left">Akun</th>
+                            <th class="px-2.5 py-3 text-left">Output</th>
+                            <th class="px-2.5 py-3 text-left">Deadline</th>
+                            <th class="px-2.5 py-3 text-left">Pembayaran</th>
+                            <th class="px-2.5 py-3 text-right">Total</th>
+                            <th class="px-2.5 py-3 text-center">Berkas</th>
+                            <th class="px-2.5 py-3 text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-brand-50">
                         <!-- Kosong -->
-                        <tr v-if="orders.data.length === 0"><td colspan="10" class="px-4 py-10 text-center text-slate-400">Belum ada order.</td></tr>
+                        <tr v-if="orders.data.length === 0"><td colspan="10" class="px-2.5 py-10 text-center text-slate-400">Belum ada order.</td></tr>
                         <!-- Baris data (hanya halaman aktif) -->
                         <tr v-else v-for="o in orders.data" :key="o.id" class="hover:bg-brand-50/60 transition">
                             <!-- Nama + kota -->
-                            <td class="px-4 py-2.5">
+                            <td class="px-2.5 py-2.5">
                                 <p class="font-semibold text-slate-700">{{ o.nama_customer }}</p>
                                 <p class="text-xs text-slate-400">{{ o.kota || '—' }}</p>
                             </td>
                             <!-- Telepon + email -->
-                            <td class="px-4 py-2.5 text-slate-500">
+                            <td class="px-2.5 py-2.5 text-slate-500">
                                 <p>{{ o.telepon || '—' }}</p>
-                                <p v-if="o.email" class="text-xs text-slate-400 truncate max-w-[180px]" :title="o.email">{{ o.email }}</p>
+                                <p v-if="o.email" class="text-xs text-slate-400 truncate max-w-[120px]" :title="o.email">{{ o.email }}</p>
                             </td>
                             <!-- Badge tipe order -->
-                            <td class="px-4 py-2.5">
-                                <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (TIPE_COLORS[o.tipe_order] || 'bg-slate-200 text-slate-700')">
+                            <td class="px-2.5 py-2.5">
+                                <span :class="'text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap inline-block ' + (TIPE_COLORS[o.tipe_order] || 'bg-slate-200 text-slate-700')">
                                     {{ tipeOrder[o.tipe_order] }}
                                 </span>
                             </td>
                             <!-- Akun tujuan order -->
-                            <td class="px-4 py-2.5">
-                                <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (o.account === 'fk' ? 'bg-brand-600 text-white' : 'bg-slate-500 text-white')">
+                            <td class="px-2.5 py-2.5">
+                                <span :class="'text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap inline-block ' + (o.account === 'fk' ? 'bg-brand-600 text-white' : 'bg-slate-500 text-white')">
                                     {{ accounts[o.account] || o.account }}
                                 </span>
                             </td>
                             <!-- Output: badge bisa diklik = filter cepat, jadi tak perlu
                                  bolak-balik ke dropdown di atas. -->
-                            <td class="px-4 py-2.5">
+                            <td class="px-2.5 py-2.5">
                                 <div v-if="o.outputs?.length" class="flex flex-wrap gap-1 max-w-[160px]">
                                     <button v-for="out in o.outputs" :key="out.id" type="button"
                                             @click="applyFilters({ output: String(out.id) })"
@@ -300,24 +300,24 @@ const destroy = (o) => {
                                 </div>
                                 <span v-else class="text-xs text-slate-300">—</span>
                             </td>
-                            <td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{{ fmtDate(o.tanggal_deadline) }}</td>
+                            <td class="px-2.5 py-2.5 text-slate-500 whitespace-nowrap">{{ fmtDate(o.tanggal_deadline) }}</td>
                             <!-- Tipe pembayaran + tanggal bayar -->
-                            <td class="px-4 py-2.5">
-                                <span :class="'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + (o.tipe_pembayaran === 'full' ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900')">
+                            <td class="px-2.5 py-2.5">
+                                <span :class="'text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap inline-block ' + (o.tipe_pembayaran === 'full' ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900')">
                                     {{ tipePembayaran[o.tipe_pembayaran] }}
                                 </span>
                                 <p class="text-xs text-slate-400 mt-0.5">{{ fmtDate(o.tanggal_bayar) }}</p>
                             </td>
                             <!-- Total = IDR + USD×kurs, selalu tampil IDR. Rincian di bawahnya
                                  supaya angka asli tiap mata uang tetap kebaca. -->
-                            <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                            <td class="px-2.5 py-2.5 text-right whitespace-nowrap">
                                 <p class="font-semibold text-slate-700">{{ rp(totalOrder(o)) }}</p>
                                 <p v-if="Number(o.total_usd) > 0" class="text-[10px] text-slate-400">
                                     {{ rp(o.total_idr) }} + {{ usd(o.total_usd) }}
                                 </p>
                             </td>
                             <!-- Berkas: bukti bayar customer + invoice perusahaan, buka di tab baru -->
-                            <td class="px-4 py-2.5 text-center whitespace-nowrap">
+                            <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
                                 <div class="flex items-center justify-center gap-2 text-xs font-semibold">
                                     <a v-if="o.bukti_bayar" :href="'/storage/' + o.bukti_bayar" target="_blank" rel="noreferrer"
                                        class="text-brand-600 hover:text-brand-800 underline">Bukti</a>
@@ -327,10 +327,10 @@ const destroy = (o) => {
                                 </div>
                             </td>
                             <!-- Aksi -->
-                            <td class="px-4 py-2.5 text-center whitespace-nowrap">
-                                <div v-if="auth?.user?.canManage" class="flex items-center justify-center gap-1.5">
-                                    <button @click="openEdit(o)" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">Edit</button>
-                                    <button @click="destroy(o)" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">Hapus</button>
+                            <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                <div v-if="auth?.user?.canManage" class="flex items-center justify-center gap-1">
+                                    <button @click="openEdit(o)" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition">Edit</button>
+                                    <button @click="destroy(o)" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition">Hapus</button>
                                 </div>
                                 <span v-else class="text-slate-300">—</span>
                             </td>
@@ -368,7 +368,7 @@ const destroy = (o) => {
                         <!-- Tipe order: coaching/endorse/speaker/agency -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Tipe Order <span class="text-red-500">*</span></label>
-                            <select v-model="form.tipe_order" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                            <select v-model="form.tipe_order" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <option v-for="(v, k) in tipeOrder" :key="k" :value="k">{{ v }}</option>
                             </select>
                             <span v-if="form.errors.tipe_order" class="text-xs text-red-600">{{ form.errors.tipe_order }}</span>
@@ -376,7 +376,7 @@ const destroy = (o) => {
                         <!-- Akun: order ini milik FK atau AI Preneur -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Masuk ke Akun <span class="text-red-500">*</span></label>
-                            <select v-model="form.account" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                            <select v-model="form.account" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                             </select>
                             <span v-if="form.errors.account" class="text-xs text-red-600">{{ form.errors.account }}</span>
@@ -384,7 +384,7 @@ const destroy = (o) => {
                         <!-- Tanggal deadline -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Tanggal Deadline</label>
-                            <input v-model="form.tanggal_deadline" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <input v-model="form.tanggal_deadline" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.tanggal_deadline" class="text-xs text-red-600">{{ form.errors.tanggal_deadline }}</span>
                         </div>
                     </div>
@@ -397,19 +397,19 @@ const destroy = (o) => {
                         <!-- Nama (wajib) -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Nama Customer / Perusahaan <span class="text-red-500">*</span></label>
-                            <input v-model="form.nama_customer" placeholder="Nama orang / perusahaan" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <input v-model="form.nama_customer" placeholder="Nama orang / perusahaan" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.nama_customer" class="text-xs text-red-600">{{ form.errors.nama_customer }}</span>
                         </div>
                         <!-- Telepon -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Telepon</label>
-                            <input v-model="form.telepon" placeholder="Telepon" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <input v-model="form.telepon" placeholder="Telepon" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.telepon" class="text-xs text-red-600">{{ form.errors.telepon }}</span>
                         </div>
                         <!-- Email -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Email</label>
-                            <input v-model="form.email" type="email" placeholder="nama@email.com" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <input v-model="form.email" type="email" placeholder="nama@email.com" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.email" class="text-xs text-red-600">{{ form.errors.email }}</span>
                         </div>
                         <!-- Kota/kabupaten: <datalist> = ketik untuk cari, tanpa library.
@@ -417,7 +417,7 @@ const destroy = (o) => {
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Kota / Kabupaten <span class="text-red-500">*</span></label>
                             <input v-model="form.kota" list="kota-list" placeholder="Ketik untuk cari / isi manual..."
-                                   class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                                   class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <datalist id="kota-list">
                                 <option v-for="k in kotaList" :key="k" :value="k" />
                             </datalist>
@@ -426,7 +426,7 @@ const destroy = (o) => {
                         <!-- Alamat -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Alamat</label>
-                            <textarea v-model="form.alamat" rows="2" placeholder="Alamat" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
+                            <textarea v-model="form.alamat" rows="2" placeholder="Alamat" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
                             <span v-if="form.errors.alamat" class="text-xs text-red-600">{{ form.errors.alamat }}</span>
                         </div>
                     </div>
@@ -439,7 +439,7 @@ const destroy = (o) => {
                         <!-- Tipe pembayaran: full / dp -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Tipe Pembayaran <span class="text-red-500">*</span></label>
-                            <select v-model="form.tipe_pembayaran" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                            <select v-model="form.tipe_pembayaran" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                                 <!-- `disabled`: cuma penanda "belum dipilih" saat form kosong,
                                      bukan pilihan yang sah. Opsi lama "Belum ditentukan" bisa
                                      dipilih & mengirim string kosong → null → kolom NOT NULL → 500. -->
@@ -451,14 +451,14 @@ const destroy = (o) => {
                         <!-- Tanggal bayar -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Tanggal Bayar</label>
-                            <input v-model="form.tanggal_bayar" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                            <input v-model="form.tanggal_bayar" type="date" class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <span v-if="form.errors.tanggal_bayar" class="text-xs text-red-600">{{ form.errors.tanggal_bayar }}</span>
                         </div>
                         <!-- Nominal IDR -->
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Nilai Order (IDR)</label>
                             <input v-model="form.total_idr" type="number" min="0" step="1000" placeholder="0"
-                                   class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                                   class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <p class="text-[10px] text-slate-400 mt-0.5">{{ rp(form.total_idr) }}</p>
                             <span v-if="form.errors.total_idr" class="text-xs text-red-600">{{ form.errors.total_idr }}</span>
                         </div>
@@ -466,12 +466,12 @@ const destroy = (o) => {
                         <div>
                             <label class="block text-xs font-semibold text-slate-600">Nilai Order (USD)</label>
                             <input v-model="form.total_usd" type="number" min="0" step="0.01" placeholder="0"
-                                   class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                                   class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                             <p class="text-[10px] text-slate-400 mt-0.5">{{ usd(form.total_usd) }}</p>
                             <span v-if="form.errors.total_usd" class="text-xs text-red-600">{{ form.errors.total_usd }}</span>
                         </div>
                         <!-- Total gabungan: turunan, tak disimpan. Isi dua-duanya kalau order campuran. -->
-                        <div class="sm:col-span-2 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2 flex items-center justify-between">
+                        <div class="sm:col-span-2 bg-brand-50 border border-brand-100 rounded-xl px-2.5 py-2 flex items-center justify-between">
                             <span class="text-xs font-semibold text-slate-600">Total Pembayaran <span class="font-normal text-slate-400">(IDR + USD @ {{ rp(rate) }})</span></span>
                             <span class="text-base font-bold text-brand-700">{{ rp(Number(form.total_idr || 0) + Number(form.total_usd || 0) * rate) }}</span>
                         </div>
@@ -513,7 +513,7 @@ const destroy = (o) => {
 
                 <!-- Aksi modal -->
                 <div class="flex justify-end gap-2 pt-1">
-                    <button type="button" @click="open = false" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
+                    <button type="button" @click="open = false" class="px-2.5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
                     <button type="submit" :disabled="form.processing"
                             class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold disabled:opacity-50">
                         {{ form.processing ? 'Menyimpan...' : 'Simpan' }}
