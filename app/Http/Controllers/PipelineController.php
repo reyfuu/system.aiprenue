@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\BoardColumn;
 use App\Models\BoardQuarterTarget;
 use App\Models\Category;
-use App\Models\KeyResult;
 use App\Models\Label;
 use App\Models\Output;
 use App\Models\Pipeline;
@@ -182,9 +181,6 @@ class PipelineController extends Controller
                 'completed_at' => $p->completed_at?->toDateString(),
                 'link' => $p->link,
                 'labels' => $p->labels ?? [],
-                // Tautan ke Key Result OKR (todolist saja). null = tak tertaut.
-                'key_result_id' => $p->key_result_id,
-                'key_result_title' => $p->keyResult?->title,
                 'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline' => $p->deadline?->toDateString(),
@@ -279,12 +275,6 @@ class PipelineController extends Controller
             // null = peran ini tak berhak melihat capaian board. Vue merendernya
             // dgn v-if; filter kuartal di atas tetap tampil untuk semua.
             'quarterStats' => $quarterStats,
-            // Key Result bersumber 'kartu' yang bisa dituju kartu di board ini.
-            // Hanya untuk board todolist (keputusan "todolist saja"); board lain
-            // dapat array kosong & pemilih KR-nya tak muncul. Dikirim untuk
-            // SEMUA peran yang boleh melihat board — menautkan kartu ke goal
-            // adalah bagian mengerjakannya, bukan data kinerja rahasia.
-            'keyResults' => $category === 'todolist' ? KeyResult::keyResultKartuAktif() : [],
             'category' => $category,
             'counts' => $counts,
             'categories' => $categories,                                  // board select: sesuai type modul
@@ -520,38 +510,8 @@ class PipelineController extends Controller
             'notes' => 'nullable|string',
             'outputs' => 'array',
             'outputs.*' => 'exists:outputs,id',
-            // Tautan ke Key Result (langkah menuju goal OKR). Divalidasi lanjut
-            // di bawah: hanya board todolist & hanya KR bersumber 'kartu'.
-            'key_result_id' => 'nullable|exists:key_results,id',
         ]);
 
-        $data['key_result_id'] = $this->tautanKrValid($data['category'], $data['key_result_id'] ?? null);
-
         return $data;
-    }
-
-    /**
-     * Saring tautan KR sebuah kartu ke nilai yang sah, atau null.
-     *
-     *  Dua pagar, ditegakkan di SERVER bukan cuma disembunyikan di Vue:
-     *   1. Hanya kartu board 'todolist' yang boleh menautkan — board lain
-     *      (Sales, produksi) tak ikut, sesuai keputusan "todolist saja".
-     *   2. KR yang dituju WAJIB bersumber 'kartu'. Menautkan ke KR 'auto'
-     *      (view/omset) atau 'manual' tak punya arti: realisasinya tak
-     *      dihitung dari kartu, jadi tautannya cuma menyesatkan.
-     *
-     *  Melanggar salah satunya → tautan dibuang jadi null, bukan 4xx: kartu
-     *  tetap tersimpan, ia hanya tak jadi tertaut. Menolak seluruh simpanan
-     *  kartu gara-gara satu field turunan terlalu keras.
-     */
-    private function tautanKrValid(string $category, ?int $keyResultId): ?int
-    {
-        if ($keyResultId === null || $category !== 'todolist') {
-            return null;
-        }
-
-        return KeyResult::where('id', $keyResultId)->where('source', 'kartu')->exists()
-            ? $keyResultId
-            : null;
     }
 }

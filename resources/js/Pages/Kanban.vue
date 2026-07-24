@@ -32,9 +32,6 @@ const props = defineProps({
     // sama sekali, bukan sekadar disembunyikan di sini).
     quarterStats: { type: Object, default: null },
     boardCreator: { type: String, default: null },     // pembuat board (null = board lama)
-    // Key Result bersumber 'kartu' kuartal berjalan — pilihan tautan kartu ke
-    // goal OKR. Kosong di board selain todolist, jadi pemilihnya tak muncul.
-    keyResults: { type: Array, default: () => [] },
 });
 
 // Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
@@ -163,7 +160,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', key_result_id: '', payment_status: 'belum', amount_idr: '', amount_usd: '', dp1: '', dp2: '', dp3: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', dp1: '', dp2: '', dp3: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -177,9 +174,6 @@ const fillForm = (card) => {
     editForm.account = card.account_key ?? 'fk';
     editForm.progressKey = card.progress ?? props.columns[0]?.key ?? 'script';
     editForm.assigned_to = card.assigned_to ?? '';
-    // Tautan ke Key Result OKR — '' saat tak tertaut. Dikirim apa adanya;
-    // server membuang tautan tak sah (bukan todolist / bukan KR 'kartu').
-    editForm.key_result_id = card.key_result_id ?? '';
     editForm.payment_status = card.payment_status ?? 'belum';
     editForm.amount_idr = card.amount_idr ?? '';
     editForm.amount_usd = card.amount_usd ?? '';
@@ -330,11 +324,6 @@ const switchBoard = (e) => router.get(props.baseUrl, {
 
 // Sales cuma punya SATU board (`sales`): tak ada pilih/buat/ubah/hapus board.
 const isPipeline = computed(() => props.boardType === 'pipeline');
-
-// Pemilih tautan KR hanya untuk board todolist DAN hanya bila ada KR bersumber
-// 'kartu' di kuartal berjalan. Server sudah membatasi keduanya (props.keyResults
-// kosong di board lain) — cek ganda di sini cuma agar seksinya tak muncul kosong.
-const bisaTautKr = computed(() => props.category === 'todolist' && props.keyResults.length > 0);
 
 // ---- Filter Date Marker (created_at) — berlaku di Sales dan semua Kanban ----
 const createdFrom = ref(props.dateFilters.created_from || '');
@@ -755,11 +744,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                     <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Tanggal kartu dibuat">
                                         Dibuat {{ fmtCreated(card.created_date) }}
                                     </span>
-                                    <!-- Tautan goal OKR: kartu ini langkah menuju sebuah Key Result. -->
-                                    <span v-if="card.key_result_title" class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium" :title="'Menuju goal: ' + card.key_result_title">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                        <span class="truncate max-w-[9rem]">{{ card.key_result_title }}</span>
-                                    </span>
                                     <!-- Ketepatan waktu kartu. Tak dirender sama sekali bila
                                          belum bisa dinilai (tanpa deadline, atau masih berjalan
                                          & deadline belum tiba) — badge "netral" hanya menambah
@@ -967,17 +951,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                             <input type="checkbox" :checked="editForm.outputs.includes(out.id)" @change="toggleOutput(out.id)" class="accent-brand-600" /> {{ out.name }}
                         </label>
                     </div>
-                </div>
-                <!-- Tautan ke Key Result OKR — hanya board todolist. Kartu ini
-                     jadi salah satu langkah menuju goal kuartal; menyelesaikannya
-                     menggerakkan angka KR bersumber 'kartu'. -->
-                <div v-if="bisaTautKr" class="col-span-2">
-                    <p class="font-medium text-slate-600 mb-1.5">Untuk mencapai goal <span class="font-normal text-slate-400">(OKR — opsional)</span></p>
-                    <select v-model="editForm.key_result_id" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-400">
-                        <option value="">— tidak ditautkan —</option>
-                        <option v-for="kr in keyResults" :key="kr.id" :value="kr.id">{{ kr.objective_title }} → {{ kr.title }}</option>
-                    </select>
-                    <p v-if="editForm.errors.key_result_id" class="text-xs text-red-600 mt-1">{{ editForm.errors.key_result_id }}</p>
                 </div>
                 <!-- Label -->
                 <div class="col-span-2">

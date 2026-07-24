@@ -270,50 +270,90 @@ class OkrTest extends TestCase
         $this->assertSame('angka', $kr->unit);
     }
 
-    /** Kartu todolist boleh ditautkan ke KR bersumber 'kartu'. */
-    public function test_kartu_todolist_bisa_ditautkan_ke_key_result(): void
+    /** Langkah dibuat DARI halaman OKR: kartu todolist baru langsung tertaut.
+     *  Kanban tak lagi tahu-menahu penautan (murni delegasi). */
+    public function test_langkah_baru_membuat_kartu_todolist_tertaut(): void
     {
         $o = $this->objective();
         $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
 
-        $this->actingAs($this->user())->post('/pipelines', [
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'DM kreator',
-            'progress' => 'todo', 'payment_status' => 'belum', 'key_result_id' => $kr->id,
-        ])->assertSessionHasNoErrors();
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/kartu", ['endorse' => 'DM kreator'])
+            ->assertSessionHasNoErrors();
 
-        $this->assertSame($kr->id, Pipeline::firstWhere('endorse', 'DM kreator')?->key_result_id);
+        $kartu = Pipeline::firstWhere('endorse', 'DM kreator');
+        $this->assertNotNull($kartu);
+        $this->assertSame('todolist', $kartu->category);
+        $this->assertSame($kr->id, $kartu->key_result_id);
     }
 
-    /** Gerbang server: tautan dibuang (bukan 4xx) bila kartu BUKAN di board
-     *  todolist. Menautkan kartu Sales/produksi ke goal perusahaan tak berarti. */
-    public function test_kartu_non_todolist_tak_bisa_ditautkan(): void
+    /** Kartu todolist yang sudah ada bisa ditautkan lewat endpoint attach. */
+    public function test_kartu_todolist_yang_ada_bisa_ditautkan(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'todolist', 'endorse' => 'Kartu lama']);
+
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/attach", ['pipeline_id' => $kartu->id])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($kr->id, $kartu->fresh()->key_result_id);
+    }
+
+    /** Melepas tautan: kartu tetap hidup di papannya, hanya key_result_id null. */
+    public function test_kartu_bisa_dilepas_dari_key_result(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'todolist', 'endorse' => 'Langkah', 'key_result_id' => $kr->id]);
+
+        $this->actingAs($this->user())
+            ->delete("/okr/key-results/{$kr->id}/kartu/{$kartu->id}")
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull($kartu->fresh()->key_result_id);
+    }
+
+    /** Gerbang server: hanya kartu board todolist yang boleh ditautkan. */
+    public function test_kartu_non_todolist_ditolak_saat_attach(): void
     {
         $this->board('proyek');
         $o = $this->objective();
         $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'proyek', 'endorse' => 'Kartu proyek']);
 
-        $this->actingAs($this->user())->post('/pipelines', [
-            'category' => 'proyek', 'account' => 'fk', 'endorse' => 'Kartu proyek',
-            'progress' => 'todo', 'payment_status' => 'belum', 'key_result_id' => $kr->id,
-        ])->assertSessionHasNoErrors();
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/attach", ['pipeline_id' => $kartu->id])
+            ->assertSessionHasErrors('pipeline_id');
 
-        // Kartu tetap tersimpan, tapi tanpa tautan.
-        $this->assertNull(Pipeline::firstWhere('endorse', 'Kartu proyek')?->key_result_id);
+        $this->assertNull($kartu->fresh()->key_result_id);
     }
 
-    /** Gerbang server: hanya KR bersumber 'kartu' yang boleh dituju. Menautkan
-     *  ke KR 'auto'/'manual' tak punya arti — realisasinya tak dihitung dari kartu. */
-    public function test_kartu_todolist_tak_bisa_menautkan_ke_kr_auto(): void
+    /** Gerbang server: KR auto/manual tak bisa menerima langkah kartu —
+     *  realisasinya tak dihitung dari kartu. */
+    public function test_kr_auto_tak_bisa_menerima_langkah_kartu(): void
     {
         $o = $this->objective();
         $krAuto = KeyResult::create(['objective_id' => $o->id, 'title' => 'View', 'source' => 'auto', 'metric' => 'view', 'target' => 100, 'unit' => 'angka']);
 
-        $this->actingAs($this->user())->post('/pipelines', [
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Salah taut',
-            'progress' => 'todo', 'payment_status' => 'belum', 'key_result_id' => $krAuto->id,
-        ])->assertSessionHasNoErrors();
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$krAuto->id}/kartu", ['endorse' => 'Salah'])
+            ->assertStatus(422);
 
-        $this->assertNull(Pipeline::firstWhere('endorse', 'Salah taut')?->key_result_id);
+        $this->assertNull(Pipeline::firstWhere('endorse', 'Salah'));
+    }
+
+    /** Penautan = mutasi OKR. Staff view-only harus tertolak walau request
+     *  langsung — gerbangnya di server (EnsureMenuAccess), bukan cuma UI. */
+    public function test_staff_tak_bisa_menautkan_kartu(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+
+        $this->actingAs($this->user('staff'))
+            ->post("/okr/key-results/{$kr->id}/kartu", ['endorse' => 'X'])
+            ->assertForbidden();
     }
 
     // ---------------------------------------------------- salin kuartal

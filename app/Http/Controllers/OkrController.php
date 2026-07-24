@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BoardColumn;
 use App\Models\KeyResult;
 use App\Models\Objective;
 use App\Models\Pipeline;
@@ -105,6 +106,13 @@ class OkrController extends Controller
             'metrics' => OkrMetrics::METRICS,
             'sources' => KeyResult::SOURCES,
             'units' => KeyResult::UNITS,
+            // Kartu todolist yang BELUM tertaut ke KR mana pun — pilihan untuk
+            // "tautkan kartu yang sudah ada". Penautan dikelola dari halaman ini,
+            // bukan dari Kanban (Kanban murni delegasi). Diambil sekali di sini.
+            'kartuTersedia' => $request->user()->canManage() ? Pipeline::where('category', 'todolist')
+                ->whereNull('key_result_id')->whereNull('archived_at')
+                ->orderByDesc('id')->limit(100)->get(['id', 'endorse'])
+                ->map(fn ($p) => ['id' => $p->id, 'judul' => $p->endorse])->values() : [],
             'canManage' => $request->user()->canManage(),
             // Tawaran salin hanya muncul saat kuartal ini MASIH KOSONG dan
             // kuartal sebelumnya ada isinya. Menawarkannya pada kuartal yang
@@ -334,6 +342,74 @@ class OkrController extends Controller
         $keyResult->delete();
 
         return back()->with('status', 'Key Result dihapus.');
+    }
+
+    // ------------------------------------------------- kartu (langkah) KR
+    //
+    //  Penautan kartu todolist ke KR dikelola DARI SINI, bukan dari Kanban.
+    //  Kanban murni untuk delegasi; goal & langkah pencapaiannya tinggal di
+    //  satu tempat (halaman OKR). Semua endpoint di bawah hanya untuk KR
+    //  bersumber 'kartu' — menautkan langkah ke KR auto/manual tak berarti.
+
+    /** Buat kartu todolist baru langsung sbg langkah menuju sebuah KR. */
+    public function storeKartu(Request $request, KeyResult $keyResult)
+    {
+        $this->pastikanKrKartu($keyResult);
+        $data = $request->validate([
+            'endorse' => 'required|string|max:255',
+            'deadline' => 'nullable|date',
+        ]);
+
+        // Kolom pertama board todolist = tahap awal. Diambil dinamis (bukan
+        // hardcode 'todo') supaya ikut bila kolomnya pernah diubah.
+        $kolomAwal = BoardColumn::where('board_key', 'todolist')->orderBy('position')->value('key') ?? 'todo';
+
+        Pipeline::create([
+            'category' => 'todolist',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+            'progress' => $kolomAwal,
+            'endorse' => $data['endorse'],
+            'deadline' => $data['deadline'] ?? null,
+            'key_result_id' => $keyResult->id,
+            'created_by' => $request->user()->id,
+        ]);
+
+        return back()->with('status', 'Langkah ditambahkan ke Kanban todolist.');
+    }
+
+    /** Tautkan kartu todolist yang SUDAH ADA ke sebuah KR. */
+    public function attachKartu(Request $request, KeyResult $keyResult)
+    {
+        $this->pastikanKrKartu($keyResult);
+        $data = $request->validate([
+            // Hanya kartu board todolist yang boleh dituju — sama dgn keputusan
+            // "todolist saja". exists+where menegakkannya di DB, bukan cuma di UI.
+            'pipeline_id' => ['required', Rule::exists('pipelines', 'id')->where('category', 'todolist')],
+        ]);
+
+        Pipeline::where('id', $data['pipeline_id'])->update(['key_result_id' => $keyResult->id]);
+
+        return back()->with('status', 'Kartu ditautkan ke goal.');
+    }
+
+    /** Lepas tautan sebuah kartu dari KR (kartu tetap hidup di papannya). */
+    public function detachKartu(KeyResult $keyResult, Pipeline $pipeline)
+    {
+        // Hanya melepas bila kartu memang tertaut ke KR ini — cegah melepas
+        // kartu milik KR lain lewat id yang ditebak.
+        if ($pipeline->key_result_id === $keyResult->id) {
+            $pipeline->update(['key_result_id' => null]);
+        }
+
+        return back()->with('status', 'Tautan dilepas.');
+    }
+
+    /** KR harus bersumber 'kartu'. Menautkan langkah ke KR auto/manual tak
+     *  punya arti — realisasinya tak dihitung dari kartu. */
+    private function pastikanKrKartu(KeyResult $keyResult): void
+    {
+        abort_unless($keyResult->source === 'kartu', 422, 'Key Result ini bukan bersumber kartu todolist.');
     }
 
     /**

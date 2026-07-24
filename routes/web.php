@@ -139,6 +139,10 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/okr/key-results/{keyResult}', [OkrController::class, 'updateKeyResult'])->name('okr.key-results.update');
     Route::delete('/okr/key-results/{keyResult}', [OkrController::class, 'destroyKeyResult'])->name('okr.key-results.destroy');
     Route::patch('/okr/key-results/{keyResult}/actual', [OkrController::class, 'updateActual'])->name('okr.key-results.actual');
+    // Kartu (langkah) KR bersumber 'kartu' — dikelola dari halaman OKR, bukan Kanban.
+    Route::post('/okr/key-results/{keyResult}/kartu', [OkrController::class, 'storeKartu'])->name('okr.key-results.kartu.store');
+    Route::post('/okr/key-results/{keyResult}/attach', [OkrController::class, 'attachKartu'])->name('okr.key-results.kartu.attach');
+    Route::delete('/okr/key-results/{keyResult}/kartu/{pipeline}', [OkrController::class, 'detachKartu'])->name('okr.key-results.kartu.detach');
 
     // KPI board Kanban — data operasional, audiens lebih luas (izin dinamis
     // lewat menu 'kpi'). Penetapan target dibatasi canManage() di

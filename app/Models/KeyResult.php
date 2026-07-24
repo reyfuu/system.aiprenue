@@ -86,32 +86,6 @@ class KeyResult extends Model
         return $this->hasMany(Pipeline::class, 'key_result_id');
     }
 
-    /**
-     * KR bersumber 'kartu' pada kuartal BERJALAN, untuk pemilih tautan di
-     * Kanban todolist. Judul Objective ikut, jadi daftar drop-down bisa
-     * mengelompokkan "goal → langkah terukurnya".
-     *
-     *  Sengaja kuartal berjalan saja: kartu todolist adalah pekerjaan yang
-     *  sedang dikerjakan, dan menautkannya ke goal kuartal lampau tak masuk
-     *  akal. Bila nanti perlu lintas kuartal, tinggal longgarkan di sini.
-     */
-    public static function keyResultKartuAktif(): \Illuminate\Support\Collection
-    {
-        $q = \App\Support\Quarter::current();
-
-        return static::where('key_results.source', 'kartu')
-            ->join('objectives', 'objectives.id', '=', 'key_results.objective_id')
-            ->where('objectives.year', $q['year'])
-            ->where('objectives.quarter', $q['quarter'])
-            ->orderBy('objectives.position')->orderBy('key_results.position')
-            ->get(['key_results.id', 'key_results.title', 'objectives.title as objective_title'])
-            ->map(fn ($kr) => [
-                'id' => $kr->id,
-                'title' => $kr->title,
-                'objective_title' => $kr->objective_title,
-            ]);
-    }
-
     /** Hitung kartu tautan yang sudah selesai. Fallback anti-N+1, lihat actual(). */
     public function kartuSelesaiCount(): int
     {
