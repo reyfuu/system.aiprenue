@@ -96,6 +96,12 @@ class EnsureMenuAccess
             || str_starts_with($name, 'inventories.')
             || in_array($name, ['content.store', 'content.update', 'content.destroy'], true)
             || $name === 'akses.update'          // ubah hak akses = mutasi
+            // SELURUH route okr.* kecuali halamannya sendiri adalah mutasi.
+            // Sengaja daftar-hitam, bukan daftar-putih per nama: CRUD Objective
+            // & Key Result bertambah dari waktu ke waktu, dan satu nama yang
+            // lupa didaftarkan berarti route itu lolos tanpa cek canManage().
+            || ($name !== 'okr.index' && str_starts_with($name, 'okr.'))
+            || str_starts_with($name, 'kpi.targets.')   // menetapkan target board = mutasi
             || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true)
             // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
             // Sebelumnya mutasinya lolos: tombolnya disembunyikan di Vue lewat `canManage`,
@@ -131,6 +137,8 @@ class EnsureMenuAccess
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'content.') => ['content'],
             str_starts_with($name, 'tracking.') => ['tracking'],
+            str_starts_with($name, 'okr.') => ['okr'],
+            str_starts_with($name, 'kpi.') => ['kpi'],
             str_starts_with($name, 'absensi.') => ['absensi'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],

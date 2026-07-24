@@ -27,6 +27,8 @@ class BoardController extends Controller
             'name' => trim($data['name']),
             'type' => 'kanban',
             'section' => filled($data['section'] ?? null) ? trim($data['section']) : null,
+            // Pembuat board, dari sesi (bukan request) — alasan sama dgn kartu.
+            'created_by' => $request->user()?->id,
         ]);
 
         // Setiap proyek baru langsung punya alur task sederhana ala Trello.

@@ -24,6 +24,14 @@ const props = defineProps({
     showGallery: { type: Boolean, default: true },
     boardType: { type: String, default: 'kanban' },   // 'pipeline' (Sales) | 'kanban' — lihat isPipeline
     rate: { type: Number, default: 0 },               // kurs USD→IDR utk menjumlah nilai deal
+    // ---- Kuartal (KPI) ----
+    // `quarter.filtering` false = kuartal dipakai panel saja, kartu TIDAK disaring.
+    quarter: { type: Object, default: () => ({ key: '', label: '', filtering: false }) },
+    quarterOptions: { type: Array, default: () => [] },
+    // null = peran ini tak berhak melihat capaian board (server tak mengirimnya
+    // sama sekali, bukan sekadar disembunyikan di sini).
+    quarterStats: { type: Object, default: null },
+    boardCreator: { type: String, default: null },     // pembuat board (null = board lama)
 });
 
 // Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
@@ -294,10 +302,15 @@ const submitColEdit = () => colForm.put('/columns/' + colEditId.value, { onSucce
 const openColEdit = (id, name) => { colEditId.value = id; colForm.name = name; colEditOpen.value = true; };
 const deleteColumn = (id) => { if (props.canManageStructure && confirm('Hapus kolom ini? (hanya bila kosong)')) router.delete('/columns/' + id); };
 const deleteBoard = () => { if (confirm(`Hapus board "${props.currentBoard.name}"? (hanya bila kosong)`)) router.delete('/boards/' + props.currentBoard.key); };
+// Pindah board sengaja MELEPAS chip jenis & tampilan arsip (tak lewat
+// paramsFilter): keduanya milik board yang ditinggalkan. Filter tanggal &
+// kuartal ikut terbawa — itu rentang waktu yang sedang ditinjau, dan orang
+// biasanya membandingkan periode yang sama antar board.
 const switchBoard = (e) => router.get(props.baseUrl, {
     category: e.target.value,
     created_from: createdFrom.value || undefined,
     created_to: createdTo.value || undefined,
+    q: quarterPilih.value || undefined,
 }, { preserveState: false });
 
 // Sales cuma punya SATU board (`sales`): tak ada pilih/buat/ubah/hapus board.
@@ -307,14 +320,52 @@ const isPipeline = computed(() => props.boardType === 'pipeline');
 const createdFrom = ref(props.dateFilters.created_from || '');
 const createdTo = ref(props.dateFilters.created_to || '');
 const dateFilterAktif = computed(() => Boolean(createdFrom.value || createdTo.value));
-const applyDateFilter = () => router.get(props.baseUrl, {
+const applyDateFilter = () => router.get(props.baseUrl, paramsFilter(), { preserveState: false });
+const resetDateFilter = () => { createdFrom.value = ''; createdTo.value = ''; applyDateFilter(); };
+
+// ---- Filter kuartal (KPI) ----
+// Dasarnya DEADLINE kartu, bukan tanggal dibuat — Date Marker di atas sudah
+// memakai created_at, dan dua filter ini memang menjawab pertanyaan berbeda:
+// "kapan kartu ini masuk" vs "kapan kartu ini harus selesai".
+//
+// Nilainya HANYA terisi saat kuartal benar-benar menyaring. Panel target selalu
+// menampilkan sebuah kuartal (yang berjalan, bila belum dipilih), jadi memakai
+// props.quarter.key sbg nilai ref akan membuat setiap kunjungan biasa mengirim
+// ?q dan diam-diam menyaring kartu tanpa pernah diminta.
+const quarterPilih = ref(props.quarter.filtering ? props.quarter.key : '');
+
+// Semua navigasi di halaman ini WAJIB lewat sini. Ada lima tombol yang memuat
+// ulang halaman (pindah board, chip jenis, Date Marker, arsip, kuartal) — kalau
+// masing-masing menyusun querystring sendiri, satu saja yang lupa membawa `q`
+// sudah cukup membuat filter kuartal hilang saat tombol lain ditekan.
+const paramsFilter = (override = {}) => ({
     category: props.category,
     jenis: props.jenis?.length ? props.jenis : undefined,
     created_from: createdFrom.value || undefined,
     created_to: createdTo.value || undefined,
+    q: quarterPilih.value || undefined,
     archived: props.showArchived ? 1 : undefined,
-}, { preserveState: false });
-const resetDateFilter = () => { createdFrom.value = ''; createdTo.value = ''; applyDateFilter(); };
+    ...override,
+});
+
+const applyQuarter = (key) => {
+    quarterPilih.value = key;
+    router.get(props.baseUrl, paramsFilter(), { preserveState: false });
+};
+
+// Rasio tepat waktu board pada kuartal panel. null = belum ada kartu selesai
+// yang punya deadline, jadi belum ada yang bisa dinilai.
+const persenTepat = computed(() => props.quarterStats?.ketepatan?.persen_tepat ?? null);
+
+// Tampilan badge ketepatan di kartu. Nilainya dari server (Pipeline::ketepatan()),
+// TIDAK dihitung ulang di sini: kalau dihitung dua kali dgn dua rumus, kartu bisa
+// menampilkan 'tepat' sementara rekap di panel menghitungnya 'terlambat'.
+// Kunci yang tak dikenal (termasuk null) → tak ada badge sama sekali.
+const KETEPATAN = {
+    tepat: { label: 'Tepat waktu', cls: 'bg-emerald-100 text-emerald-700' },
+    terlambat: { label: 'Terlambat', cls: 'bg-red-100 text-red-700' },
+    lewat: { label: 'Lewat deadline', cls: 'bg-amber-100 text-amber-800' },
+};
 
 // ---- Filter jenis (chip, board sales) ----
 // WAJIB chip, JANGAN dropdown. Versi dropdown pernah ada & dibuang: letaknya sama
@@ -322,17 +373,15 @@ const resetDateFilter = () => { createdFrom.value = ''; createdTo.value = ''; ap
 // Chip tak punya masalah itu — bisa aktif banyak sekaligus, & "Semua" selalu terlihat.
 const jenisAktif = computed(() => new Set(props.jenis || []));
 const filterAktif = computed(() => jenisAktif.value.size > 0);
-const anyFilterAktif = computed(() => filterAktif.value || dateFilterAktif.value);
+// Kuartal ikut dihitung: tanpa ini, teks "N kartu aktif di board ini" tetap
+// muncul saat kuartal menyaring & angkanya terbaca seolah board menyusut.
+const anyFilterAktif = computed(() => filterAktif.value || dateFilterAktif.value || Boolean(quarterPilih.value));
 
 // Kirim ulang halaman dgn daftar chip yang baru. Array kosong → param dibuang
 // (?jenis[]= kosong tetap terbaca array berisi '' oleh Laravel).
-const pergiKeFilter = (keys) => router.get(props.baseUrl, {
-    category: props.category,
+const pergiKeFilter = (keys) => router.get(props.baseUrl, paramsFilter({
     jenis: keys.length ? keys : undefined,
-    created_from: createdFrom.value || undefined,
-    created_to: createdTo.value || undefined,
-    archived: props.showArchived ? 1 : undefined,
-}, { preserveState: false });
+}), { preserveState: false });
 
 const toggleJenis = (key) => {
     const next = new Set(jenisAktif.value);
@@ -342,13 +391,9 @@ const toggleJenis = (key) => {
 const resetJenis = () => filterAktif.value && pergiKeFilter([]);
 
 // `jenis` ikut dibawa supaya filter tak hilang saat pindah ke arsip & sebaliknya.
-const toggleArchiveView = () => router.get(props.baseUrl, {
-    category: props.category,
-    jenis: props.jenis?.length ? props.jenis : undefined,
-    created_from: createdFrom.value || undefined,
-    created_to: createdTo.value || undefined,
+const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
     archived: props.showArchived ? undefined : 1,
-}, { preserveState: false });
+}), { preserveState: false });
 </script>
 
 <template>
@@ -456,6 +501,80 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                     <input v-model="createdTo" type="date" @change="applyDateFilter" class="mt-0.5 block bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-400" />
                 </label>
                 <button v-if="dateFilterAktif" @click="resetDateFilter" class="mb-0.5 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-brand-700">Reset tanggal</button>
+            </div>
+
+            <!-- ================= Panel kuartal (KPI board) =================
+                 Selalu tampil, walau kuartalnya belum dipilih: halaman butuh
+                 satu angka acuan tetap. Yang berubah cuma apakah kartunya ikut
+                 disaring — ditandai chip "menyaring kartu" di bawah. -->
+            <div class="rounded-2xl border border-brand-100 bg-white shadow-sm px-4 py-3 mb-3">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <span class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Kuartal</span>
+
+                    <!-- Pemilih kuartal. Dropdown (bukan chip) disengaja: daftarnya
+                         panjang & saling meniadakan — beda dgn chip jenis yang bisa
+                         aktif banyak sekaligus. Letaknya pun jauh dari dropdown board
+                         di toolbar atas, jadi tak terbaca sbg "pindah board". -->
+                    <select :value="quarterPilih" class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-400" @change="applyQuarter($event.target.value)">
+                        <option value="">Semua kuartal</option>
+                        <option v-for="o in quarterOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+                    </select>
+
+                    <span v-if="quarter.filtering" class="inline-flex items-center gap-1 text-[10px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5">
+                        menyaring kartu berdasarkan deadline
+                    </span>
+                    <span v-else class="text-[10px] text-slate-400">panel menampilkan {{ quarter.label }} · kartu tidak disaring</span>
+
+                    <!-- Pembuat board: informasi netral, bukan penilaian kinerja —
+                         sengaja di LUAR blok tergating supaya tetap terlihat semua peran. -->
+                    <span v-if="boardCreator && !quarterStats" class="ml-auto text-[11px] text-slate-400">Board dibuat oleh <b class="text-slate-500">{{ boardCreator }}</b></span>
+
+                    <!-- Capaian target: angka + bar. Target belum ditetapkan → tak ada
+                         persen sama sekali (bukan 0%), lihat catatan di controller. -->
+                    <div v-if="quarterStats" class="flex items-center gap-2 ml-auto">
+                        <span class="text-xs text-slate-500">
+                            Target {{ quarter.label }}:
+                            <b class="text-slate-700">{{ quarterStats.done }}/{{ quarterStats.target > 0 ? quarterStats.target : '—' }}</b>
+                            <span class="text-slate-400"> kartu selesai</span>
+                        </span>
+                        <div class="w-28 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                                :class="['h-full rounded-full transition-all', quarterStats.percent === null ? 'bg-slate-300' : (quarterStats.percent >= 100 ? 'bg-emerald-500' : quarterStats.percent >= 60 ? 'bg-amber-500' : 'bg-red-500')]"
+                                :style="{ width: Math.min(100, Math.max(0, quarterStats.percent || 0)) + '%' }"
+                            ></div>
+                        </div>
+                        <span class="text-xs font-bold text-slate-600 w-12 text-right">{{ quarterStats.percent === null ? '—' : quarterStats.percent + '%' }}</span>
+                    </div>
+                </div>
+
+                <!-- Analitik ketepatan: pertanyaan "pekerjaan di board ini sering
+                     telat atau tepat waktu". 'Lewat deadline' dipisah dari
+                     'terlambat' karena belum final — masih bisa diselamatkan.
+                     Seluruh baris ini penilaian kinerja → hanya peran pengelola. -->
+                <div v-if="quarterStats" class="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-slate-100">
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+                        Tepat waktu <b>{{ quarterStats.ketepatan.tepat ?? 0 }}</b>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
+                        Terlambat <b>{{ quarterStats.ketepatan.terlambat ?? 0 }}</b>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                        Lewat deadline <b>{{ quarterStats.ketepatan.lewat ?? 0 }}</b>
+                    </span>
+                    <span class="text-[11px] text-slate-500">
+                        Rasio tepat waktu:
+                        <b :class="persenTepat === null ? 'text-slate-400' : (persenTepat >= 80 ? 'text-emerald-600' : 'text-red-600')">
+                            {{ persenTepat === null ? 'belum bisa dinilai' : persenTepat + '%' }}
+                        </b>
+                    </span>
+                    <!-- Kartu tanpa deadline tak masuk kuartal mana pun. Disebut
+                         terang-terangan supaya filter kuartal tak terlihat seperti
+                         menghilangkan kartu. -->
+                    <span v-if="quarterStats.no_deadline > 0" class="text-[11px] text-slate-400" :title="'Kartu tanpa deadline tidak masuk kuartal mana pun'">
+                        · {{ quarterStats.no_deadline }} kartu tanpa deadline (di luar hitungan)
+                    </span>
+                    <span v-if="boardCreator" class="ml-auto text-[11px] text-slate-400">Board dibuat oleh <b class="text-slate-500">{{ boardCreator }}</b></span>
+                </div>
             </div>
 
             <!-- Pembeda mode: Task Aktif (hijau) vs Mode Arsip (amber) -->
@@ -616,6 +735,15 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                     <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Tanggal kartu dibuat">
                                         Dibuat {{ fmtCreated(card.created_date) }}
                                     </span>
+                                    <!-- Ketepatan waktu kartu. Tak dirender sama sekali bila
+                                         belum bisa dinilai (tanpa deadline, atau masih berjalan
+                                         & deadline belum tiba) — badge "netral" hanya menambah
+                                         ramai tanpa memberi tahu apa pun. -->
+                                    <span v-if="KETEPATAN[card.ketepatan]"
+                                          :class="['inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded', KETEPATAN[card.ketepatan].cls]"
+                                          :title="card.completed_at ? `Selesai ${fmtCreated(card.completed_at)}` : 'Belum selesai & deadline sudah lewat'">
+                                        {{ KETEPATAN[card.ketepatan].label }}
+                                    </span>
                                     <span v-if="card.description" class="inline-flex items-center text-slate-400" title="Ada deskripsi"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10" /></svg></span>
                                     <span v-if="card.comment_count > 0" class="inline-flex items-center gap-0.5 text-[10px] text-slate-400"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 01-13.5 7.8L3 21l1.2-4.5A9 9 0 1121 12z" /></svg>{{ card.comment_count }}</span>
                                     <span v-if="card.attachment_count > 0" class="inline-flex items-center gap-0.5 text-[10px] text-slate-400"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>{{ card.attachment_count }}</span>
@@ -652,6 +780,12 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
                                         <span class="truncate font-medium">{{ card.assignee }}</span>
                                     </span>
                                     <span v-else class="text-slate-300 italic">belum ditugaskan</span>
+                                    <!-- Pembuat kartu — terpisah dari PJ di atas: yang membuat
+                                         & yang mengerjakan sering bukan orang yang sama.
+                                         Kartu lama tak punya data ini, jadi tak dirender. -->
+                                    <span v-if="card.created_by_name" class="text-slate-400 truncate" :title="'Dibuat oleh ' + card.created_by_name">
+                                        oleh {{ card.created_by_name }}
+                                    </span>
                                     <span class="flex items-center gap-1.5 flex-shrink-0">
                                         <a v-if="card.link" :href="card.link" target="_blank" rel="noreferrer" @click.stop class="flex items-center gap-0.5 text-brand-600 hover:text-brand-800 font-medium">
                                             <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
@@ -848,6 +982,14 @@ const toggleArchiveView = () => router.get(props.baseUrl, {
             <div v-else-if="detailCard" class="space-y-2 text-sm mb-2">
                 <p v-if="detailCard.deadline"><span class="font-medium text-slate-600">Deadline:</span> <span :class="detailCard.deadline < todayStr() ? 'text-red-600 font-semibold' : 'text-slate-700'">{{ detailCard.deadline }}</span></p>
                 <p v-if="detailCard.assignee"><span class="font-medium text-slate-600">PJ:</span> {{ detailCard.assignee }}</p>
+                <!-- Jejak pembuat & penyelesaian, untuk menjawab "siapa yang bikin"
+                     dan "telat berapa" tanpa harus menebak dari riwayat. -->
+                <p v-if="detailCard.created_by_name"><span class="font-medium text-slate-600">Dibuat oleh:</span> {{ detailCard.created_by_name }}</p>
+                <p v-if="detailCard.completed_at"><span class="font-medium text-slate-600">Selesai:</span> {{ fmtCreated(detailCard.completed_at) }}</p>
+                <p v-if="KETEPATAN[detailCard.ketepatan]">
+                    <span class="font-medium text-slate-600">Ketepatan:</span>
+                    <span :class="['ml-1 text-[11px] font-semibold px-1.5 py-0.5 rounded', KETEPATAN[detailCard.ketepatan].cls]">{{ KETEPATAN[detailCard.ketepatan].label }}</span>
+                </p>
                 <div v-if="detailCard.labels.length" class="flex flex-wrap gap-1.5">
                     <span v-for="(lb, li) in detailCard.labels" :key="li" :class="['text-[10px] text-white font-semibold px-2 py-0.5 rounded', lb.color]">{{ lb.name }}</span>
                 </div>

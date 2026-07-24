@@ -13,16 +13,17 @@ class Pipeline extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
+        'category', 'jenis', 'account', 'assigned_to', 'created_by', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
         'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done',
-        'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
+        'completed_at', 'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
     ];
 
     protected $casts = [
         'tanggal_posting' => 'date',
         'tanggal_payment' => 'date',
         'deadline' => 'date',
+        'completed_at' => 'datetime',
         'archived_at' => 'datetime',
         'amount_idr' => 'decimal:2',
         'amount_usd' => 'decimal:2',
@@ -42,6 +43,44 @@ class Pipeline extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /** Pembuat kartu. Terpisah dari assignee: yang membuat dan yang mengerjakan
+     *  sering bukan orang yang sama. null utk kartu lama (kolomnya baru ada). */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Ketepatan waktu kartu — dasar analitik "sering terlambat / tepat waktu".
+     *
+     *  'tepat'      selesai pada atau sebelum deadline
+     *  'terlambat'  selesai sesudah deadline
+     *  'lewat'      BELUM selesai & deadline sudah lewat (masih berjalan)
+     *  null         tak bisa dinilai: tanpa deadline, atau belum selesai &
+     *               deadline belum tiba
+     *
+     *  Kartu tanpa deadline sengaja null, bukan 'tepat'. Menghitungnya sbg
+     *  tepat waktu akan menggelembungkan persentase ketepatan dgn kartu yang
+     *  tak pernah punya janji waktu untuk ditepati.
+     *
+     *  Perbandingannya per TANGGAL, bukan per detik: deadline disimpan sbg
+     *  date (tengah malam), jadi kartu yang rampung sore hari di tanggal
+     *  deadline-nya akan terbaca terlambat kalau dibandingkan sbg timestamp.
+     */
+    public function ketepatan(): ?string
+    {
+        if ($this->deadline === null) {
+            return null;
+        }
+
+        if ($this->completed_at !== null) {
+            return $this->completed_at->startOfDay()->lessThanOrEqualTo($this->deadline->startOfDay())
+                ? 'tepat' : 'terlambat';
+        }
+
+        return $this->deadline->startOfDay()->lessThan(now()->startOfDay()) ? 'lewat' : null;
     }
 
     /** Komentar kartu (terbaru dulu saat ditampilkan). */
