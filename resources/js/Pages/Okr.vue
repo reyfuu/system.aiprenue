@@ -278,12 +278,27 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                         <div class="min-w-0">
                             <span class="text-sm font-semibold text-slate-700">{{ kr.title }}</span>
                             <span :class="['ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border',
-                                           kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100' : 'bg-amber-50 text-amber-700 border-amber-200']">
+                                           kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100'
+                                           : kr.source === 'kartu' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                           : 'bg-amber-50 text-amber-700 border-amber-200']">
                                 {{ kr.source_label }}
                             </span>
                             <!-- Penanggung jawab: yang mengejar angka ini. Untuk
                                  sekarang selalu owner & belum bisa dipilih di form. -->
                             <p v-if="kr.owner_name" class="text-[11px] text-slate-400 mt-0.5">PJ: {{ kr.owner_name }}</p>
+
+                            <!-- Langkah-langkah: kartu todolist yang ditautkan ke KR
+                                 bersumber 'kartu'. Inilah jembatan goal → papan kerja.
+                                 Hanya muncul bila ada tautannya. -->
+                            <ul v-if="kr.source === 'kartu' && kr.kartu.length" class="mt-2 space-y-1">
+                                <li v-for="k in kr.kartu" :key="k.id" class="flex items-center gap-2 text-[11px]">
+                                    <svg v-if="k.selesai" class="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    <span v-else class="w-3.5 h-3.5 rounded-full border border-slate-300 flex-shrink-0"></span>
+                                    <span :class="k.selesai ? 'text-slate-500 line-through' : 'text-slate-600'">{{ k.judul }}</span>
+                                    <span v-if="k.ketepatan === 'terlambat'" class="text-red-600 font-semibold">telat</span>
+                                </li>
+                            </ul>
+                            <p v-else-if="kr.source === 'kartu'" class="text-[11px] text-slate-400 mt-1.5 italic">Belum ada kartu todolist yang ditautkan.</p>
                         </div>
                         <div>
                             <p class="text-xs text-slate-500 mb-1" :title="fmtFull(kr.actual, kr.unit) + ' dari ' + fmtFull(kr.target, kr.unit)">
@@ -397,6 +412,8 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <p class="text-[11px] text-slate-400 mt-1">
                         {{ krForm.source === 'auto'
                             ? 'Realisasi dihitung sendiri dari Insight/Pembukuan dan tidak bisa diisi manual.'
+                            : krForm.source === 'kartu'
+                            ? 'Realisasi = jumlah kartu todolist yang ditautkan ke KR ini dan sudah selesai. Kartunya dibuat & ditautkan di Kanban.'
                             : 'Realisasi kamu perbarui sendiri lewat tombol “Perbarui angka”.' }}
                     </p>
                 </div>
@@ -414,12 +431,14 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target</label>
-                        <input v-model="krForm.target" type="number" min="0" step="any"
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">{{ krForm.source === 'kartu' ? 'Target (jumlah kartu)' : 'Target' }}</label>
+                        <input v-model="krForm.target" type="number" min="0" :step="krForm.source === 'kartu' ? 1 : 'any'"
                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                         <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
                     </div>
-                    <div>
+                    <!-- KR 'kartu' selalu bersatuan "angka" (menghitung kartu) —
+                         server memaksanya, jadi pemilih satuan disembunyikan. -->
+                    <div v-if="krForm.source !== 'kartu'">
                         <label class="block text-xs font-semibold text-slate-500 mb-1">Satuan</label>
                         <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
                             <option v-for="(label, key) in units" :key="key" :value="key">{{ label }}</option>

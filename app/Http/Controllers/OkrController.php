@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\KeyResult;
 use App\Models\Objective;
+use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\OkrMetrics;
 use App\Support\Quarter;
@@ -48,24 +49,50 @@ class OkrController extends Controller
         $daftar = Objective::forQuarter($year, $quarter);
         $kuartalLalu = $this->kuartalSebelum($year, $quarter);
 
+        // Kartu tautan untuk seluruh KR bersumber 'kartu' di halaman ini,
+        // diambil SEKALI. Tanpa ini tiap KR menembak query sendiri untuk
+        // menghitung & mendaftar kartunya (N+1). Dikelompokkan per KR;
+        // hitungan selesai disuntikkan ke model lewat 'kartu_selesai' supaya
+        // KeyResult::actual() tak query ulang (lihat model).
+        $krKartuIds = $daftar->flatMap->keyResults->where('source', 'kartu')->pluck('id');
+        $kartuPerKr = Pipeline::whereIn('key_result_id', $krKartuIds)
+            ->orderBy('position')->orderBy('id')
+            ->get(['id', 'key_result_id', 'endorse', 'progress', 'deadline', 'completed_at'])
+            ->groupBy('key_result_id');
+
         $objectives = $daftar->map(fn (Objective $o) => [
             'id' => $o->id,
             'title' => $o->title,
             'description' => $o->description,
             'progress' => $o->progress($realisasi),
             'created_by_name' => $o->creator?->name,
-            'key_results' => $o->keyResults->map(fn (KeyResult $kr) => [
-                'id' => $kr->id,
-                'title' => $kr->title,
-                'source' => $kr->source,
-                'source_label' => KeyResult::SOURCES[$kr->source] ?? $kr->source,
-                'metric' => $kr->metric,
-                'unit' => $kr->unit,
-                'target' => (float) $kr->target,
-                'actual' => $kr->actual($realisasi),
-                'percent' => $kr->percent($realisasi),
-                'owner_name' => $kr->owner?->name,
-            ])->values(),
+            'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr) {
+                $kartu = $kartuPerKr->get($kr->id, collect());
+                if ($kr->source === 'kartu') {
+                    $kr->setAttribute('kartu_selesai', $kartu->whereNotNull('completed_at')->count());
+                }
+
+                return [
+                    'id' => $kr->id,
+                    'title' => $kr->title,
+                    'source' => $kr->source,
+                    'source_label' => KeyResult::SOURCES[$kr->source] ?? $kr->source,
+                    'metric' => $kr->metric,
+                    'unit' => $kr->unit,
+                    'target' => (float) $kr->target,
+                    'actual' => $kr->actual($realisasi),
+                    'percent' => $kr->percent($realisasi),
+                    'owner_name' => $kr->owner?->name,
+                    // Daftar langkah, hanya untuk KR bersumber 'kartu'. KR lain
+                    // dapat array kosong — Vue merendernya bersyarat.
+                    'kartu' => $kr->source === 'kartu' ? $kartu->map(fn (Pipeline $p) => [
+                        'id' => $p->id,
+                        'judul' => $p->endorse,
+                        'selesai' => $p->completed_at !== null,
+                        'ketepatan' => $p->ketepatan(),
+                    ])->values() : [],
+                ];
+            })->values(),
         ])->values();
 
         return Inertia::render('Okr', [
@@ -319,8 +346,11 @@ class OkrController extends Controller
     public function updateActual(Request $request, KeyResult $keyResult)
     {
         if ($keyResult->source !== 'manual') {
+            $sebab = $keyResult->source === 'kartu'
+                ? 'menghitung kartu todolist yang selesai'
+                : 'mengambil angkanya dari Insight/Pembukuan';
             throw ValidationException::withMessages([
-                'actual_manual' => 'Key Result otomatis mengambil angkanya dari Insight/Pembukuan dan tidak bisa diisi manual.',
+                'actual_manual' => "Key Result ini $sebab dan tidak bisa diisi manual.",
             ]);
         }
 
@@ -343,11 +373,18 @@ class OkrController extends Controller
             'unit' => ['required', Rule::in(array_keys(KeyResult::UNITS))],
         ]);
 
-        // KR auto tak menyimpan realisasi sendiri. Dibersihkan di sini supaya
-        // angka manual lama tak tertinggal saat KR diubah dari manual → auto,
-        // lalu muncul lagi kalau nanti dikembalikan ke manual.
+        // Bersihkan kolom yang tak dipakai tiap sumber, supaya nilai lama tak
+        // tertinggal saat sumbernya diubah:
+        //   auto  — realisasi dihitung, actual_manual dikosongkan.
+        //   kartu — realisasi = kartu selesai; metric & actual_manual tak
+        //           berlaku, dan satuannya selalu 'angka' (menghitung kartu).
+        //   manual— metric tak berlaku.
         if ($data['source'] === 'auto') {
             $data['actual_manual'] = null;
+        } elseif ($data['source'] === 'kartu') {
+            $data['metric'] = null;
+            $data['actual_manual'] = null;
+            $data['unit'] = 'angka';
         } else {
             $data['metric'] = null;
         }
