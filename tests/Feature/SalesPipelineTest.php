@@ -136,6 +136,33 @@ class SalesPipelineTest extends TestCase
         $this->assertSame([$output->id], $kartu->outputs->pluck('id')->all());
     }
 
+    /** Label = pilih SATU. Batasnya ditegakkan di server, bukan cuma di pemilih
+     *  Vue — request langsung tetap tembus kalau gerbangnya hanya di frontend. */
+    public function test_kartu_hanya_boleh_punya_satu_label(): void
+    {
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Dua label',
+            'progress' => 'lead', 'jenis' => 'coaching_1on1', 'payment_status' => 'belum',
+            'labels' => [
+                ['name' => 'Urgent', 'color' => 'bg-red-500'],
+                ['name' => 'Review', 'color' => 'bg-purple-500'],
+            ],
+        ])->assertSessionHasErrors('labels');
+
+        $this->assertNull(Pipeline::firstWhere('endorse', 'Dua label'));
+    }
+
+    /** Tanpa label sama sekali tetap sah — pilih-satu bukan berarti wajib isi. */
+    public function test_kartu_boleh_tanpa_label(): void
+    {
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Tanpa label',
+            'progress' => 'lead', 'jenis' => 'coaching_1on1', 'payment_status' => 'belum',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertNotNull(Pipeline::firstWhere('endorse', 'Tanpa label'));
+    }
+
     /** Output 'Video' & 'Foto' datang dari migrasi (bukan seeder — seeder dipagari
      *  di produksi). Checkbox di modal kartu ikut isi tabel ini, jadi tak ada kode UI. */
     public function test_output_video_dan_foto_tersedia_dan_bisa_dicentang(): void

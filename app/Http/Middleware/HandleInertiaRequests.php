@@ -71,6 +71,8 @@ class HandleInertiaRequests extends Middleware
                         'script' => $user->canSee('script'),
                         'content' => $user->canSee('content'),     // kalender produksi konten
                         'tracking' => $user->canSee('tracking'),   // ringkasan progress owner/manager
+                        'okr' => $user->canSee('okr'),         // OKR omset & pertumbuhan, owner/manager
+                        'kpi' => $user->canSee('kpi'),         // KPI board operasional papan
                         'absensi' => $user->canSee('absensi'),      // absensi — semua peran
                         'pembukuan' => $user->canSee('pembukuan'),
                         'user' => $user->canSee('user'),

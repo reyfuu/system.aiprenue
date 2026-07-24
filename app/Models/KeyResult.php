@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\OkrMetrics;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /** Satu Key Result: bagian OKR yang benar-benar terukur. */
 class KeyResult extends Model
@@ -22,8 +23,11 @@ class KeyResult extends Model
 
     /** Dari mana realisasinya berasal.
      *  `auto`   — dihitung dari Insight/Pembukuan, tak bisa diketik tangan.
-     *  `manual` — diperbarui sendiri; untuk target tanpa sumber data. */
-    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual'];
+     *  `manual` — diperbarui sendiri; untuk target tanpa sumber data.
+     *  `kartu`  — dihitung dari kartu Kanban todolist yang ditautkan ke KR ini
+     *             & sudah selesai. Otomatis seperti `auto`, tapi sumbernya
+     *             pekerjaan di papan, bukan modul Insight/Pembukuan. */
+    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kartu Todolist'];
 
     /** Satuan, dipakai UI untuk memformat angka. */
     public const UNITS = ['angka' => 'Angka', 'rupiah' => 'Rupiah', 'persen' => 'Persen'];
@@ -64,7 +68,28 @@ class KeyResult extends Model
             )[$this->metric] ?? 0);
         }
 
+        // Sumber 'kartu': jumlah kartu tautan yang SELESAI (completed_at terisi).
+        // Pemanggil (OkrController) menaruh hitungannya lewat setAttribute
+        // 'kartu_selesai' supaya tak ada satu query per KR (N+1); fallback ke
+        // query langsung agar model tetap benar bila dipakai di luar controller.
+        if ($this->source === 'kartu') {
+            return (float) ($this->kartu_selesai ?? $this->kartuSelesaiCount());
+        }
+
         return (float) ($this->actual_manual ?? 0);
+    }
+
+    /** Kartu tautan (semua). Dipakai halaman OKR untuk menampilkan daftar
+     *  langkah di bawah KR bersumber 'kartu'. */
+    public function cards(): HasMany
+    {
+        return $this->hasMany(Pipeline::class, 'key_result_id');
+    }
+
+    /** Hitung kartu tautan yang sudah selesai. Fallback anti-N+1, lihat actual(). */
+    public function kartuSelesaiCount(): int
+    {
+        return $this->cards()->whereNotNull('completed_at')->count();
     }
 
     /**

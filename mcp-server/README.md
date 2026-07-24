@@ -6,15 +6,36 @@ Satu **MCP server standar** untuk System AI Preneur. Dipakai bersama oleh **Chat
 - **Data:** langsung ke MariaDB `pipeline`
 - **Auth:** bearer token (`MCP_TOKEN`)
 
-## Tools (v1)
+## Tools
+
+**Kanban**
 
 | Tool | Fungsi |
 |------|--------|
 | `list_boards` | Daftar board kanban + jumlah task |
 | `list_tasks` | Task aktif dalam satu board (`board` = key) |
 | `create_task` | Buat task baru (`board`, `title`, `column?`) |
+| `update_task` | Ubah task by id (`deadline`/`column`/`done`/`title`) |
 
-> Semua terverifikasi lokal via `test-client.js` (handshake, list, create, auth reject).
+**OKR — menyusun & memantau strategi kuartalan**
+
+| Tool | Fungsi |
+|------|--------|
+| `list_okr` | Objective + Key Result satu kuartal + realisasi & capaian (default kuartal berjalan). **Baca ini dulu** sebelum menyusun strategi. |
+| `create_objective` | Buat Objective (goal kualitatif) untuk satu kuartal |
+| `create_key_result` | Tambah KR terukur — `source`: `auto` (view/subscriber/omset dari data) · `manual` · `kartu` (dari task todolist tertaut yang selesai) |
+| `link_task_to_kr` | Tautkan task todolist ke KR bersumber `kartu` (langkah pencapaian goal) |
+
+**Alur menyusun strategi lewat AI (Claude/ChatGPT):**
+1. `list_okr` — lihat posisi kuartal ini (realisasi view/subscriber/omset nyata).
+2. `create_objective` → `create_key_result` — susun goal & KR terukur.
+3. Untuk KR `kartu`: `create_task` (board `todolist`) → `link_task_to_kr` — pecah goal jadi langkah. Menyelesaikan task menggerakkan angka KR otomatis.
+
+> Realisasi metrik `auto` (view/subscriber/omset) memakai rumus **sama persis** dengan app Laravel (`OkrMetrics`): view = tayangan konten terbit di kuartal · subscriber = snapshot follower terakhir per akun · omset = pemasukan Pembukuan di kuartal. Angka MCP = angka halaman `/okr`.
+
+> Tulisan langsung ke DB (bypass validasi Laravel), tapi `create_key_result` & `link_task_to_kr` menegakkan aturan yang sama: KR `auto` wajib punya metric, tautan kartu hanya board `todolist` + KR bersumber `kartu`.
+
+> Kanban terverifikasi lokal via `test-client.js`; OKR terverifikasi via `tools/list` + `list_okr` live (angka realisasi cocok dengan `/okr`).
 
 ## Jalankan lokal
 
@@ -128,4 +149,5 @@ node server.js --selftest   # verifikasi JWT + PKCE tanpa DB/HTTP
 ## Roadmap
 - Rate limit + audit log per tool call.
 - Tools tambahan: move/complete task, baca pipeline & omzet, mindmap.
+- OKR: `update_key_result` (ubah target), `update_actual` (KR manual), hapus Objective/KR.
 - Routing lewat API Laravel (hormati validasi & audit) alih-alih DB langsung.

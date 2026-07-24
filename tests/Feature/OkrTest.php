@@ -218,6 +218,144 @@ class OkrTest extends TestCase
         $this->assertSame(100.0, $o->fresh()->progress([]));
     }
 
+    // ------------------------------------------- KR sumber 'kartu' & tautan
+
+    /** KR bersumber 'kartu': realisasi = jumlah kartu tautan yang SELESAI
+     *  (completed_at terisi), bukan sekadar jumlah kartu tertaut. */
+    public function test_key_result_kartu_menghitung_kartu_tautan_yang_selesai(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi 5 kreator', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+
+        // 3 selesai (completed_at terisi), 2 masih berjalan.
+        foreach ([true, true, true, false, false] as $i => $selesai) {
+            $this->kartu([
+                'category' => 'todolist', 'endorse' => "Langkah $i",
+                'key_result_id' => $kr->id,
+                'completed_at' => $selesai ? '2026-08-01 10:00:00' : null,
+            ]);
+        }
+
+        $this->assertSame(3.0, $kr->fresh()->actual());
+        $this->assertSame(60.0, $kr->fresh()->percent());
+    }
+
+    /** updateActual menolak source 'kartu' sama seperti 'auto': angkanya
+     *  dihitung dari kartu, bukan diketik. */
+    public function test_key_result_kartu_tak_bisa_ditimpa_manual(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())
+            ->patch('/okr/key-results/'.$kr->id.'/actual', ['actual_manual' => 99])
+            ->assertSessionHasErrors('actual_manual');
+    }
+
+    /** KR 'kartu' dibuat lewat form: metric & actual_manual dibersihkan null,
+     *  satuan dipaksa 'angka' (menghitung kartu, bukan rupiah). */
+    public function test_key_result_kartu_dibersihkan_saat_dibuat(): void
+    {
+        $o = $this->objective();
+
+        $this->actingAs($this->user())->post('/okr/key-results', [
+            'objective_id' => $o->id, 'title' => 'Langkah kolaborasi',
+            'source' => 'kartu', 'target' => 5, 'unit' => 'rupiah', 'metric' => 'omset',
+        ])->assertSessionHasNoErrors();
+
+        $kr = KeyResult::first();
+        $this->assertSame('kartu', $kr->source);
+        $this->assertNull($kr->metric);
+        $this->assertNull($kr->actual_manual);
+        $this->assertSame('angka', $kr->unit);
+    }
+
+    /** Langkah dibuat DARI halaman OKR: kartu todolist baru langsung tertaut.
+     *  Kanban tak lagi tahu-menahu penautan (murni delegasi). */
+    public function test_langkah_baru_membuat_kartu_todolist_tertaut(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/kartu", ['endorse' => 'DM kreator'])
+            ->assertSessionHasNoErrors();
+
+        $kartu = Pipeline::firstWhere('endorse', 'DM kreator');
+        $this->assertNotNull($kartu);
+        $this->assertSame('todolist', $kartu->category);
+        $this->assertSame($kr->id, $kartu->key_result_id);
+    }
+
+    /** Kartu todolist yang sudah ada bisa ditautkan lewat endpoint attach. */
+    public function test_kartu_todolist_yang_ada_bisa_ditautkan(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'todolist', 'endorse' => 'Kartu lama']);
+
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/attach", ['pipeline_id' => $kartu->id])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($kr->id, $kartu->fresh()->key_result_id);
+    }
+
+    /** Melepas tautan: kartu tetap hidup di papannya, hanya key_result_id null. */
+    public function test_kartu_bisa_dilepas_dari_key_result(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'todolist', 'endorse' => 'Langkah', 'key_result_id' => $kr->id]);
+
+        $this->actingAs($this->user())
+            ->delete("/okr/key-results/{$kr->id}/kartu/{$kartu->id}")
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull($kartu->fresh()->key_result_id);
+    }
+
+    /** Gerbang server: hanya kartu board todolist yang boleh ditautkan. */
+    public function test_kartu_non_todolist_ditolak_saat_attach(): void
+    {
+        $this->board('proyek');
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+        $kartu = $this->kartu(['category' => 'proyek', 'endorse' => 'Kartu proyek']);
+
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$kr->id}/attach", ['pipeline_id' => $kartu->id])
+            ->assertSessionHasErrors('pipeline_id');
+
+        $this->assertNull($kartu->fresh()->key_result_id);
+    }
+
+    /** Gerbang server: KR auto/manual tak bisa menerima langkah kartu —
+     *  realisasinya tak dihitung dari kartu. */
+    public function test_kr_auto_tak_bisa_menerima_langkah_kartu(): void
+    {
+        $o = $this->objective();
+        $krAuto = KeyResult::create(['objective_id' => $o->id, 'title' => 'View', 'source' => 'auto', 'metric' => 'view', 'target' => 100, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())
+            ->post("/okr/key-results/{$krAuto->id}/kartu", ['endorse' => 'Salah'])
+            ->assertStatus(422);
+
+        $this->assertNull(Pipeline::firstWhere('endorse', 'Salah'));
+    }
+
+    /** Penautan = mutasi OKR. Staff view-only harus tertolak walau request
+     *  langsung — gerbangnya di server (EnsureMenuAccess), bukan cuma UI. */
+    public function test_staff_tak_bisa_menautkan_kartu(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
+
+        $this->actingAs($this->user('staff'))
+            ->post("/okr/key-results/{$kr->id}/kartu", ['endorse' => 'X'])
+            ->assertForbidden();
+    }
+
     // ---------------------------------------------------- salin kuartal
 
     public function test_salin_kuartal_lalu_membawa_target_tapi_bukan_realisasi(): void
@@ -389,6 +527,54 @@ class OkrTest extends TestCase
             ->assertOk();
 
         $this->assertNull($kartu->fresh()->completed_at);
+    }
+
+    /**
+     * Kartu yang cuma IKUT dalam kiriman drag tak boleh ikut distempel.
+     *
+     *  Regresi nyata: kiriman drag berisi seluruh isi kolom tujuan (lihat
+     *  Kanban.vue), jadi satu kartu yang masuk membawa serta semua kartu lama
+     *  yang sudah duduk di situ. Dulu semuanya ikut distempel "hari ini" —
+     *  deadline mereka sudah lewat berbulan-bulan, jadi satu drag membuat
+     *  seluruh papan terbaca terlambat. Tes lama tak menangkapnya karena
+     *  selalu mengirim ids berisi kartu yang memang sedang dipindahkan.
+     */
+    public function test_kartu_yang_hanya_ikut_dalam_kiriman_drag_tak_distempel(): void
+    {
+        $this->board();
+
+        // Sudah lama duduk di kolom terakhir, belum pernah punya stempel —
+        // persis keadaan data lama sesudah kolom completed_at ditambahkan.
+        $lama = $this->kartu(['progress' => 'done', 'deadline' => '2026-01-10']);
+        $baru = $this->kartu(['progress' => 'todo', 'deadline' => '2026-12-31']);
+
+        // Bentuk kiriman asli vuedraggable: SELURUH isi kolom tujuan.
+        $this->actingAs($this->user())
+            ->patch('/pipelines/reorder', ['progress' => 'done', 'ids' => [$lama->id, $baru->id]])
+            ->assertOk();
+
+        $this->assertNull($lama->fresh()->completed_at, 'Kartu yang tak berpindah kolom ikut distempel.');
+        // 'lewat' (belum dinilai selesai), BUKAN 'terlambat'. Bedanya penting:
+        // 'lewat' tak masuk hitungan rasio ketepatan, 'terlambat' masuk — dan
+        // itulah yang dulu membuat rasio anjlok sesudah satu drag.
+        $this->assertSame('lewat', $lama->fresh()->ketepatan());
+        $this->assertNotNull($baru->fresh()->completed_at, 'Kartu yang benar-benar masuk tak distempel.');
+    }
+
+    /** Kartu yang cuma ikut geser di kolom terakhir tak boleh kehilangan
+     *  stempelnya — urutan berubah, status tidak. */
+    public function test_geser_urutan_di_kolom_terakhir_tak_mencabut_stempel(): void
+    {
+        $this->board();
+        $a = $this->kartu(['progress' => 'done', 'completed_at' => '2026-03-01 09:00:00']);
+        $b = $this->kartu(['progress' => 'done', 'completed_at' => '2026-03-02 09:00:00']);
+
+        $this->actingAs($this->user())
+            ->patch('/pipelines/reorder', ['progress' => 'done', 'ids' => [$b->id, $a->id]])
+            ->assertOk();
+
+        $this->assertSame('2026-03-01 09:00:00', $a->fresh()->completed_at->toDateTimeString());
+        $this->assertSame('2026-03-02 09:00:00', $b->fresh()->completed_at->toDateTimeString());
     }
 
     /** Stempel pertama dipertahankan: kalau ditimpa, kartu terlambat bisa

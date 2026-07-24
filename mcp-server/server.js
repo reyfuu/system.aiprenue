@@ -99,6 +99,50 @@ const db = mysql.createPool({
 const jsonText = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] });
 const errText = (msg) => ({ content: [{ type: 'text', text: `Error: ${msg}` }], isError: true });
 
+// ── Helper OKR ────────────────────────────────────────────────────────────────
+// Kuartal & realisasi WAJIB sama persis dgn app Laravel (Quarter + OkrMetrics),
+// kalau tidak MCP & halaman /okr menampilkan angka berbeda untuk hal yang sama.
+const QSPAN = { 1: ['01-01', '03-31'], 2: ['04-01', '06-30'], 3: ['07-01', '09-30'], 4: ['10-01', '12-31'] };
+
+function currentQuarter() {
+    const d = new Date();
+    return { year: d.getFullYear(), quarter: Math.floor(d.getMonth() / 3) + 1 };
+}
+function quarterRange(year, quarter) {
+    const [a, b] = QSPAN[quarter];
+    return [`${year}-${a} 00:00:00`, `${year}-${b} 23:59:59`];
+}
+
+// Realisasi metrik auto — cerminan App\Support\OkrMetrics::realisasi().
+//  view       = SUM(views) konten yang published_at di kuartal
+//  omset      = SUM(amount_idr) transaksi pemasukan di kuartal
+//  subscriber = SUM(followers) snapshot TERAKHIR tiap akun (≤ akhir kuartal),
+//               bukan jumlah seluruh baris (itu menghitung orang yg sama berkali)
+async function okrRealisasi(year, quarter) {
+    const [start, end] = quarterRange(year, quarter);
+    const [[v]] = await db.query(
+        `SELECT COALESCE(SUM(views),0) n FROM insight_contents WHERE published_at BETWEEN ? AND ?`, [start, end]);
+    const [[o]] = await db.query(
+        `SELECT COALESCE(SUM(amount_idr),0) n FROM transactions WHERE type='pemasukan' AND date BETWEEN ? AND ?`, [start, end]);
+    const [[s]] = await db.query(
+        `SELECT COALESCE(SUM(ia.followers),0) n FROM insight_accounts ia
+         JOIN (SELECT platform, akun, MAX(tanggal) tanggal FROM insight_accounts WHERE tanggal <= ? GROUP BY platform, akun) t
+           ON ia.platform=t.platform AND ia.akun=t.akun AND ia.tanggal=t.tanggal`, [end]);
+    return { view: Number(v.n), subscriber: Number(s.n), omset: Number(o.n) };
+}
+
+const pct = (actual, target) => (Number(target) > 0 ? Math.round((actual / target) * 1000) / 10 : null);
+
+// Owner sbg pencatat default objek OKR baru (kolom created_by/owner_id).
+async function ownerId() {
+    const [[u]] = await db.query(`SELECT id FROM users WHERE role='owner' ORDER BY id LIMIT 1`);
+    return u ? u.id : null;
+}
+
+const OKR_SOURCES = ['auto', 'manual', 'kartu'];
+const OKR_METRICS = ['view', 'subscriber', 'omset'];
+const OKR_UNITS = ['angka', 'rupiah', 'persen'];
+
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
     const server = new McpServer({ name: 'pipeline-mcp', version: '0.1.0' });
@@ -205,6 +249,148 @@ function buildServer() {
             await db.query(`UPDATE pipelines SET ${sets.join(', ')} WHERE id=?`, [...vals, id]);
             const [[row]] = await db.query(`SELECT id, endorse AS title, progress AS column_key, done, deadline FROM pipelines WHERE id=?`, [id]);
             return jsonText({ ok: true, task: row });
+        }
+    );
+
+    // ── OKR: menyusun & memantau strategi kuartalan ─────────────────────────
+    // Alur yang dimaksud: AI membaca list_okr utk tahu posisi, lalu menyusun
+    // Objective + Key Result. KR bersumber 'kartu' dieksekusi lewat kartu
+    // todolist (create_task → link_task_to_kr), jadi progress goal bergerak
+    // sendiri saat kartunya diselesaikan.
+
+    // 5) Lihat OKR satu kuartal + realisasi (default kuartal berjalan)
+    server.registerTool(
+        'list_okr',
+        {
+            title: 'List OKR',
+            description: 'Objective + Key Result satu kuartal beserta realisasi & capaian. Default kuartal berjalan. Pakai ini dulu sebelum menyusun strategi.',
+            inputSchema: {
+                year: z.number().int().optional().describe('tahun, mis. 2026 (default: sekarang)'),
+                quarter: z.number().int().min(1).max(4).optional().describe('1–4 (default: kuartal berjalan)'),
+            },
+        },
+        async ({ year, quarter }) => {
+            const cur = currentQuarter();
+            year = year || cur.year;
+            quarter = quarter || cur.quarter;
+
+            const real = await okrRealisasi(year, quarter);
+            const [objs] = await db.query(
+                `SELECT id, title, description, position FROM objectives WHERE year=? AND quarter=? ORDER BY position, id`, [year, quarter]);
+
+            const objectives = [];
+            for (const o of objs) {
+                const [krs] = await db.query(
+                    `SELECT id, title, source, metric, target, actual_manual, unit FROM key_results WHERE objective_id=? ORDER BY position, id`, [o.id]);
+                const key_results = [];
+                for (const kr of krs) {
+                    let actual = 0, cards = null;
+                    if (kr.source === 'auto') actual = real[kr.metric] ?? 0;
+                    else if (kr.source === 'manual') actual = Number(kr.actual_manual ?? 0);
+                    else if (kr.source === 'kartu') {
+                        const [[c]] = await db.query(
+                            `SELECT COUNT(*) total, COALESCE(SUM(completed_at IS NOT NULL),0) done FROM pipelines WHERE key_result_id=?`, [kr.id]);
+                        actual = Number(c.done);
+                        cards = { done: Number(c.done), total: Number(c.total) };
+                    }
+                    key_results.push({
+                        id: kr.id, title: kr.title, source: kr.source, metric: kr.metric,
+                        target: Number(kr.target), actual, percent: pct(actual, kr.target), unit: kr.unit,
+                        ...(cards ? { cards } : {}),
+                    });
+                }
+                objectives.push({ id: o.id, title: o.title, description: o.description, key_results });
+            }
+            return jsonText({ year, quarter, realisasi_metrik: real, objectives });
+        }
+    );
+
+    // 6) Buat Objective (kalimat tujuan) untuk satu kuartal
+    server.registerTool(
+        'create_objective',
+        {
+            title: 'Create Objective',
+            description: 'Buat Objective (goal kualitatif) untuk satu kuartal. Isi Key Result terukurnya lewat create_key_result.',
+            inputSchema: {
+                title: z.string().describe('kalimat tujuan, mis. "Jadi rujukan konten AI di Indonesia"'),
+                year: z.number().int().optional().describe('default: tahun berjalan'),
+                quarter: z.number().int().min(1).max(4).optional().describe('default: kuartal berjalan'),
+                description: z.string().optional().describe('penjelasan singkat (opsional)'),
+            },
+        },
+        async ({ title, year, quarter, description }) => {
+            const cur = currentQuarter();
+            year = year || cur.year;
+            quarter = quarter || cur.quarter;
+            const owner = await ownerId();
+            const [[mx]] = await db.query(`SELECT COALESCE(MAX(position),-1)+1 pos FROM objectives WHERE year=? AND quarter=?`, [year, quarter]);
+            const [r] = await db.query(
+                `INSERT INTO objectives (year, quarter, title, description, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [year, quarter, title, description || null, mx.pos, owner]);
+            return jsonText({ ok: true, objective: { id: r.insertId, year, quarter, title } });
+        }
+    );
+
+    // 7) Tambah Key Result terukur ke sebuah Objective
+    server.registerTool(
+        'create_key_result',
+        {
+            title: 'Create Key Result',
+            description: 'Tambah Key Result ke Objective. source: "auto" (view/subscriber/omset dari data — wajib isi metric), "manual" (angka diisi tangan), atau "kartu" (realisasi dari kartu todolist tertaut yang selesai).',
+            inputSchema: {
+                objective_id: z.number().int().describe('id Objective (dari list_okr)'),
+                title: z.string().describe('nama KR, mis. "Total view seluruh konten"'),
+                source: z.enum(['auto', 'manual', 'kartu']).describe('sumber realisasi'),
+                target: z.number().describe('angka target'),
+                metric: z.enum(['view', 'subscriber', 'omset']).optional().describe('WAJIB bila source=auto'),
+                unit: z.enum(['angka', 'rupiah', 'persen']).optional().describe('default angka; diabaikan bila source=kartu'),
+            },
+        },
+        async ({ objective_id, title, source, target, metric, unit }) => {
+            const [[obj]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [objective_id]);
+            if (!obj) return errText(`Objective id ${objective_id} tidak ditemukan.`);
+            if (source === 'auto' && !OKR_METRICS.includes(metric))
+                return errText('source=auto wajib menyertakan metric: view | subscriber | omset.');
+
+            // Bersihkan kolom sesuai sumber — cerminan validasiKeyResult() di Laravel.
+            let m = null, u = OKR_UNITS.includes(unit) ? unit : 'angka';
+            if (source === 'auto') m = metric;
+            else if (source === 'kartu') u = 'angka';
+
+            const owner = await ownerId();
+            const [[mx]] = await db.query(`SELECT COALESCE(MAX(position),-1)+1 pos FROM key_results WHERE objective_id=?`, [objective_id]);
+            const [r] = await db.query(
+                `INSERT INTO key_results (objective_id, title, source, metric, target, actual_manual, unit, owner_id, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NOW(), NOW())`,
+                [objective_id, title, source, m, target, u, owner, mx.pos, owner]);
+            return jsonText({ ok: true, key_result: { id: r.insertId, objective_id, title, source, metric: m, target, unit: u } });
+        }
+    );
+
+    // 8) Tautkan kartu todolist ke KR bersumber 'kartu' (langkah pencapaian goal)
+    server.registerTool(
+        'link_task_to_kr',
+        {
+            title: 'Link Task to Key Result',
+            description: 'Jadikan sebuah task todolist sbg langkah menuju Key Result bersumber "kartu". Menyelesaikan task menggerakkan angka KR. key_result_id null untuk melepas tautan.',
+            inputSchema: {
+                task_id: z.number().int().describe('id task (harus di board "todolist")'),
+                key_result_id: z.number().int().nullable().describe('id KR sumber "kartu", atau null untuk melepas'),
+            },
+        },
+        async ({ task_id, key_result_id }) => {
+            const [[task]] = await db.query(`SELECT id, category FROM pipelines WHERE id=? AND archived_at IS NULL`, [task_id]);
+            if (!task) return errText(`Task id ${task_id} tidak ditemukan.`);
+            // Gerbang sama dgn PipelineController::tautanKrValid(): todolist + KR 'kartu'.
+            if (task.category !== 'todolist') return errText('Tautan OKR hanya untuk task di board "todolist".');
+
+            if (key_result_id !== null) {
+                const [[kr]] = await db.query(`SELECT id FROM key_results WHERE id=? AND source='kartu'`, [key_result_id]);
+                if (!kr) return errText(`Key Result id ${key_result_id} tidak ada / bukan bersumber "kartu".`);
+            }
+            await db.query(`UPDATE pipelines SET key_result_id=?, updated_at=NOW() WHERE id=?`, [key_result_id, task_id]);
+            return jsonText({ ok: true, task_id, key_result_id });
         }
     );
 

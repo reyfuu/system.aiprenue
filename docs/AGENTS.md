@@ -27,9 +27,12 @@ Referensi: [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md) · [PRD.md](PRD.md)
 | Kanban (board/kolom dinamis, kartu lengkap) | `/pipelines/kanban` | ✅ |
 | Pembukuan (Chart.js) | `/pembukuan` | ✅ |
 | Script (template folder) | `/script` | ✅ |
+| OKR (Objective+KR, /okr) | `/okr` | ✅ |
+| KPI board + rapor per orang | `/kpi` | ✅ |
+| Insight sosial media | `/insight` | ✅ |
 | User management | `/users` | ✅ |
 
-Peran: `super_admin`, `it` (penuh) · `admin` (Script+Kanban, lihat) · `editor`, `staff` (Kanban, lihat + komentar). Lihat matriks di [PRD.md](PRD.md) §3.
+Peran: `owner`, `it` (penuh) · `manager` (operasional + OKR/KPI/Pembukuan/Tracking, tanpa User) · `admin` (Pipeline/Kanban/Content/Insight/KPI, kelola kartu) · `staff` (Kanban/Mindmap, kelola kartu di board kanban + rapor KPI sendiri). Skema DB: [Schema.md](Schema.md). Matriks: [PRD.md](PRD.md) §3.
 
 ---
 
@@ -49,9 +52,21 @@ Peran: `super_admin`, `it` (penuh) · `admin` (Script+Kanban, lihat) · `editor`
 - Kelas dinamis dari DB (warna kolom/label) **wajib** ada di safelist `resources/css/app.css` (`@source inline(...)`).
 - **Komentar kode**: Bahasa Indonesia, rinci (script logika + tiap seksi template).
 
+**Otorisasi & data (WAJIB — gerbang di server)**
+- Batasan bukan sekadar `v-if`/tombol tersembunyi: props Inertia terbaca di source. Data yang tak boleh dilihat peran tertentu **jangan dikirim** dari controller (kirim `null`/disaring), bukan disembunyikan di Vue. Contoh: `quarterStats` di Kanban, rapor KPI per orang.
+- Batasan pilihan (mis. label maks 1) ditegakkan di validasi server juga, bukan cuma di picker.
+- `okr`/`pembukuan`/`tracking` dikunci owner+manager di `User::canSee()` — jangan andalkan `role_menu_access` untuk ketiganya.
+
+**OKR / KPI / ketepatan waktu**
+- **"Selesai" = `completed_at` terisi**, bukan flag `done`, bukan nama kolom. Diisi saat kartu masuk kolom terakhir board. Rumus di `Pipeline::ketepatan()` — jangan tulis ulang.
+- Kartu masuk kuartal berdasarkan **`deadline`**; kartu tanpa deadline tak dihitung. Konsisten di Kanban, KPI, rapor.
+- KR `source` ∈ auto/manual/kartu — string, bukan enum. Realisasi auto/kartu **dihitung**, tak diketik; `updateActual` menolak keduanya.
+- Rumus dipakai ulang lintas halaman (`KpiController::statistik`, `OkrMetrics::realisasi`, `KeyResult::actual`), tak disalin. Hitung realisasi **sekali per kuartal** lalu oper (hindari N+1).
+
 **Umum**
 - Gaya kode PHP: PSR-12, jalankan `./vendor/bin/pint`.
 - Build: `npm run build` sebelum commit bila mengubah frontend.
+- Migrasi: satu perubahan = satu file baru; idempoten per kolom (`Schema::hasColumn`).
 - Commit: pesan singkat & imperatif.
 - Deploy butuh `php artisan storage:link` (lampiran kartu).
 
@@ -74,6 +89,6 @@ Peran: `super_admin`, `it` (penuh) · `admin` (Script+Kanban, lihat) · `editor`
 Contoh instruksi:
 - *"Sebagai Backend Agent, tambah fitur X: migrasi + model + controller `Inertia::render` + otorisasi via EnsureMenuAccess."*
 - *"Sebagai Frontend Agent, buat halaman/komponen Vue SFC (`<script setup>`) sesuai konvensi, komentar Bahasa Indonesia."*
-- *"Sebagai QA Agent, smoke test route sebagai super_admin & editor (cek 200 dan 403 yang benar)."*
+- *"Sebagai QA Agent, smoke test route sebagai owner & staff (cek 200 dan 403 yang benar)."*
 
 Agent harus selalu: (1) patuhi **Konvensi Proyek**, (2) rujuk DESIGN.md/SKILLS.md, (3) verifikasi (build + smoke test) setelah perubahan non-trivial.

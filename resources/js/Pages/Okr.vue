@@ -29,6 +29,7 @@ const props = defineProps({
     metrics: { type: Object, default: () => ({}) },   // key metrik otomatis → label
     sources: { type: Object, default: () => ({}) },   // auto | manual → label
     units: { type: Object, default: () => ({}) },
+    kartuTersedia: { type: Array, default: () => [] }, // kartu todolist belum tertaut (untuk "tautkan yang ada")
     canManage: Boolean,
     bisaSalin: Boolean,                               // kuartal ini kosong & kuartal lalu ada isinya
     kuartalLaluLabel: { type: String, default: '' },
@@ -41,6 +42,31 @@ const salinKuartalLalu = () => {
     if (!confirm(`Salin semua Objective & target dari ${props.kuartalLaluLabel} ke ${props.quarter.label}? Realisasinya tidak ikut disalin.`)) return;
     router.post('/okr/salin', { year: props.quarter.year, quarter: props.quarter.quarter }, { preserveScroll: true });
 };
+
+// ---- Kelola kartu (langkah) KR bersumber 'kartu' ----
+// Penautan dikelola DARI halaman ini, bukan dari Kanban — Kanban murni delegasi.
+// `kartuPanel` = id KR yang panel kelolanya sedang terbuka (satu per satu).
+const kartuPanel = ref(null);
+const bukaKartu = (krId) => { kartuPanel.value = kartuPanel.value === krId ? null : krId; kartuBaru.reset(); attachId.value = ''; };
+
+// Form buat langkah baru (kartu todolist baru langsung tertaut).
+const kartuBaru = useForm({ endorse: '', deadline: '' });
+const simpanKartuBaru = (krId) => kartuBaru.post(`/okr/key-results/${krId}/kartu`, {
+    preserveScroll: true,
+    onSuccess: () => kartuBaru.reset(),
+});
+
+// Tautkan kartu todolist yang sudah ada.
+const attachId = ref('');
+const tautkanKartu = (krId) => {
+    if (!attachId.value) return;
+    router.post(`/okr/key-results/${krId}/attach`, { pipeline_id: attachId.value },
+        { preserveScroll: true, onSuccess: () => { attachId.value = ''; } });
+};
+
+// Lepas tautan sebuah kartu (kartu tetap hidup di papannya).
+const lepasKartu = (krId, kartuId) =>
+    router.delete(`/okr/key-results/${krId}/kartu/${kartuId}`, { preserveScroll: true });
 
 // ---- Format angka ----
 // Notasi ringkas (1,2 jt) dipakai karena view & omset lazimnya jutaan — angka
@@ -278,12 +304,57 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                         <div class="min-w-0">
                             <span class="text-sm font-semibold text-slate-700">{{ kr.title }}</span>
                             <span :class="['ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border',
-                                           kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100' : 'bg-amber-50 text-amber-700 border-amber-200']">
+                                           kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100'
+                                           : kr.source === 'kartu' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                           : 'bg-amber-50 text-amber-700 border-amber-200']">
                                 {{ kr.source_label }}
                             </span>
                             <!-- Penanggung jawab: yang mengejar angka ini. Untuk
                                  sekarang selalu owner & belum bisa dipilih di form. -->
                             <p v-if="kr.owner_name" class="text-[11px] text-slate-400 mt-0.5">PJ: {{ kr.owner_name }}</p>
+
+                            <!-- Langkah-langkah: kartu todolist yang ditautkan ke KR
+                                 bersumber 'kartu'. Inilah jembatan goal → papan kerja.
+                                 Penautan dikelola DI SINI (bukan di Kanban — Kanban
+                                 murni delegasi). Kartunya sendiri tetap dikerjakan &
+                                 diselesaikan di papan Kanban todolist. -->
+                            <template v-if="kr.source === 'kartu'">
+                                <ul v-if="kr.kartu.length" class="mt-2 space-y-1">
+                                    <li v-for="k in kr.kartu" :key="k.id" class="group flex items-center gap-2 text-[11px]">
+                                        <svg v-if="k.selesai" class="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                        <span v-else class="w-3.5 h-3.5 rounded-full border border-slate-300 flex-shrink-0"></span>
+                                        <span :class="k.selesai ? 'text-slate-500 line-through' : 'text-slate-600'">{{ k.judul }}</span>
+                                        <span v-if="k.ketepatan === 'terlambat'" class="text-red-600 font-semibold">telat</span>
+                                        <button v-if="canManage" type="button" class="ml-auto text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition" title="Lepas dari goal ini" @click="lepasKartu(kr.id, k.id)">lepas</button>
+                                    </li>
+                                </ul>
+                                <p v-else class="text-[11px] text-slate-400 mt-1.5 italic">Belum ada kartu todolist yang ditautkan.</p>
+
+                                <!-- Kelola langkah (owner/manager). Toggle supaya kartu KR
+                                     tak penuh kontrol saat cuma dibaca. -->
+                                <button v-if="canManage" type="button" class="mt-1.5 text-[11px] font-semibold text-brand-700 hover:underline" @click="bukaKartu(kr.id)">
+                                    {{ kartuPanel === kr.id ? 'Tutup' : '+ Kelola langkah' }}
+                                </button>
+                                <div v-if="canManage && kartuPanel === kr.id" class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+                                    <!-- Buat kartu todolist BARU langsung tertaut -->
+                                    <form class="flex flex-wrap items-center gap-1.5" @submit.prevent="simpanKartuBaru(kr.id)">
+                                        <input v-model="kartuBaru.endorse" type="text" placeholder="Langkah baru…" class="flex-1 min-w-[140px] border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                                        <input v-model="kartuBaru.deadline" type="date" title="Deadline (opsional)" class="border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                                        <button type="submit" :disabled="kartuBaru.processing" class="text-[11px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-md px-2.5 py-1 disabled:opacity-50">Buat</button>
+                                    </form>
+                                    <p v-if="kartuBaru.errors.endorse" class="text-[10px] text-red-600">{{ kartuBaru.errors.endorse }}</p>
+
+                                    <!-- Atau tautkan kartu todolist yang sudah ada -->
+                                    <div v-if="kartuTersedia.length" class="flex items-center gap-1.5">
+                                        <select v-model="attachId" class="flex-1 border border-slate-200 rounded-md px-2 py-1 text-[11px] bg-white focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                            <option value="">Tautkan kartu yang sudah ada…</option>
+                                            <option v-for="c in kartuTersedia" :key="c.id" :value="c.id">{{ c.judul }}</option>
+                                        </select>
+                                        <button type="button" :disabled="!attachId" class="text-[11px] font-semibold text-brand-700 hover:underline disabled:opacity-40" @click="tautkanKartu(kr.id)">Tautkan</button>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">Kartu dikerjakan & diselesaikan di Kanban todolist; menyelesaikannya menggerakkan angka KR ini.</p>
+                                </div>
+                            </template>
                         </div>
                         <div>
                             <p class="text-xs text-slate-500 mb-1" :title="fmtFull(kr.actual, kr.unit) + ' dari ' + fmtFull(kr.target, kr.unit)">
@@ -397,6 +468,8 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <p class="text-[11px] text-slate-400 mt-1">
                         {{ krForm.source === 'auto'
                             ? 'Realisasi dihitung sendiri dari Insight/Pembukuan dan tidak bisa diisi manual.'
+                            : krForm.source === 'kartu'
+                            ? 'Realisasi = jumlah kartu todolist yang ditautkan ke KR ini dan sudah selesai. Kartunya dibuat & ditautkan di Kanban.'
                             : 'Realisasi kamu perbarui sendiri lewat tombol “Perbarui angka”.' }}
                     </p>
                 </div>
@@ -414,12 +487,14 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target</label>
-                        <input v-model="krForm.target" type="number" min="0" step="any"
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">{{ krForm.source === 'kartu' ? 'Target (jumlah kartu)' : 'Target' }}</label>
+                        <input v-model="krForm.target" type="number" min="0" :step="krForm.source === 'kartu' ? 1 : 'any'"
                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                         <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
                     </div>
-                    <div>
+                    <!-- KR 'kartu' selalu bersatuan "angka" (menghitung kartu) —
+                         server memaksanya, jadi pemilih satuan disembunyikan. -->
+                    <div v-if="krForm.source !== 'kartu'">
                         <label class="block text-xs font-semibold text-slate-500 mb-1">Satuan</label>
                         <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
                             <option v-for="(label, key) in units" :key="key" :value="key">{{ label }}</option>

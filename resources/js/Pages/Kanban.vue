@@ -233,12 +233,21 @@ const submitCard = () => {
         form.put('/pipelines/' + detailId.value, { preserveScroll: true, onSuccess: closeCard });
     }
 };
-const hasLabel = (color) => editForm.labels.some((l) => l.color === color);
+// Label kartu = PILIH SATU (ala radio), bukan centang banyak. Memilih label
+// lain menggantikan yang sedang aktif; mengklik label yang aktif melepasnya
+// (kartu boleh tanpa label sama sekali — radio HTML tak bisa dikosongkan lagi
+// setelah terisi, jadi dipakai <button> bertingkah radio, bukan <input>).
+//
+// Dicocokkan lewat NAMA, bukan warna. Warna tidak unik: owner memilihnya dari
+// palet terbatas (Label::COLORS), jadi dua label berbeda bisa sewarna — dan
+// pencocokan lewat warna membuat keduanya dianggap label yang sama.
+//
+// Disimpan tetap sbg ARRAY berisi 0 atau 1 item, bukan objek tunggal: bentuk
+// kolom `labels` di DB dan kartu-kartu lama tak ikut berubah, jadi tak perlu
+// migrasi data & kartu lama tetap tampil apa adanya.
+const hasLabel = (nama) => editForm.labels.some((l) => l.name === nama);
 const toggleLabel = (lp) => {
-    const i = editForm.labels.findIndex((l) => l.color === lp.color);
-    const next = [...editForm.labels];
-    if (i === -1) next.push({ name: lp.name, color: lp.color }); else next.splice(i, 1);
-    editForm.labels = next;
+    editForm.labels = hasLabel(lp.name) ? [] : [{ name: lp.name, color: lp.color }];
 };
 const toggleOutput = (id) => {
     editForm.outputs = editForm.outputs.includes(id) ? editForm.outputs.filter((x) => x !== id) : [...editForm.outputs, id];
@@ -946,12 +955,15 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                 <!-- Label -->
                 <div class="col-span-2">
                     <div class="flex items-center justify-between mb-1.5">
-                        <p class="font-medium text-slate-600">Label</p>
+                        <p class="font-medium text-slate-600">Label <span class="font-normal text-slate-400">— pilih satu</span></p>
                         <button v-if="isOwner" type="button" @click="labelManageOpen = true" class="text-xs text-brand-600 hover:underline font-medium">Kelola label</button>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <button v-for="lp in labels" :key="lp.id" type="button" @click="toggleLabel(lp)" :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition', hasLabel(lp.color) ? 'border-brand-400 bg-brand-50 text-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50']">
-                            <span :class="['w-3 h-3 rounded-full', lp.color]"></span><span>{{ lp.name }}</span><span v-if="hasLabel(lp.color)">✓</span>
+                    <!-- role="radiogroup": tombolnya saling meniadakan, jadi harus
+                         terbaca sbg pilihan tunggal oleh pembaca layar — bukan
+                         sekumpulan tombol centang yang kebetulan hanya satu aktif. -->
+                    <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Label kartu">
+                        <button v-for="lp in labels" :key="lp.id" type="button" role="radio" @click="toggleLabel(lp)" :aria-checked="hasLabel(lp.name)" :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition', hasLabel(lp.name) ? 'border-brand-400 bg-brand-50 text-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50']">
+                            <span :class="['w-3 h-3 rounded-full', lp.color]"></span><span>{{ lp.name }}</span><span v-if="hasLabel(lp.name)">✓</span>
                         </button>
                         <p v-if="!labels.length" class="text-xs text-slate-400 self-center">Belum ada label{{ isOwner ? ' — klik "Kelola label".' : '.' }}</p>
                     </div>

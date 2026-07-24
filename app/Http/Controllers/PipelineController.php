@@ -366,8 +366,19 @@ class PipelineController extends Controller
                 // paling lazim) tak pernah punya completed_at & luput dari
                 // analitik ketepatan. Stempel lama dipertahankan, lihat
                 // stempelSelesai().
+                //
+                // TAPI hanya untuk kartu yang benar-benar BERPINDAH kolom.
+                // Kiriman drag berisi SELURUH isi kolom tujuan (lihat
+                // Kanban.vue), jadi kartu yang sudah lama duduk di situ ikut
+                // terbawa cuma karena posisinya bergeser. Menstempel mereka
+                // juga berarti satu drag menimpa waktu selesai semua kartu
+                // lama dgn "hari ini" — deadline mereka sudah lewat, jadi
+                // seluruh papan mendadak terbaca terlambat.
                 $kartu = $cards->firstWhere('id', $id);
-                $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
+
+                if ($kartu->progress !== $data['progress']) {
+                    $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
+                }
 
                 Pipeline::where('id', $id)->update($ubah);
             }
@@ -474,7 +485,12 @@ class PipelineController extends Controller
             'kontak_wa' => 'nullable|string|max:40',
             'kontak_gmail' => 'nullable|string|max:255',
             'kontak_ig' => 'nullable|string|max:100',
-            'labels' => 'nullable|array',
+            // Satu label per kartu (pilih-satu, ala radio). max:1 ditegakkan di
+            // sini juga, bukan cuma di pemilih Vue: request langsung tetap
+            // tembus kalau gerbangnya hanya di frontend. Kartu lama yang
+            // terlanjur berlabel banyak tak tersentuh — validasi ini hanya
+            // berlaku untuk kiriman baru.
+            'labels' => 'nullable|array|max:1',
             'labels.*.name' => 'required_with:labels|string|max:50',
             'labels.*.color' => 'required_with:labels|string|max:40',
             'coaching' => 'nullable|string|max:255',

@@ -39,18 +39,22 @@ Dokumen arsitektur & desain teknis. Produk: lihat [PRD.md](PRD.md).
 ## 2. Model Data
 
 ```
-users ──< pipelines (assigned_to, created_by/updated_by)
+users ──< pipelines (assigned_to, created_by, key_result_id)
 categories (board) 1──n board_columns (kolom kanban, key=progress)
-pipelines ──< pipeline_output (pivot) >── outputs
+objectives 1──n key_results 1──n pipelines (key_result_id, nullable)
+pipelines ──< output_pipeline (pivot) >── outputs
 pipelines 1──n pipeline_comments >── users
 pipelines 1──n pipeline_attachments >── users
-transactions · inventories        (modul pembukuan, berdiri sendiri)
+transactions · inventories        (Pembukuan, berdiri sendiri)
+insight_accounts · insight_contents (Insight — sumber realisasi OKR)
 ```
+
+> **Skema lengkap semua tabel & aturan kolom** ada di [Schema.md](Schema.md). Di bawah hanya tabel inti + keputusan desainnya.
 
 ### Tabel inti
 
 **users** — `id, name, email, password, role`
-Peran: `super_admin, it, admin, editor, staff`. Method domain: `canSee($menu)`, `canManage()`, `homeRoute()`.
+Peran: `owner, manager, it, admin, staff`. Method domain: `canSee($menu)`, `canManage()`, `canManageBoard($cat)`, `homeRoute()`.
 
 **pipelines** — kartu/entri utama
 `account`(fk/ai_preneur), `assigned_to`(FK users), `endorse`, `description`, `progress`(= key kolom board, string dinamis), `category`(= key board), `jenis`(endorse/coaching_1on1/coaching_perusahaan/agensi/speaker — dulu board terpisah, kini atribut kartu; null utk kartu kanban), `tanggal_posting/payment`, `deadline`, `payment_status`(belum/dp/lunas), `amount_idr/usd`, `notes`, `link`, `todos`(json), `labels`(json), `ke_gilang`, `catatan`, `archived_at`, `created_by/updated_by`, `deleted_at`(soft delete).
@@ -63,7 +67,24 @@ Peran: `super_admin, it, admin, editor, staff`. Method domain: `canSee($menu)`, 
 **transactions** — `type`(pemasukan/pengeluaran), `category`, `amount_idr`, `date`.
 **inventories** — `name, qty, unit_value_idr, month`.
 
-> `progress` & `category` sengaja string (bukan enum) agar board/kolom dinamis. Kartu dgn kolom terhapus jatuh ke kolom pertama.
+**objectives / key_results** — OKR kuartalan. `key_results.source` ∈ `auto`(dari Insight/Pembukuan) · `manual` · `kartu`(dari kartu todolist tertaut). Realisasi **tak disimpan** — dihitung saat render.
+
+> `progress`, `category`, `source` sengaja string (bukan enum) agar dinamis / mudah bertambah tanpa migrasi. Kartu dgn kolom terhapus jatuh ke kolom pertama.
+
+### Aliran OKR → eksekusi
+
+```
+Objective (goal kuartal)
+   └─ Key Result (terukur)
+        source=kartu ──┐
+                       ▼
+         pipelines.key_result_id  (kartu Kanban todolist)
+                       │  completed_at terisi?
+                       ▼
+         realisasi KR = jumlah kartu tertaut yang selesai
+```
+
+Owner menulis goal di `/okr`; langkah pencapaian dibuat sebagai kartu di Kanban **todolist** dan ditautkan ke KR (`pipelines.key_result_id`). Menyelesaikan kartu (masuk kolom terakhir → `completed_at`) menggerakkan angka KR otomatis. Rumus realisasi ada satu tempat: `KeyResult::actual()` / `OkrMetrics::realisasi()`; ketepatan waktu di `Pipeline::ketepatan()`; keduanya dipakai ulang, tak disalin.
 
 ---
 
@@ -72,12 +93,14 @@ Peran: `super_admin, it, admin, editor, staff`. Method domain: `canSee($menu)`, 
 ```
 app/
 ├── Http/Controllers/     # Pipeline, Board, Column, Comment, Attachment,
-│                         # Dashboard, Pembukuan, User, Auth
+│                         # Okr, Kpi, Insight, Dashboard, Pembukuan, Order,
+│                         # Content, Tracking, Absence, Akses, User, Auth
 ├── Http/Middleware/       # EnsureMenuAccess, HandleInertiaRequests
-├── Models/                # Pipeline, Category, BoardColumn, Output,
-│                         # PipelineComment, PipelineAttachment,
-│                         # Transaction, Inventory, User
-└── Support/               # ExchangeRate (kurs USD→IDR, cache 12 jam)
+├── Models/                # Pipeline, Category, BoardColumn, Output, Label,
+│                         # Objective, KeyResult, BoardQuarterTarget,
+│                         # Insight*, Transaction, Inventory, User, …
+└── Support/               # ExchangeRate (kurs), Quarter (tanggal↔kuartal),
+                          # OkrMetrics (realisasi auto), KinerjaOrang (rapor)
 resources/
 ├── js/
 │   ├── app.js             # entry Inertia (Vue)
@@ -123,10 +146,14 @@ GET /pembukuan/report
 ## 5. Otorisasi (per peran, bukan per-model)
 
 `EnsureMenuAccess` mengecek tiap request:
-1. **Route mutasi** (store/update/destroy/archive/board/column/attachment) → butuh `canManage()` (super_admin/it). Komentar **dikecualikan** agar staff/editor bisa berkomentar.
-2. **Akses menu** → route dipetakan ke menu (dashboard/pipeline/kanban/script/pembukuan/user); user harus `canSee()` menu itu.
+1. **Route mutasi** (store/update/destroy/archive/board/column/attachment/okr.*/kpi.targets.*) → butuh `canManage()`. Komentar **dikecualikan** agar staff yang ditugasi bisa berkomentar.
+2. **Akses menu** → route dipetakan ke menu; user harus `canSee()` menu itu.
 
-UI menyembunyikan aksi terlarang; server tetap membalas **403** bila dilanggar.
+**Penyaringan data juga di server, bukan cuma menyembunyikan di Vue.** Props Inertia terbaca di source halaman, jadi:
+- Panel KPI di Kanban (`quarterStats`) hanya dikirim bila `canManage()` — query-nya pun tak dijalankan untuk staff.
+- Rapor KPI per orang: peran non-manajemen hanya menerima barisnya sendiri; nama & angka rekan kerja tak ikut terkirim.
+
+UI menyembunyikan aksi terlarang; server tetap membalas **403** (atau mengirim `null`) bila dilanggar.
 
 ---
 
