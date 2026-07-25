@@ -172,6 +172,10 @@ class ScriptTest extends TestCase
 
     // ---- Halaman ----
 
+    /** Angka di galeri = jumlah PAKET (PDF), bukan jumlah baris naskah:
+     *  satu tanggal digabung jadi satu PDF di show/pdf, jadi menghitung baris
+     *  membuat galeri menjanjikan lebih banyak berkas daripada yang bisa
+     *  dibuka. Dua kiriman × dua naskah = 4 baris, tapi tetap 2 paket. */
     public function test_galeri_menampilkan_jumlah_dan_paket_terbaru(): void
     {
         $this->kirim($this->payload(['generated_for' => '2026-07-18']));
@@ -181,7 +185,7 @@ class ScriptTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Script')
                 ->where('brands.0.key', 'raveloux')
-                ->where('brands.0.count', 4)
+                ->where('brands.0.count', 2)
                 ->where('brands.0.latest', '25 Jul 2026')     // paket terbaru, bukan yg pertama
                 ->where('brands.1.count', 0)                  // brand tanpa naskah tetap tampil
                 ->where('brands.1.latest', null)

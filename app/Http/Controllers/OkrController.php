@@ -55,16 +55,93 @@ class OkrController extends Controller
         // menghitung & mendaftar kartunya (N+1). Dikelompokkan per KR;
         // hitungan selesai disuntikkan ke model lewat 'kartu_selesai' supaya
         // KeyResult::actual() tak query ulang (lihat model).
-        $krKartuIds = $daftar->flatMap->keyResults->where('source', 'kartu')->pluck('id');
-        $kartuPerKr = Pipeline::whereIn('key_result_id', $krKartuIds)
+        $kartuPerKr = $this->kartuPerKr($daftar->flatMap->keyResults);
+        $objectives = $daftar->map(fn (Objective $o) => $this->petaObjective($o, $realisasi, $kartuPerKr))->values();
+
+        // Initiatives = kartu langkah lintas seluruh KR 'kartu' kuartal ini,
+        // dihitung dari koleksi yang sudah diambil (tanpa query tambahan).
+        $semuaKartu = $kartuPerKr->flatten(1);
+        $initiatives = ['total' => $semuaKartu->count(), 'selesai' => $semuaKartu->whereNotNull('completed_at')->count()];
+
+        return Inertia::render('Okr', [
+            'quarter' => ['year' => $year, 'quarter' => $quarter, 'key' => $year.'-Q'.$quarter, 'label' => Quarter::label($year, $quarter)],
+            'quarterOptions' => Quarter::options(),
+            'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
+            'objectives' => $objectives,
+            'ringkasan' => array_merge($this->ringkasan($objectives), ['initiatives' => $initiatives]),
+            'tren' => $this->tren($year, $quarter),
+            'metrics' => OkrMetrics::METRICS,
+            'sources' => KeyResult::SOURCES,
+            'units' => KeyResult::UNITS,
+            // Kartu todolist yang BELUM tertaut ke KR mana pun — pilihan untuk
+            // "tautkan kartu yang sudah ada". Penautan dikelola dari halaman ini,
+            // bukan dari Kanban (Kanban murni delegasi). Diambil sekali di sini.
+            'kartuTersedia' => $request->user()->canManage() ? Pipeline::where('category', 'todolist')
+                ->whereNull('key_result_id')->whereNull('archived_at')
+                ->orderByDesc('id')->limit(100)->get(['id', 'endorse'])
+                ->map(fn ($p) => ['id' => $p->id, 'judul' => $p->endorse])->values() : [],
+            'canManage' => $request->user()->canManage(),
+            // Tawaran salin hanya muncul saat kuartal ini MASIH KOSONG dan
+            // kuartal sebelumnya ada isinya. Menawarkannya pada kuartal yang
+            // sudah terisi mengundang duplikat: dua Objective serupa yang
+            // targetnya berbeda, tanpa cara tahu mana yang berlaku.
+            'bisaSalin' => $daftar->isEmpty()
+                && Objective::where('year', $kuartalLalu['year'])->where('quarter', $kuartalLalu['quarter'])->exists(),
+            'kuartalLaluLabel' => Quarter::label($kuartalLalu['year'], $kuartalLalu['quarter']),
+        ]);
+    }
+
+    /**
+     * Halaman detail satu Objective — kartu di dashboard OKR mengarah ke sini.
+     * Semua penyuntingan KR/langkah dilakukan di halaman ini; dashboard hanya
+     * ringkasan + navigasi.
+     */
+    public function show(Request $request, Objective $objective)
+    {
+        $objective->load(['keyResults.owner', 'creator']);
+        $realisasi = OkrMetrics::realisasi($objective->year, $objective->quarter);
+        $kartuPerKr = $this->kartuPerKr($objective->keyResults);
+
+        return Inertia::render('OkrObjective', [
+            'objective' => $this->petaObjective($objective, $realisasi, $kartuPerKr),
+            'quarter' => [
+                'year' => $objective->year,
+                'quarter' => $objective->quarter,
+                'key' => $objective->year.'-Q'.$objective->quarter,
+                'label' => Quarter::label($objective->year, $objective->quarter),
+            ],
+            'metrics' => OkrMetrics::METRICS,
+            'sources' => KeyResult::SOURCES,
+            'units' => KeyResult::UNITS,
+            'kartuTersedia' => $request->user()->canManage() ? Pipeline::where('category', 'todolist')
+                ->whereNull('key_result_id')->whereNull('archived_at')
+                ->orderByDesc('id')->limit(100)->get(['id', 'endorse'])
+                ->map(fn ($p) => ['id' => $p->id, 'judul' => $p->endorse])->values() : [],
+            'canManage' => $request->user()->canManage(),
+        ]);
+    }
+
+    /** Kartu langkah utk sekumpulan KR, dikelompokkan per key_result_id (anti
+     *  N+1). Hanya KR bersumber 'kartu' yang punya langkah. */
+    private function kartuPerKr(\Illuminate\Support\Collection $keyResults): \Illuminate\Support\Collection
+    {
+        $ids = $keyResults->where('source', 'kartu')->pluck('id');
+
+        return Pipeline::whereIn('key_result_id', $ids)
             ->orderBy('position')->orderBy('id')
             ->get(['id', 'key_result_id', 'endorse', 'progress', 'deadline', 'completed_at'])
             ->groupBy('key_result_id');
+    }
 
-        $objectives = $daftar->map(fn (Objective $o) => [
+    /** Bentuk data satu Objective utk Inertia — dipakai bersama index() & show()
+     *  supaya dashboard & halaman detail memakai struktur yang sama persis. */
+    private function petaObjective(Objective $o, array $realisasi, \Illuminate\Support\Collection $kartuPerKr): array
+    {
+        return [
             'id' => $o->id,
             'title' => $o->title,
             'description' => $o->description,
+            'division' => $o->division,
             'progress' => $o->progress($realisasi),
             'created_by_name' => $o->creator?->name,
             'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr) {
@@ -94,34 +171,7 @@ class OkrController extends Controller
                     ])->values() : [],
                 ];
             })->values(),
-        ])->values();
-
-        return Inertia::render('Okr', [
-            'quarter' => ['year' => $year, 'quarter' => $quarter, 'key' => $year.'-Q'.$quarter, 'label' => Quarter::label($year, $quarter)],
-            'quarterOptions' => Quarter::options(),
-            'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
-            'objectives' => $objectives,
-            'ringkasan' => $this->ringkasan($objectives),
-            'tren' => $this->tren($year, $quarter),
-            'metrics' => OkrMetrics::METRICS,
-            'sources' => KeyResult::SOURCES,
-            'units' => KeyResult::UNITS,
-            // Kartu todolist yang BELUM tertaut ke KR mana pun — pilihan untuk
-            // "tautkan kartu yang sudah ada". Penautan dikelola dari halaman ini,
-            // bukan dari Kanban (Kanban murni delegasi). Diambil sekali di sini.
-            'kartuTersedia' => $request->user()->canManage() ? Pipeline::where('category', 'todolist')
-                ->whereNull('key_result_id')->whereNull('archived_at')
-                ->orderByDesc('id')->limit(100)->get(['id', 'endorse'])
-                ->map(fn ($p) => ['id' => $p->id, 'judul' => $p->endorse])->values() : [],
-            'canManage' => $request->user()->canManage(),
-            // Tawaran salin hanya muncul saat kuartal ini MASIH KOSONG dan
-            // kuartal sebelumnya ada isinya. Menawarkannya pada kuartal yang
-            // sudah terisi mengundang duplikat: dua Objective serupa yang
-            // targetnya berbeda, tanpa cara tahu mana yang berlaku.
-            'bisaSalin' => $daftar->isEmpty()
-                && Objective::where('year', $kuartalLalu['year'])->where('quarter', $kuartalLalu['quarter'])->exists(),
-            'kuartalLaluLabel' => Quarter::label($kuartalLalu['year'], $kuartalLalu['quarter']),
-        ]);
+        ];
     }
 
     /** Kuartal sebelum yang diberikan, ikut mundur tahun saat menyeberang Q1. */
@@ -295,9 +345,13 @@ class OkrController extends Controller
      *  Objective ia tak punya arti. */
     public function destroyObjective(Objective $objective)
     {
+        // Simpan kuartal sebelum dihapus: penghapusan bisa datang dari halaman
+        // DETAIL objective — kembali ke sana (back()) akan 404 karena recordnya
+        // sudah hilang. Arahkan ke dashboard kuartal yang sama.
+        $q = $objective->year.'-Q'.$objective->quarter;
         $objective->delete();
 
-        return back()->with('status', 'Objective dihapus.');
+        return redirect()->route('okr.index', ['q' => $q])->with('status', 'Objective dihapus.');
     }
 
     private function validasiObjective(Request $request): array
@@ -307,6 +361,7 @@ class OkrController extends Controller
             'quarter' => 'required|integer|min:1|max:4',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:2000',
+            'division' => 'nullable|string|max:100',
         ]);
     }
 

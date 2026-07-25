@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Inventory;
 use App\Models\Mindmap;
+use App\Models\Objective;
 use App\Models\Order;
 use App\Models\Pipeline;
 use App\Models\Script;
 use App\Models\Transaction;
 use App\Support\ExchangeRate;
+use App\Support\OkrMetrics;
+use App\Support\Quarter;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -148,6 +151,55 @@ class DashboardController extends Controller
             ])->values(),
         ];
 
+        // ---- OKR: ringkasan kuartal BERJALAN ----
+        //
+        //  Dihitung hanya bila perannya memang boleh melihat OKR (owner/manager,
+        //  lihat User::canSee). Dua alasan: menu ini berisi target & realisasi
+        //  omset tingkat perusahaan sehingga tak boleh ikut terkirim ke peran
+        //  lain, dan OkrMetrics::realisasi() menembak Insight + Pembukuan —
+        //  pekerjaan yang percuma untuk peran yang kartunya pun tak muncul.
+        //
+        //  Kuartalnya selalu yang berjalan, TIDAK ikut filter bulan di atas:
+        //  filter itu milik Order, sedangkan OKR hidup per kuartal. Memaksakan
+        //  keduanya sejalan hanya akan memunculkan angka OKR yang tak pernah
+        //  cocok dengan halaman /okr.
+        $okr = null;
+        if ($request->user()->canSee('okr')) {
+            $qNow = Quarter::current();
+            $realisasi = OkrMetrics::realisasi($qNow['year'], $qNow['quarter']);
+            $objectives = Objective::forQuarter($qNow['year'], $qNow['quarter']);
+
+            // Progress tiap objective dihitung sekali, lalu dipakai ulang untuk
+            // rata-rata, hitungan on track/at risk, maupun daftar sorotan.
+            $nilai = $objectives->map(fn (Objective $o) => [
+                'id' => $o->id,
+                'title' => $o->title,
+                'division' => $o->division,
+                'progress' => $o->progress($realisasi),
+                'kr' => $o->keyResults->count(),
+            ]);
+            $berangka = $nilai->pluck('progress')->filter(fn ($p) => $p !== null);
+
+            $okr = [
+                'quarterKey' => $qNow['year'].'-Q'.$qNow['quarter'],
+                'label' => Quarter::label($qNow['year'], $qNow['quarter']),
+                'objectives' => $nilai->count(),
+                'keyResults' => (int) $nilai->sum('kr'),
+                // Ambang sama persis dgn halaman /okr: ≥60% on track. Kalau
+                // ambangnya berbeda, dua halaman akan menyebut objective yang
+                // sama dengan status yang bertentangan.
+                'progress' => $berangka->isEmpty() ? null : round($berangka->avg(), 1),
+                'onTrack' => $berangka->filter(fn ($p) => $p >= 60)->count(),
+                'atRisk' => $berangka->filter(fn ($p) => $p < 60)->count(),
+                // Tiga sorotan = progress TERENDAH dulu, bukan tertinggi:
+                // dashboard dipakai untuk memutuskan apa yang perlu ditengok,
+                // dan objective yang tertinggal itulah yang butuh keputusan.
+                // Yang belum bisa dinilai (tanpa target) ditaruh paling belakang
+                // supaya tak menyerobot tempat objective yang benar-benar merah.
+                'sorot' => $nilai->sortBy(fn ($o) => $o['progress'] ?? 999)->take(3)->values(),
+            ];
+        }
+
         // ---- Pembukuan: dari transaksi & inventaris (bukan omzet pipeline) ----
         $pemasukan   = (float) Transaction::where('type', 'pemasukan')->sum('amount_idr');
         $pengeluaran = (float) Transaction::where('type', 'pengeluaran')->sum('amount_idr');
@@ -155,6 +207,8 @@ class DashboardController extends Controller
 
         return Inertia::render('Dashboard', [
             'rate'     => $rate,
+            // Kartu OKR — lihat $okr di atas. null = peran ini tak boleh melihat OKR.
+            'okr'      => $okr,
             'monthly'  => $monthly,          // grafik omzet per bulan, per akun (SELALU semua bulan)
             'accounts' => Order::ACCOUNTS,   // label + urutan seri grafik
             // null = tampilkan grafik; terisi = tampilkan tabel order menggantikannya

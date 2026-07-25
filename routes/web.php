@@ -131,6 +131,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // OKR perusahaan (view/subscriber/omset). TERKUNCI owner & manager di
     // User::canSee() — isinya omset, sejajar pembukuan & tracking.
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
+    Route::get('/okr/objectives/{objective}', [OkrController::class, 'show'])->name('okr.objectives.show');
     Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
     Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
     Route::put('/okr/objectives/{objective}', [OkrController::class, 'updateObjective'])->name('okr.objectives.update');

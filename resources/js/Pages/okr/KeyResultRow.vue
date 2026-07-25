@@ -70,9 +70,6 @@ const lepas = (kartuId) => router.delete(`/okr/key-results/${props.kr.id}/kartu/
                             input-class="w-full border border-slate-200 rounded px-1.5 py-0.5 text-[19px] bg-white focus:outline-none focus:ring-2 focus:ring-brand-300">
                     <span class="text-[19px] text-slate-800">{{ kr.title }}</span>
                 </InlineEdit>
-                <button v-if="canManage" type="button" class="text-slate-300 hover:text-red-600 opacity-0 group-hover/kr:opacity-100 transition" title="Hapus Key Result" @click="hapus">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-                </button>
             </div>
 
             <div class="font-sans text-[12.5px] text-slate-400 mt-1.5 flex items-center gap-2.5 flex-wrap">
@@ -86,8 +83,14 @@ const lepas = (kartuId) => router.delete(`/okr/key-results/${props.kr.id}/kartu/
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
                     berisiko
                 </span>
+                <!-- Aksi KR. Sengaja teks & selalu terlihat (bukan ikon yang baru
+                     muncul saat hover): hapus yang tersembunyi bikin orang mengira
+                     KR hanya bisa dibuat, tak bisa dibereskan. -->
                 <button v-if="canManage" type="button" class="text-slate-400 hover:text-brand-700 font-semibold" @click="ubahStruktur = !ubahStruktur">
                     {{ ubahStruktur ? 'tutup' : 'ubah' }}
+                </button>
+                <button v-if="canManage" type="button" class="text-slate-400 hover:text-red-600 font-semibold" title="Hapus Key Result" @click="hapus">
+                    hapus
                 </button>
             </div>
 

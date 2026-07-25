@@ -5,6 +5,7 @@ import { Link, router, usePage } from '@inertiajs/vue3'; // Link nav, router utk
 import Layout from '../Layout.vue';           // Layout sudah render sidebar + flash toast
 import '../scripts/lib/charts';               // registrasi elemen Chart.js (dipakai bareng Pembukuan)
 import { Line } from 'vue-chartjs';           // komponen chart siap pakai
+import { barWidth, barColor } from './okr/helpers.js';  // meter progress OKR — dipakai ulang, jangan disalin
 
 // Props dari DashboardController — satu objek per modul
 const props = defineProps({
@@ -19,6 +20,9 @@ const props = defineProps({
     script: { type: Object, default: () => ({}) },      // { folders, files }
     pembukuan: { type: Object, default: () => ({}) },   // { pemasukan, pengeluaran, laba, transaksi, invTotal }
     insight: { type: Object, default: () => ({}) },     // { konten, views, followerGain, top[] } — IG & YouTube
+    // { quarterKey, label, objectives, keyResults, progress, onTrack, atRisk, sorot[] }
+    // null = peran ini tak boleh melihat OKR (server tak mengirim angkanya sama sekali)
+    okr: { type: Object, default: null },
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
     daftar: { type: Object, default: null },            // drill-down: null = tampilkan grafik
 });
@@ -332,6 +336,40 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
             <!-- ===== Kartu ringkasan per modul ===== -->
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <!-- ---- OKR: progress target kuartal berjalan ----
+                     Ditaruh paling depan: ini pertanyaan tingkat perusahaan
+                     ("target kuartal ini sejauh mana"), sedangkan kartu lain
+                     bicara per modul. `okr` null utk peran yg tak boleh melihat,
+                     jadi v-if-nya ke datanya — bukan cuma ke menus. -->
+                <Link v-if="okr" :href="`/okr?q=${okr.quarterKey}`" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">OKR · {{ okr.label }}</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ okr.progress === null ? '—' : okr.progress + '%' }}
+                        <span class="text-sm text-slate-400 font-medium">progress</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ okr.objectives }} objective · {{ okr.keyResults }} KR ·
+                        <span class="text-emerald-600 font-semibold">{{ okr.onTrack }} on track</span> ·
+                        <span class="text-amber-600 font-semibold">{{ okr.atRisk }} at risk</span>
+                    </p>
+                    <!-- Sorotan: objective dgn progress terendah (paling perlu ditengok) -->
+                    <div v-if="okr.sorot.length" class="mt-4 space-y-2.5">
+                        <div v-for="o in okr.sorot" :key="o.id">
+                            <div class="flex items-center justify-between text-xs mb-1 gap-2">
+                                <span class="text-slate-500 truncate">{{ o.title }}</span>
+                                <span class="font-semibold text-slate-700 tabular-nums whitespace-nowrap">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
+                            </div>
+                            <div class="h-1.5 rounded-full bg-brand-50 overflow-hidden">
+                                <div :class="'h-full ' + barColor(o.progress)" :style="{ width: barWidth(o.progress) }"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <p v-else class="mt-4 text-xs text-slate-400">Belum ada Objective untuk kuartal ini.</p>
+                </Link>
 
                 <!-- ---- Insight: performa konten IG & YouTube (ringkas) ---- -->
                 <Link v-if="menus.insight" href="/insight" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">

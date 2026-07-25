@@ -165,6 +165,194 @@ class OkrTest extends TestCase
         $this->assertDatabaseCount('key_results', 0);
     }
 
+    // ------------------------------------------------- ubah & hapus (CRUD)
+    //
+    //  Tombol "Ubah"/"Hapus" ada di tiga tempat: kartu objective di dashboard
+    //  OKR, halaman detail objective, dan tiap baris Key Result. Ketiganya
+    //  menembak endpoint yang sama, jadi yang diuji di sini endpoint-nya —
+    //  bukan tombolnya.
+
+    /** Ubah objective dari kartu dashboard: judul & divisi. */
+    public function test_objective_bisa_diubah_judul_dan_divisinya(): void
+    {
+        $o = $this->objective();
+
+        $this->actingAs($this->user())->put('/okr/objectives/'.$o->id, [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Judul terkoreksi', 'division' => 'Growth',
+        ])->assertSessionHasNoErrors();
+
+        $o->refresh();
+        $this->assertSame('Judul terkoreksi', $o->title);
+        $this->assertSame('Growth', $o->division);
+    }
+
+    /**
+     * Kolom yang TAK dikirim tak tersentuh; yang dikirim kosong benar-benar
+     * dikosongkan.
+     *
+     *  Ini yang membuat form ubah di kartu dashboard aman meski cuma memuat
+     *  judul & divisi: keterangan panjang yang ditulis di halaman detail tetap
+     *  utuh. Perbedaan "tak dikirim" vs "dikirim kosong" itulah yang dikunci di
+     *  sini — kalau `validate()` suatu saat mulai mengembalikan kunci yang
+     *  absen, form kartu ikut menghapus keterangan tanpa ada yang memintanya.
+     */
+    public function test_update_objective_hanya_menyentuh_kolom_yang_dikirim(): void
+    {
+        $o = Objective::create([
+            'year' => 2026, 'quarter' => 3, 'title' => 'Punya keterangan', 'description' => 'Konteks panjang',
+        ]);
+        $owner = $this->user();
+
+        // Tanpa 'description' → keterangan lama bertahan.
+        $this->actingAs($owner)->put('/okr/objectives/'.$o->id, [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Judul baru',
+        ])->assertSessionHasNoErrors();
+
+        $o->refresh();
+        $this->assertSame('Judul baru', $o->title);
+        $this->assertSame('Konteks panjang', $o->description);
+
+        // Dikirim kosong → memang dikosongkan (halaman detail menghapus keterangan).
+        $this->actingAs($owner)->put('/okr/objectives/'.$o->id, [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Judul baru', 'description' => '',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertNull($o->fresh()->description);
+    }
+
+    /** Judul kosong ditolak — objective tanpa kalimat tujuan tak ada gunanya. */
+    public function test_ubah_objective_tanpa_judul_ditolak(): void
+    {
+        $o = $this->objective();
+
+        $this->actingAs($this->user())->put('/okr/objectives/'.$o->id, [
+            'year' => 2026, 'quarter' => 3, 'title' => '',
+        ])->assertSessionHasErrors('title');
+
+        $this->assertSame('Objective uji', $o->fresh()->title);
+    }
+
+    /**
+     * Mengubah sumber KR membersihkan kolom yang tak lagi berlaku.
+     *
+     *  KR manual berisi angka ketikan; begitu ia jadi `auto`, angka itu harus
+     *  hilang. Kalau tidak, realisasi lama tertinggal di baris yang kini
+     *  mengaku menghitung sendiri — persis jenis angka yang tak bisa dipercaya
+     *  dan tak bisa dilacak asalnya.
+     */
+    public function test_ubah_sumber_key_result_membersihkan_realisasi_manual(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create([
+            'objective_id' => $o->id, 'title' => 'Klien baru',
+            'source' => 'manual', 'target' => 10, 'actual_manual' => 7, 'unit' => 'angka',
+        ]);
+
+        $this->actingAs($this->user())->put('/okr/key-results/'.$kr->id, [
+            'title' => 'Total view', 'source' => 'auto', 'metric' => 'view', 'target' => 500, 'unit' => 'angka',
+        ])->assertSessionHasNoErrors();
+
+        $kr->refresh();
+        $this->assertSame('auto', $kr->source);
+        $this->assertSame('view', $kr->metric);
+        $this->assertNull($kr->actual_manual, 'angka ketikan lama harus hilang saat KR jadi otomatis');
+    }
+
+    /** KR tak berpindah induk lewat form ubah — controller membuang
+     *  objective_id. Kalau lolos, satu KR bisa "hilang" dari objective-nya
+     *  hanya karena kiriman form membawa id lama. */
+    public function test_key_result_tak_berpindah_objective_lewat_update(): void
+    {
+        $asal = $this->objective();
+        $lain = Objective::create(['year' => 2026, 'quarter' => 3, 'title' => 'Objective lain']);
+        $kr = KeyResult::create(['objective_id' => $asal->id, 'title' => 'KR', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())->put('/okr/key-results/'.$kr->id, [
+            'objective_id' => $lain->id, 'title' => 'KR', 'source' => 'manual', 'target' => 10, 'unit' => 'angka',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($asal->id, $kr->fresh()->objective_id);
+    }
+
+    /** Hapus satu KR tak menyentuh objective induk maupun KR saudaranya. */
+    public function test_key_result_bisa_dihapus_tanpa_menyentuh_yang_lain(): void
+    {
+        $o = $this->objective();
+        $dihapus = KeyResult::create(['objective_id' => $o->id, 'title' => 'Salah ketik', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
+        $bertahan = KeyResult::create(['objective_id' => $o->id, 'title' => 'Tetap ada', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())->delete('/okr/key-results/'.$dihapus->id)->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('key_results', ['id' => $dihapus->id]);
+        $this->assertDatabaseHas('key_results', ['id' => $bertahan->id]);
+        $this->assertDatabaseHas('objectives', ['id' => $o->id]);
+    }
+
+    /** Tombol ubah/hapus disembunyikan untuk peran view-only, tapi gerbang
+     *  sebenarnya di server — request langsung harus ikut tertolak. */
+    public function test_staff_tak_bisa_mengubah_atau_menghapus(): void
+    {
+        $o = $this->objective();
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'KR', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
+        $staff = $this->user('staff');
+
+        $this->actingAs($staff)->put('/okr/objectives/'.$o->id, [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Diam-diam',
+        ])->assertForbidden();
+        $this->actingAs($staff)->delete('/okr/objectives/'.$o->id)->assertForbidden();
+        $this->actingAs($staff)->put('/okr/key-results/'.$kr->id, [
+            'title' => 'Diam-diam', 'source' => 'manual', 'target' => 10, 'unit' => 'angka',
+        ])->assertForbidden();
+        $this->actingAs($staff)->delete('/okr/key-results/'.$kr->id)->assertForbidden();
+
+        $this->assertSame('Objective uji', $o->fresh()->title);
+        $this->assertSame('KR', $kr->fresh()->title);
+    }
+
+    // -------------------------------------------- halaman detail objective
+
+    /** Detail objective = tempat seluruh penyuntingan KR. Ia harus mengirim
+     *  KR beserta angka yang sudah dihitung, bukan cuma judul objective. */
+    public function test_halaman_detail_objective_mengirim_key_result_beserta_capaiannya(): void
+    {
+        $o = $this->objective();
+        KeyResult::create(['objective_id' => $o->id, 'title' => 'Klien baru', 'source' => 'manual', 'target' => 10, 'actual_manual' => 4, 'unit' => 'angka']);
+
+        $this->actingAs($this->user())->get('/okr/objectives/'.$o->id)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('OkrObjective')
+                ->where('objective.title', 'Objective uji')
+                ->where('objective.progress', 40)
+                ->has('objective.key_results', 1)
+                ->where('objective.key_results.0.percent', 40)
+                ->where('canManage', true)
+            );
+    }
+
+    /** Penguncian owner+manager berlaku untuk halaman detail juga, bukan cuma
+     *  /okr. Halaman yang lolos = seluruh isi satu objective ikut bocor. */
+    public function test_it_ditolak_membuka_detail_objective(): void
+    {
+        $o = $this->objective();
+
+        $this->actingAs($this->user('it'))->get('/okr/objectives/'.$o->id)->assertForbidden();
+    }
+
+    /**
+     * Hapus dari halaman detail mengarah ke dashboard kuartal yang sama.
+     *
+     *  back() akan mengembalikan pemakai ke halaman detail yang recordnya baru
+     *  saja hilang — 404 tepat sesudah aksi yang berhasil.
+     */
+    public function test_hapus_objective_mengarahkan_ke_dashboard_kuartalnya(): void
+    {
+        $o = $this->objective(2026, 2);
+
+        $this->actingAs($this->user())->delete('/okr/objectives/'.$o->id)
+            ->assertRedirect('/okr?q=2026-Q2');
+    }
+
     /** Angka otomatis yang bisa ditimpa tangan berhenti bisa dipercaya —
      *  ditolak terang-terangan, bukan diabaikan diam-diam. */
     public function test_key_result_otomatis_tak_bisa_ditimpa_manual(): void
