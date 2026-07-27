@@ -252,146 +252,154 @@ function buildServer() {
         }
     );
 
-    // ── OKR: menyusun & memantau strategi kuartalan ─────────────────────────
-    // Alur yang dimaksud: AI membaca list_okr utk tahu posisi, lalu menyusun
-    // Objective + Key Result. KR bersumber 'kartu' dieksekusi lewat kartu
-    // todolist (create_task → link_task_to_kr), jadi progress goal bergerak
-    // sendiri saat kartunya diselesaikan.
+    // ── Sales Pipeline (board `sales`, type=pipeline) ─────────────────────────
+    // Enum mengikuti App\Models\Pipeline (JENIS/ACCOUNTS) + kolom board sales.
+    const JENIS = ['endorse', 'coaching_1on1', 'coaching_perusahaan', 'agensi', 'speaker'];
+    const ACCOUNTS = ['fk', 'ai_preneur'];
+    const PAYMENT = ['belum', 'dp', 'lunas'];
 
-    // 5) Lihat OKR satu kuartal + realisasi (default kuartal berjalan)
+    // Board sales diambil dinamis (type='pipeline') — cuma ada satu.
+    const salesKey = async () => {
+      const [[b]] = await db.query(`SELECT \`key\` FROM categories WHERE type='pipeline' LIMIT 1`);
+      return b ? b.key : null;
+    };
+
+    // 5) Stage (kolom) pipeline sales
     server.registerTool(
-        'list_okr',
-        {
-            title: 'List OKR',
-            description: 'Objective + Key Result satu kuartal beserta realisasi & capaian. Default kuartal berjalan. Pakai ini dulu sebelum menyusun strategi.',
-            inputSchema: {
-                year: z.number().int().optional().describe('tahun, mis. 2026 (default: sekarang)'),
-                quarter: z.number().int().min(1).max(4).optional().describe('1–4 (default: kuartal berjalan)'),
-            },
-        },
-        async ({ year, quarter }) => {
-            const cur = currentQuarter();
-            year = year || cur.year;
-            quarter = quarter || cur.quarter;
-
-            const real = await okrRealisasi(year, quarter);
-            const [objs] = await db.query(
-                `SELECT id, title, description, position FROM objectives WHERE year=? AND quarter=? ORDER BY position, id`, [year, quarter]);
-
-            const objectives = [];
-            for (const o of objs) {
-                const [krs] = await db.query(
-                    `SELECT id, title, source, metric, target, actual_manual, unit FROM key_results WHERE objective_id=? ORDER BY position, id`, [o.id]);
-                const key_results = [];
-                for (const kr of krs) {
-                    let actual = 0, cards = null;
-                    if (kr.source === 'auto') actual = real[kr.metric] ?? 0;
-                    else if (kr.source === 'manual') actual = Number(kr.actual_manual ?? 0);
-                    else if (kr.source === 'kartu') {
-                        const [[c]] = await db.query(
-                            `SELECT COUNT(*) total, COALESCE(SUM(completed_at IS NOT NULL),0) done FROM pipelines WHERE key_result_id=?`, [kr.id]);
-                        actual = Number(c.done);
-                        cards = { done: Number(c.done), total: Number(c.total) };
-                    }
-                    key_results.push({
-                        id: kr.id, title: kr.title, source: kr.source, metric: kr.metric,
-                        target: Number(kr.target), actual, percent: pct(actual, kr.target), unit: kr.unit,
-                        ...(cards ? { cards } : {}),
-                    });
-                }
-                objectives.push({ id: o.id, title: o.title, description: o.description, key_results });
-            }
-            return jsonText({ year, quarter, realisasi_metrik: real, objectives });
-        }
+      'list_pipeline_stages',
+      { title: 'List Pipeline Stages', description: 'Daftar stage/kolom pipeline sales (lead → deal). Pakai stage key ini untuk create_deal/update_deal.', inputSchema: {} },
+      async () => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const [rows] = await db.query(`SELECT \`key\`, name FROM board_columns WHERE board_key=? ORDER BY position`, [key]);
+        return jsonText({ board: key, stages: rows });
+      }
     );
 
-    // 6) Buat Objective (kalimat tujuan) untuk satu kuartal
+    // 6) Daftar deal aktif di pipeline sales (opsional filter stage/jenis)
     server.registerTool(
-        'create_objective',
-        {
-            title: 'Create Objective',
-            description: 'Buat Objective (goal kualitatif) untuk satu kuartal. Isi Key Result terukurnya lewat create_key_result.',
-            inputSchema: {
-                title: z.string().describe('kalimat tujuan, mis. "Jadi rujukan konten AI di Indonesia"'),
-                year: z.number().int().optional().describe('default: tahun berjalan'),
-                quarter: z.number().int().min(1).max(4).optional().describe('default: kuartal berjalan'),
-                description: z.string().optional().describe('penjelasan singkat (opsional)'),
-            },
+      'list_deals',
+      {
+        title: 'List Deals',
+        description: 'Daftar deal aktif di pipeline sales. Filter opsional: stage (key kolom) atau jenis.',
+        inputSchema: {
+          stage: z.string().optional().describe('filter key stage, mis. "nego"'),
+          jenis: z.string().optional().describe('filter jenis deal'),
         },
-        async ({ title, year, quarter, description }) => {
-            const cur = currentQuarter();
-            year = year || cur.year;
-            quarter = quarter || cur.quarter;
-            const owner = await ownerId();
-            const [[mx]] = await db.query(`SELECT COALESCE(MAX(position),-1)+1 pos FROM objectives WHERE year=? AND quarter=?`, [year, quarter]);
-            const [r] = await db.query(
-                `INSERT INTO objectives (year, quarter, title, description, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [year, quarter, title, description || null, mx.pos, owner]);
-            return jsonText({ ok: true, objective: { id: r.insertId, year, quarter, title } });
-        }
+      },
+      async ({ stage, jenis }) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const where = ['category=?', 'archived_at IS NULL'];
+        const vals = [key];
+        if (stage) { where.push('progress=?'); vals.push(stage); }
+        if (jenis) { where.push('jenis=?'); vals.push(jenis); }
+        const [rows] = await db.query(
+          `SELECT id, endorse AS nama, jenis, account, progress AS stage, payment_status,
+                  amount_idr, amount_usd, deadline, kontak_wa, kontak_gmail, kontak_ig, link
+           FROM pipelines WHERE ${where.join(' AND ')} ORDER BY id DESC`,
+          vals
+        );
+        return jsonText({ board: key, count: rows.length, deals: rows });
+      }
     );
 
-    // 7) Tambah Key Result terukur ke sebuah Objective
+    // 7) Buat deal baru (wajib: nama; stage default kolom pertama = lead)
     server.registerTool(
-        'create_key_result',
-        {
-            title: 'Create Key Result',
-            description: 'Tambah Key Result ke Objective. source: "auto" (view/subscriber/omset dari data — wajib isi metric), "manual" (angka diisi tangan), atau "kartu" (realisasi dari kartu todolist tertaut yang selesai).',
-            inputSchema: {
-                objective_id: z.number().int().describe('id Objective (dari list_okr)'),
-                title: z.string().describe('nama KR, mis. "Total view seluruh konten"'),
-                source: z.enum(['auto', 'manual', 'kartu']).describe('sumber realisasi'),
-                target: z.number().describe('angka target'),
-                metric: z.enum(['view', 'subscriber', 'omset']).optional().describe('WAJIB bila source=auto'),
-                unit: z.enum(['angka', 'rupiah', 'persen']).optional().describe('default angka; diabaikan bila source=kartu'),
-            },
+      'create_deal',
+      {
+        title: 'Create Deal',
+        description: 'Buat deal baru di pipeline sales. Wajib: nama. Field lain opsional.',
+        inputSchema: {
+          nama: z.string().describe('nama lead/klien (kolom endorse)'),
+          jenis: z.enum(JENIS).optional().describe('jenis deal'),
+          account: z.enum(ACCOUNTS).optional().describe('akun'),
+          stage: z.string().optional().describe('key stage tujuan (default kolom pertama: lead)'),
+          amount_idr: z.number().optional().describe('nilai IDR'),
+          amount_usd: z.number().optional().describe('nilai USD'),
+          payment_status: z.enum(PAYMENT).optional().describe('status bayar'),
+          deadline: z.string().optional().describe('YYYY-MM-DD'),
+          kontak_wa: z.string().optional(),
+          kontak_gmail: z.string().optional(),
+          kontak_ig: z.string().optional(),
+          link: z.string().optional(),
+          notes: z.string().optional(),
         },
-        async ({ objective_id, title, source, target, metric, unit }) => {
-            const [[obj]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [objective_id]);
-            if (!obj) return errText(`Objective id ${objective_id} tidak ditemukan.`);
-            if (source === 'auto' && !OKR_METRICS.includes(metric))
-                return errText('source=auto wajib menyertakan metric: view | subscriber | omset.');
-
-            // Bersihkan kolom sesuai sumber — cerminan validasiKeyResult() di Laravel.
-            let m = null, u = OKR_UNITS.includes(unit) ? unit : 'angka';
-            if (source === 'auto') m = metric;
-            else if (source === 'kartu') u = 'angka';
-
-            const owner = await ownerId();
-            const [[mx]] = await db.query(`SELECT COALESCE(MAX(position),-1)+1 pos FROM key_results WHERE objective_id=?`, [objective_id]);
-            const [r] = await db.query(
-                `INSERT INTO key_results (objective_id, title, source, metric, target, actual_manual, unit, owner_id, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NOW(), NOW())`,
-                [objective_id, title, source, m, target, u, owner, mx.pos, owner]);
-            return jsonText({ ok: true, key_result: { id: r.insertId, objective_id, title, source, metric: m, target, unit: u } });
+      },
+      async (a) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        // Stage: validasi yang diberi, atau ambil kolom pertama board.
+        let stage = a.stage;
+        if (stage) {
+          const [[c]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`, [key, stage]);
+          if (!c) return errText(`Stage "${stage}" tidak ada di board sales.`);
+        } else {
+          const [[first]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? ORDER BY position ASC LIMIT 1`, [key]);
+          stage = first ? first.key : 'lead';
         }
+        // INSERT dinamis: cuma kolom yang diisi (sisanya pakai default DB).
+        const cols = ['category', 'endorse', 'progress'];
+        const vals = [key, a.nama, stage];
+        const opt = {
+          jenis: a.jenis, account: a.account, amount_idr: a.amount_idr, amount_usd: a.amount_usd,
+          payment_status: a.payment_status, deadline: a.deadline || undefined,
+          kontak_wa: a.kontak_wa, kontak_gmail: a.kontak_gmail, kontak_ig: a.kontak_ig, link: a.link, notes: a.notes,
+        };
+        for (const [k, v] of Object.entries(opt)) { if (v !== undefined) { cols.push(k); vals.push(v); } }
+        const ph = cols.map(() => '?').join(', ');
+        const [result] = await db.query(
+          `INSERT INTO pipelines (${cols.map((c) => `\`${c}\``).join(', ')}, created_at, updated_at) VALUES (${ph}, NOW(), NOW())`,
+          vals
+        );
+        return jsonText({ ok: true, deal: { id: result.insertId, nama: a.nama, stage } });
+      }
     );
 
-    // 8) Tautkan kartu todolist ke KR bersumber 'kartu' (langkah pencapaian goal)
+    // 8) Ubah deal by id (pindah stage, nilai, status bayar, deadline, dll)
     server.registerTool(
-        'link_task_to_kr',
-        {
-            title: 'Link Task to Key Result',
-            description: 'Jadikan sebuah task todolist sbg langkah menuju Key Result bersumber "kartu". Menyelesaikan task menggerakkan angka KR. key_result_id null untuk melepas tautan.',
-            inputSchema: {
-                task_id: z.number().int().describe('id task (harus di board "todolist")'),
-                key_result_id: z.number().int().nullable().describe('id KR sumber "kartu", atau null untuk melepas'),
-            },
+      'update_deal',
+      {
+        title: 'Update Deal',
+        description: 'Ubah field deal sales by id (dari list_deals). Isi minimal satu field.',
+        inputSchema: {
+          id: z.number().int().describe('id deal'),
+          stage: z.string().optional().describe('pindah ke stage (key kolom)'),
+          jenis: z.enum(JENIS).optional(),
+          account: z.enum(ACCOUNTS).optional(),
+          amount_idr: z.number().optional(),
+          amount_usd: z.number().optional(),
+          payment_status: z.enum(PAYMENT).optional(),
+          deadline: z.string().nullable().optional().describe('YYYY-MM-DD atau null untuk hapus'),
+          nama: z.string().optional().describe('nama/endorse baru'),
+          notes: z.string().optional(),
         },
-        async ({ task_id, key_result_id }) => {
-            const [[task]] = await db.query(`SELECT id, category FROM pipelines WHERE id=? AND archived_at IS NULL`, [task_id]);
-            if (!task) return errText(`Task id ${task_id} tidak ditemukan.`);
-            // Gerbang sama dgn PipelineController::tautanKrValid(): todolist + KR 'kartu'.
-            if (task.category !== 'todolist') return errText('Tautan OKR hanya untuk task di board "todolist".');
-
-            if (key_result_id !== null) {
-                const [[kr]] = await db.query(`SELECT id FROM key_results WHERE id=? AND source='kartu'`, [key_result_id]);
-                if (!kr) return errText(`Key Result id ${key_result_id} tidak ada / bukan bersumber "kartu".`);
-            }
-            await db.query(`UPDATE pipelines SET key_result_id=?, updated_at=NOW() WHERE id=?`, [key_result_id, task_id]);
-            return jsonText({ ok: true, task_id, key_result_id });
+      },
+      async (a) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const [[deal]] = await db.query(`SELECT id FROM pipelines WHERE id=? AND category=? AND archived_at IS NULL`, [a.id, key]);
+        if (!deal) return errText(`Deal id ${a.id} tidak ditemukan di pipeline sales.`);
+        if (a.stage !== undefined) {
+          const [[c]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`, [key, a.stage]);
+          if (!c) return errText(`Stage "${a.stage}" tidak ada di board sales.`);
         }
+        const map = {
+          progress: a.stage, jenis: a.jenis, account: a.account, amount_idr: a.amount_idr,
+          amount_usd: a.amount_usd, payment_status: a.payment_status, endorse: a.nama, notes: a.notes,
+        };
+        const sets = [], vals = [];
+        for (const [col, v] of Object.entries(map)) { if (v !== undefined) { sets.push(`\`${col}\`=?`); vals.push(v); } }
+        if (a.deadline !== undefined) { sets.push('deadline=?'); vals.push(a.deadline || null); }
+        if (!sets.length) return errText('Tak ada field untuk diubah.');
+        sets.push('updated_at=NOW()');
+        await db.query(`UPDATE pipelines SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+        const [[row]] = await db.query(
+          `SELECT id, endorse AS nama, progress AS stage, payment_status, amount_idr, amount_usd, deadline
+           FROM pipelines WHERE id=?`, [a.id]
+        );
+        return jsonText({ ok: true, deal: row });
+      }
     );
 
     return server;
