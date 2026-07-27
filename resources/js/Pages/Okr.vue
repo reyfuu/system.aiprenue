@@ -71,6 +71,26 @@ const textColor = (p) => {
     return 'text-red-600';
 };
 
+// ---- Pilihan tampilan (Versi 1/2/3) ----
+// Cuma gaya render Objective+KR; datanya sama persis. Disimpan di localStorage
+// supaya pilihan pengguna nempel antar-kunjungan. Modal & tren dipakai bersama.
+const TAMPILAN = [
+    { id: 1, label: 'Versi 1 · List' },
+    { id: 2, label: 'Versi 2 · Kartu' },
+    { id: 3, label: 'Versi 3 · Dashboard' },
+];
+const tampilan = ref(Number(localStorage.getItem('okr_tampilan')) || 2);
+const gantiTampilan = (v) => { tampilan.value = Number(v); localStorage.setItem('okr_tampilan', tampilan.value); };
+
+// Badge status gaya ClickUp/Jira dari persen capaian — dipakai di semua versi.
+// null (target belum ditetapkan) bukan kegagalan, jadi abu-abu bukan merah.
+const statusKr = (p) => {
+    if (p === null || p === undefined) return { label: 'Tanpa target', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+    if (p >= 100) return { label: 'On Track', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (p >= 60) return { label: 'At Risk', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { label: 'Off Track', cls: 'bg-red-50 text-red-700 border-red-200' };
+};
+
 const gantiKuartal = (key) => router.get('/okr', { q: key }, { preserveScroll: true });
 
 // ---- Grafik tren ----
@@ -209,6 +229,15 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     >
                         <option v-for="o in quarterOptions" :key="o.key" :value="o.key" class="text-slate-700">{{ o.label }}</option>
                     </select>
+                    <!-- Pemilih tampilan Versi 1/2/3. Sekadar gaya render; pilihan disimpan lokal. -->
+                    <select
+                        :value="tampilan"
+                        class="bg-white/15 border border-white/30 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-white/50"
+                        title="Tampilan OKR"
+                        @change="gantiTampilan($event.target.value)"
+                    >
+                        <option v-for="t in TAMPILAN" :key="t.id" :value="t.id" class="text-slate-700">{{ t.label }}</option>
+                    </select>
                     <button v-if="canManage" class="bg-white text-brand-700 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-brand-50" @click="bukaObjective()">
                         + Objective
                     </button>
@@ -236,21 +265,30 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <p class="text-xs text-slate-400">Realisasi otomatis dari Insight &amp; Pembukuan</p>
                 </div>
 
-                <!-- Kuartal kosong. Tawaran salin hanya muncul kalau kuartal lalu
-                     memang ada isinya — tombol yang pasti gagal lebih buruk
-                     daripada tak ada tombol. -->
-                <div v-if="!objectives.length" class="text-center py-16 bg-white border border-brand-100 rounded-2xl">
-                    <p class="text-sm text-slate-400">Belum ada Objective untuk {{ quarter.label }}.</p>
-                    <button v-if="canManage && bisaSalin"
-                            class="mt-3 px-4 py-2 text-sm font-semibold text-brand-700 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-xl"
-                            @click="salinKuartalLalu">
-                        Salin dari {{ kuartalLaluLabel }}
-                    </button>
-                    <p v-if="canManage && bisaSalin" class="text-[11px] text-slate-400 mt-2">
-                        Struktur &amp; targetnya disalin; realisasinya tidak.
-                    </p>
+                <!-- Kuartal kosong: empty-state jelas + jalan CRUD, BUKAN data contoh.
+                     Data contoh dulu bikin bingung: tampil seperti objective asli tapi
+                     tak punya tombol Ubah/Hapus, jadi CRUD terlihat rusak padahal jalan. -->
+                <div v-if="!objectives.length" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-dashed border-brand-200 bg-brand-50/50 px-5 py-8">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700">Belum ada Objective untuk {{ quarter.label }}</p>
+                        <p class="mt-1 text-xs text-slate-500">Mulai dengan menambah Objective, lalu isi Key Result-nya.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button v-if="canManage"
+                                class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl"
+                                @click="bukaObjective()">
+                            + Buat Objective
+                        </button>
+                        <button v-if="canManage && bisaSalin"
+                                class="px-4 py-2 text-sm font-semibold text-brand-700 border border-brand-200 bg-white hover:bg-brand-50 rounded-xl"
+                                @click="salinKuartalLalu">
+                            Salin dari {{ kuartalLaluLabel }}
+                        </button>
+                    </div>
                 </div>
 
+                <!-- ============ VERSI 2 · Kartu (bawaan) ============ -->
+                <template v-if="tampilan === 2">
                 <article v-for="o in objectives" :key="o.id" class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-hidden">
                     <!-- Kepala Objective: judul + progress roll-up -->
                     <div class="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-4">
@@ -258,9 +296,9 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                             <h3 class="font-bold text-slate-700">{{ o.title }}</h3>
                             <p v-if="o.description" class="text-xs text-slate-500 mt-1 max-w-prose">{{ o.description }}</p>
                             <div v-if="canManage" class="flex items-center gap-3 mt-2">
-                                <button class="text-xs font-semibold text-brand-700 hover:underline" @click="bukaKr(o)">+ Key Result</button>
-                                <button class="text-xs font-semibold text-slate-400 hover:text-brand-700" @click="bukaObjective(o)">Ubah</button>
-                                <button class="text-xs font-semibold text-slate-400 hover:text-red-600" @click="hapusObjective(o)">Hapus</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
                             </div>
                         </div>
                         <!-- Progress = rata-rata KR, tiap KR dibatasi 100% dulu.
@@ -303,13 +341,116 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                             <div v-if="canManage" class="flex md:justify-end items-center gap-2.5 mt-0.5">
                                 <!-- KR otomatis TIDAK punya tombol ini: angkanya dari
                                      Insight/Pembukuan, dan server pun menolaknya. -->
-                                <button v-if="kr.source === 'manual'" class="text-xs font-semibold text-brand-700 hover:underline" @click="bukaAktual(kr)">Perbarui angka</button>
-                                <button class="text-xs font-semibold text-slate-400 hover:text-brand-700" @click="bukaKr(o, kr)">Ubah</button>
-                                <button class="text-xs font-semibold text-slate-400 hover:text-red-600" @click="hapusKr(kr)">Hapus</button>
+                                <button v-if="kr.source === 'manual'" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaAktual(kr)">Perbarui angka</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaKr(o, kr)">Ubah</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusKr(kr)">Hapus</button>
                             </div>
                         </div>
                     </div>
                 </article>
+                </template>
+
+                <!-- ============ VERSI 1 · List gaya ClickUp/Jira ============ -->
+                <!-- Satu tabel: tiap Objective jadi baris grup, KR jadi baris di
+                     bawahnya lengkap badge status + bar progress. -->
+                <div v-if="tampilan === 1" class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm min-w-[760px]">
+                            <thead>
+                                <tr class="text-left text-[10px] uppercase tracking-widest text-slate-400 bg-slate-50 border-b border-slate-100">
+                                    <th class="py-2.5 px-4 font-semibold">Objective / Key Result</th>
+                                    <th class="py-2.5 px-4 font-semibold w-32">Status</th>
+                                    <th class="py-2.5 px-4 font-semibold w-56">Progress</th>
+                                    <th class="py-2.5 px-4 font-semibold text-right w-40">Target / Realisasi</th>
+                                    <th v-if="canManage" class="py-2.5 px-4 font-semibold text-right w-28">Aksi</th>
+                                </tr>
+                            </thead>
+                            <!-- Satu <tbody> per Objective supaya pengelompokannya rapi. -->
+                            <tbody v-for="o in objectives" :key="o.id">
+                                <tr class="bg-brand-50/40 border-b border-brand-100">
+                                    <td class="py-2.5 px-4 font-bold text-slate-700">
+                                        {{ o.title }}
+                                        <span class="ml-1 text-[11px] font-normal text-slate-400">· {{ o.key_results.length }} KR</span>
+                                        <button v-if="canManage" class="ml-2 text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ KR</button>
+                                        <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
+                                        <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
+                                    </td>
+                                    <td class="py-2.5 px-4"></td>
+                                    <td class="py-2.5 px-4">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                                <div :class="['h-full rounded-full', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
+                                            </div>
+                                            <span :class="['text-xs font-bold w-11 text-right', textColor(o.progress)]">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-4"></td>
+                                    <td v-if="canManage" class="py-2.5 px-4"></td>
+                                </tr>
+                                <tr v-if="!o.key_results.length">
+                                    <td :colspan="canManage ? 5 : 4" class="py-2 px-4 pl-8 text-xs text-slate-400">Belum ada Key Result.</td>
+                                </tr>
+                                <tr v-for="kr in o.key_results" :key="kr.id" class="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                                    <td class="py-2 px-4 pl-8 text-slate-700">
+                                        {{ kr.title }}
+                                        <span v-if="kr.owner_name" class="text-[11px] text-slate-400">· {{ kr.owner_name }}</span>
+                                    </td>
+                                    <td class="py-2 px-4">
+                                        <span :class="['inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap', statusKr(kr.percent).cls]">{{ statusKr(kr.percent).label }}</span>
+                                    </td>
+                                    <td class="py-2 px-4">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                <div :class="['h-full rounded-full', barColor(kr.percent)]" :style="{ width: barWidth(kr.percent) }"></div>
+                                            </div>
+                                            <span :class="['text-xs font-bold w-11 text-right', textColor(kr.percent)]">{{ kr.percent === null ? '—' : kr.percent + '%' }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2 px-4 text-right tabular-nums text-slate-500" :title="fmtFull(kr.actual, kr.unit) + ' / ' + fmtFull(kr.target, kr.unit)">
+                                        {{ fmt(kr.actual, kr.unit) }} / {{ kr.target > 0 ? fmt(kr.target, kr.unit) : '—' }}
+                                    </td>
+                                    <td v-if="canManage" class="py-2 px-4 text-right whitespace-nowrap">
+                                        <button v-if="kr.source === 'manual'" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaAktual(kr)">Angka</button>
+                                        <button class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaKr(o, kr)">Ubah</button>
+                                        <button class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusKr(kr)">Hapus</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ============ VERSI 3 · Dashboard (kartu ringkas + status dot) ============ -->
+                <div v-if="tampilan === 3" class="grid gap-4 md:grid-cols-2">
+                    <article v-for="o in objectives" :key="o.id" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-slate-700 truncate">{{ o.title }}</h3>
+                                <p class="text-[11px] text-slate-400 mt-0.5">{{ o.key_results.length }} Key Result</p>
+                            </div>
+                            <div class="text-right shrink-0 leading-none">
+                                <b :class="['text-3xl font-black', textColor(o.progress)]">{{ o.progress === null ? '—' : o.progress }}</b>
+                                <span v-if="o.progress !== null" class="text-sm font-bold text-slate-400">%</span>
+                            </div>
+                        </div>
+                        <div class="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
+                            <div :class="['h-full rounded-full transition-all', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <div v-for="kr in o.key_results" :key="kr.id" class="flex items-center gap-2 text-sm">
+                                <span :class="['w-2 h-2 rounded-full shrink-0', barColor(kr.percent)]"></span>
+                                <span class="text-slate-600 truncate flex-1">{{ kr.title }}</span>
+                                <span :class="['text-xs font-bold shrink-0', textColor(kr.percent)]">{{ kr.percent === null ? '—' : kr.percent + '%' }}</span>
+                            </div>
+                            <p v-if="!o.key_results.length" class="text-xs text-slate-400">Belum ada Key Result.</p>
+                        </div>
+                        <div v-if="canManage" class="flex items-center gap-3 mt-4 pt-3 border-t border-slate-100">
+                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
+                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
+                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
+                        </div>
+                    </article>
+                </div>
             </section>
 
             <!-- ================= Tren antar kuartal ================= -->
