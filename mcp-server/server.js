@@ -208,6 +208,156 @@ function buildServer() {
         }
     );
 
+    // ── Sales Pipeline (board `sales`, type=pipeline) ─────────────────────────
+    // Enum mengikuti App\Models\Pipeline (JENIS/ACCOUNTS) + kolom board sales.
+    const JENIS = ['endorse', 'coaching_1on1', 'coaching_perusahaan', 'agensi', 'speaker'];
+    const ACCOUNTS = ['fk', 'ai_preneur'];
+    const PAYMENT = ['belum', 'dp', 'lunas'];
+
+    // Board sales diambil dinamis (type='pipeline') — cuma ada satu.
+    const salesKey = async () => {
+      const [[b]] = await db.query(`SELECT \`key\` FROM categories WHERE type='pipeline' LIMIT 1`);
+      return b ? b.key : null;
+    };
+
+    // 5) Stage (kolom) pipeline sales
+    server.registerTool(
+      'list_pipeline_stages',
+      { title: 'List Pipeline Stages', description: 'Daftar stage/kolom pipeline sales (lead → deal). Pakai stage key ini untuk create_deal/update_deal.', inputSchema: {} },
+      async () => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const [rows] = await db.query(`SELECT \`key\`, name FROM board_columns WHERE board_key=? ORDER BY position`, [key]);
+        return jsonText({ board: key, stages: rows });
+      }
+    );
+
+    // 6) Daftar deal aktif di pipeline sales (opsional filter stage/jenis)
+    server.registerTool(
+      'list_deals',
+      {
+        title: 'List Deals',
+        description: 'Daftar deal aktif di pipeline sales. Filter opsional: stage (key kolom) atau jenis.',
+        inputSchema: {
+          stage: z.string().optional().describe('filter key stage, mis. "nego"'),
+          jenis: z.string().optional().describe('filter jenis deal'),
+        },
+      },
+      async ({ stage, jenis }) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const where = ['category=?', 'archived_at IS NULL'];
+        const vals = [key];
+        if (stage) { where.push('progress=?'); vals.push(stage); }
+        if (jenis) { where.push('jenis=?'); vals.push(jenis); }
+        const [rows] = await db.query(
+          `SELECT id, endorse AS nama, jenis, account, progress AS stage, payment_status,
+                  amount_idr, amount_usd, deadline, kontak_wa, kontak_gmail, kontak_ig, link
+           FROM pipelines WHERE ${where.join(' AND ')} ORDER BY id DESC`,
+          vals
+        );
+        return jsonText({ board: key, count: rows.length, deals: rows });
+      }
+    );
+
+    // 7) Buat deal baru (wajib: nama; stage default kolom pertama = lead)
+    server.registerTool(
+      'create_deal',
+      {
+        title: 'Create Deal',
+        description: 'Buat deal baru di pipeline sales. Wajib: nama. Field lain opsional.',
+        inputSchema: {
+          nama: z.string().describe('nama lead/klien (kolom endorse)'),
+          jenis: z.enum(JENIS).optional().describe('jenis deal'),
+          account: z.enum(ACCOUNTS).optional().describe('akun'),
+          stage: z.string().optional().describe('key stage tujuan (default kolom pertama: lead)'),
+          amount_idr: z.number().optional().describe('nilai IDR'),
+          amount_usd: z.number().optional().describe('nilai USD'),
+          payment_status: z.enum(PAYMENT).optional().describe('status bayar'),
+          deadline: z.string().optional().describe('YYYY-MM-DD'),
+          kontak_wa: z.string().optional(),
+          kontak_gmail: z.string().optional(),
+          kontak_ig: z.string().optional(),
+          link: z.string().optional(),
+          notes: z.string().optional(),
+        },
+      },
+      async (a) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        // Stage: validasi yang diberi, atau ambil kolom pertama board.
+        let stage = a.stage;
+        if (stage) {
+          const [[c]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`, [key, stage]);
+          if (!c) return errText(`Stage "${stage}" tidak ada di board sales.`);
+        } else {
+          const [[first]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? ORDER BY position ASC LIMIT 1`, [key]);
+          stage = first ? first.key : 'lead';
+        }
+        // INSERT dinamis: cuma kolom yang diisi (sisanya pakai default DB).
+        const cols = ['category', 'endorse', 'progress'];
+        const vals = [key, a.nama, stage];
+        const opt = {
+          jenis: a.jenis, account: a.account, amount_idr: a.amount_idr, amount_usd: a.amount_usd,
+          payment_status: a.payment_status, deadline: a.deadline || undefined,
+          kontak_wa: a.kontak_wa, kontak_gmail: a.kontak_gmail, kontak_ig: a.kontak_ig, link: a.link, notes: a.notes,
+        };
+        for (const [k, v] of Object.entries(opt)) { if (v !== undefined) { cols.push(k); vals.push(v); } }
+        const ph = cols.map(() => '?').join(', ');
+        const [result] = await db.query(
+          `INSERT INTO pipelines (${cols.map((c) => `\`${c}\``).join(', ')}, created_at, updated_at) VALUES (${ph}, NOW(), NOW())`,
+          vals
+        );
+        return jsonText({ ok: true, deal: { id: result.insertId, nama: a.nama, stage } });
+      }
+    );
+
+    // 8) Ubah deal by id (pindah stage, nilai, status bayar, deadline, dll)
+    server.registerTool(
+      'update_deal',
+      {
+        title: 'Update Deal',
+        description: 'Ubah field deal sales by id (dari list_deals). Isi minimal satu field.',
+        inputSchema: {
+          id: z.number().int().describe('id deal'),
+          stage: z.string().optional().describe('pindah ke stage (key kolom)'),
+          jenis: z.enum(JENIS).optional(),
+          account: z.enum(ACCOUNTS).optional(),
+          amount_idr: z.number().optional(),
+          amount_usd: z.number().optional(),
+          payment_status: z.enum(PAYMENT).optional(),
+          deadline: z.string().nullable().optional().describe('YYYY-MM-DD atau null untuk hapus'),
+          nama: z.string().optional().describe('nama/endorse baru'),
+          notes: z.string().optional(),
+        },
+      },
+      async (a) => {
+        const key = await salesKey();
+        if (!key) return errText('Board sales tidak ditemukan.');
+        const [[deal]] = await db.query(`SELECT id FROM pipelines WHERE id=? AND category=? AND archived_at IS NULL`, [a.id, key]);
+        if (!deal) return errText(`Deal id ${a.id} tidak ditemukan di pipeline sales.`);
+        if (a.stage !== undefined) {
+          const [[c]] = await db.query(`SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`, [key, a.stage]);
+          if (!c) return errText(`Stage "${a.stage}" tidak ada di board sales.`);
+        }
+        const map = {
+          progress: a.stage, jenis: a.jenis, account: a.account, amount_idr: a.amount_idr,
+          amount_usd: a.amount_usd, payment_status: a.payment_status, endorse: a.nama, notes: a.notes,
+        };
+        const sets = [], vals = [];
+        for (const [col, v] of Object.entries(map)) { if (v !== undefined) { sets.push(`\`${col}\`=?`); vals.push(v); } }
+        if (a.deadline !== undefined) { sets.push('deadline=?'); vals.push(a.deadline || null); }
+        if (!sets.length) return errText('Tak ada field untuk diubah.');
+        sets.push('updated_at=NOW()');
+        await db.query(`UPDATE pipelines SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+        const [[row]] = await db.query(
+          `SELECT id, endorse AS nama, progress AS stage, payment_status, amount_idr, amount_usd, deadline
+           FROM pipelines WHERE id=?`, [a.id]
+        );
+        return jsonText({ ok: true, deal: row });
+      }
+    );
+
     return server;
 }
 

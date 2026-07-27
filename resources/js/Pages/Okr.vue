@@ -1,4 +1,5 @@
 <script setup>
+
 // Halaman OKR perusahaan per kuartal: Objective berisi Key Result.
 //
 // Realisasi KR bertipe `auto` DIHITUNG server dari modul Insight & Pembukuan —
@@ -186,10 +187,12 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
     preserveScroll: true,
     onSuccess: () => { aktualModal.value = null; },
 });
+
 </script>
 
 <template>
     <Layout title="OKR">
+
         <!-- Header: judul + pemilih kuartal. Rentang tanggalnya ditulis eksplisit
              supaya tak ada tebak-tebakan soal batas kuartal. -->
         <header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg">
@@ -449,6 +452,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" @click="aktualModal = null">Batal</button>
                     <button type="submit" :disabled="aktualForm.processing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50">Simpan</button>
+
                 </div>
             </form>
         </ModalWrap>

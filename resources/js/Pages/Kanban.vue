@@ -160,7 +160,7 @@ const creating = ref(false);           // sedang membuat kartu baru?
 const detailCard = computed(() => (detailId.value ? Object.values(cols.value).flat().find((c) => c.id === detailId.value) : null));
 // `progressKey` (bukan `progress`) — hindari bentrok properti bawaan useForm
 // (`form.progress` = progres upload). Dipetakan ke `progress` saat submit.
-const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', dp1: '', dp2: '', dp3: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', newAttachment: null });
+const editForm = useForm({ category: props.category, endorse: '', jenis: '', description: '', account: 'fk', progressKey: 'script', assigned_to: '', payment_status: 'belum', amount_idr: '', amount_usd: '', dp1: '', dp2: '', dp3: '', link: '', deadline: '', outputs: [], notes: '', labels: [], kontak_wa: '', kontak_gmail: '', kontak_ig: '', revisi: 0, newAttachment: null });
 
 // Isi form dari kartu (atau dari objek kosong saat membuat). Tiap field diisi
 // EKSPLISIT — jangan pakai reset(): Inertia v3 menjadikan data submit terakhir
@@ -182,6 +182,7 @@ const fillForm = (card) => {
     editForm.dp3 = card.dp3 ?? '';
     editForm.link = card.link ?? '';
     editForm.deadline = card.deadline ?? '';
+    editForm.revisi = card.revisi ?? 0;
     editForm.outputs = Array.isArray(card.output_ids) ? card.output_ids.map(Number) : [];
     editForm.notes = card.notes ?? '';
     editForm.labels = Array.isArray(card.labels) ? card.labels.map((l) => ({ ...l })) : [];
@@ -403,7 +404,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                  Arsip (board tunggal → tak ada dropdown/aksi board, angka total dibuang),
                  dan panel putih berisi satu tombol cuma jadi kotak menganga. Arsipnya
                  pindah ke baris Filter di bawah. -->
-            <div v-if="!isPipeline" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex items-center gap-3">
+            <div v-if="!isPipeline" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 mb-3 flex flex-wrap items-center gap-3">
                 <!-- Balik ke galeri (kanban luar; Sales Pipeline tak punya galeri) -->
                 <Link v-if="showGallery" :href="baseUrl" title="Semua board" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 mt-5 pr-2 border-r border-slate-200">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -732,6 +733,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" /></svg>
                                         {{ card.deadline }}
                                     </span>
+                                    <span v-if="card.revisi > 0" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500 text-white" title="Nomor revisi">REVISI {{ card.revisi }}</span>
                                     <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Tanggal kartu dibuat">
                                         Dibuat {{ fmtCreated(card.created_date) }}
                                     </span>
@@ -860,6 +862,14 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                 </label>
                 <label class="block font-medium text-slate-600">Deadline
                     <input type="date" v-model="editForm.deadline" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                </label>
+                <label class="block font-medium text-slate-600">Revisi
+                    <select v-model.number="editForm.revisi" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-300 outline-none">
+                        <option :value="0">— tanpa revisi —</option>
+                        <option :value="1">Revisi 1</option>
+                        <option :value="2">Revisi 2</option>
+                        <option :value="3">Revisi 3</option>
+                    </select>
                 </label>
                 <label class="block font-medium text-slate-600">Kolom
                     <select v-model="editForm.progressKey" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">

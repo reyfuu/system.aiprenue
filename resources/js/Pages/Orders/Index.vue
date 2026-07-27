@@ -214,25 +214,25 @@ const destroy = (o) => {
                 <input v-model="f.search" placeholder="Cari nama / telepon / email / kota..."
                        @keydown.enter="applyFilters({ search: f.search })"
                        @blur="applyFilters({ search: f.search })"
-                       class="border border-slate-200 rounded-xl px-3 py-2 w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
-                <select v-model="f.tipe_order" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                       class="border border-slate-200 rounded-xl px-3 py-2 w-full sm:w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
+                <select v-model="f.tipe_order" @change="applyFilters()" class="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Tipe Order</option>
                     <option v-for="(v, k) in tipeOrder" :key="k" :value="k">{{ v }}</option>
                 </select>
-                <select v-model="f.account" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.account" @change="applyFilters()" class="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Akun</option>
                     <option v-for="(v, k) in accounts" :key="k" :value="k">{{ v }}</option>
                 </select>
-                <select v-model="f.output" @change="applyFilters()" title="Filter output" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.output" @change="applyFilters()" title="Filter output" class="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Output</option>
                     <option v-for="out in outputList" :key="out.id" :value="out.id">{{ out.name }}</option>
                 </select>
-                <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <select v-model="f.tipe_pembayaran" @change="applyFilters()" class="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Pembayaran</option>
                     <option v-for="(v, k) in tipePembayaran" :key="k" :value="k">{{ v }}</option>
                 </select>
                 <!-- Rentang deadline: kedua sisi opsional -->
-                <div class="flex items-center gap-1.5">
+                <div class="w-full sm:w-auto flex flex-wrap items-center gap-1.5">
                     <span class="text-xs text-slate-500 font-medium">Deadline</span>
                     <input v-model="f.date_from" type="date" @change="applyFilters()" title="Deadline dari"
                            class="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />

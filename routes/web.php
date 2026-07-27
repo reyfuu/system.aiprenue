@@ -128,6 +128,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
 
+
     // OKR perusahaan (view/subscriber/omset). TERKUNCI owner & manager di
     // User::canSee() — isinya omset, sejajar pembukuan & tracking.
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
@@ -145,6 +146,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // EnsureMenuAccess (kpi.targets.* terdaftar sbg route mutasi di sana).
     Route::get('/kpi', [KpiController::class, 'index'])->name('kpi.index');
     Route::post('/kpi/targets', [KpiController::class, 'storeTarget'])->name('kpi.targets.store');
+
 
     // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
     // Approve/tolak dibatasi canManage() di dalam AbsenceController.

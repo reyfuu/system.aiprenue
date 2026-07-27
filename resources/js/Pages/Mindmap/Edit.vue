@@ -17,12 +17,29 @@ let mind = null;                  // instance mind-elixir
 
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
 
+// Garis sub-cabang custom. Generator bawaan (`dt`) menaruh control-point X
+// mundur-maju + bulge yang membesar saat anak jauh vertikal → garisnya ngehook
+// (persis keluhan "jelek"). Ganti dgn kurva smoothstep: dua control-point di
+// titik-tengah horizontal, X monoton → mulus tanpa hook. Ditutup garis mendatar
+// di bawah node anak (underline) meniru gaya mind-elixir. LHS/RHS = sisi cabang.
+function subBranch({ pT, pL, pW, pH, cT, cL, cW, cH, direction, isFirst }) {
+    const y1 = isFirst ? pT + pH / 2 : pT + pH;   // titik sambung di induk
+    const y2 = cT + cH;                           // underline node anak
+    const lhs = direction === 'lhs';
+    const x1 = lhs ? pL : pL + pW;                // tepi dalam induk
+    const x2 = lhs ? cL + cW : cL;               // tepi dalam anak
+    const xm = (x1 + x2) / 2;                     // control di tengah → mulus
+    const uEnd = lhs ? cL : cL + cW;             // rentangkan underline se-lebar anak
+    return `M ${x1} ${y1} C ${xm} ${y1} ${xm} ${y2} ${x2} ${y2} H ${uEnd}`;
+}
+
 // Tema kustom — bawaan mind-elixir tampilannya polos (kotak siku, abu-abu, rapat).
 // Yang diubah: node membulat & berjarak, root jadi pil brand, palet cabang cerah
 // tapi tetap serasi dgn biru elektrik aplikasi (#2c4bff).
 const TEMA = {
     name: 'aipreneur',
     type: 'light',
+    generateSubBranch: subBranch,   // garis cabang mulus (bukan generator bawaan yg ngehook)
     // Warna cabang utama — dipakai bergiliran per cabang. Urutannya sengaja
     // selang-seling gelap/terang biar cabang bersebelahan tak menyatu.
     palette: ['#2c4bff', '#f5576c', '#10b981', '#f59e0b', '#8b5cf6', '#0ea5e9', '#ec4899', '#14b8a6'],
