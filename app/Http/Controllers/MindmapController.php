@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Mindmap;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class MindmapController extends Controller
@@ -14,9 +15,9 @@ class MindmapController extends Controller
         return Inertia::render('Mindmap/Index', [
             'mindmaps' => Mindmap::with('user:id,name')->latest('updated_at')->get()
                 ->map(fn ($m) => [
-                    'id'      => $m->id,
-                    'title'   => $m->title,
-                    'owner'   => $m->user?->name,
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'owner' => $m->user?->name,
                     'updated' => $m->updated_at?->diffForHumans(),
                 ]),
             'canManage' => auth()->user()->canManage(),
@@ -31,8 +32,8 @@ class MindmapController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'title'    => 'nullable|string|max:120',
-            'template' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(Mindmap::templates()))],
+            'title' => 'nullable|string|max:120',
+            'template' => ['nullable', Rule::in(array_keys(Mindmap::templates()))],
         ]);
 
         $template = $data['template'] ?? 'kosong';
@@ -40,9 +41,9 @@ class MindmapController extends Controller
 
         $mindmap = Mindmap::create([
             'user_id' => auth()->id(),
-            'title'   => $judul,
-            // null utk template kosong → frontend pakai MindElixir.new() spt dulu
-            'data'    => Mindmap::dataDariTemplate($template, $judul),
+            'title' => $judul,
+            // null untuk template kosong → frontend membuat satu root default
+            'data' => Mindmap::dataDariTemplate($template, $judul),
         ]);
 
         return redirect()->route('mindmaps.show', $mindmap);
@@ -53,9 +54,9 @@ class MindmapController extends Controller
     {
         return Inertia::render('Mindmap/Edit', [
             'mindmap' => [
-                'id'    => $mindmap->id,
+                'id' => $mindmap->id,
                 'title' => $mindmap->title,
-                'data'  => $mindmap->data, // null bila baru → frontend pakai struktur default
+                'data' => $mindmap->data, // null bila baru → frontend pakai struktur default
             ],
             'canManage' => auth()->user()->canManage(),
         ]);
@@ -66,7 +67,7 @@ class MindmapController extends Controller
     {
         $data = $request->validate([
             'title' => 'required|string|max:120',
-            'data'  => 'required|array',
+            'data' => 'required|array',
         ]);
         $mindmap->update($data);
 

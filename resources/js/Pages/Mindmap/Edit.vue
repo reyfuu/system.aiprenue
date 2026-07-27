@@ -1,10 +1,8 @@
 <script setup>
-// Editor Mindmap — mind-elixir di kanvas + toolbar (judul, Save, Share, Hapus).
+// Editor Mindmap — simple-mind-map di kanvas + toolbar edit dan simpan.
 // Save via fetch (bukan Inertia) supaya kanvas tak re-render/reset saat menyimpan.
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
-import MindElixir from 'mind-elixir';
-import 'mind-elixir/style';
 import Layout from '../../Layout.vue';
 
 const props = defineProps({ mindmap: Object, canManage: Boolean });
@@ -13,84 +11,98 @@ const mapEl = ref(null);          // div kontainer kanvas
 const title = ref(props.mindmap.title);
 const saving = ref(false);
 const savedAt = ref('');          // jam terakhir simpan
-let mind = null;                  // instance mind-elixir
+let mind = null;                  // instance simple-mind-map
+const selected = ref(false);
 
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
 
-// Garis sub-cabang custom. Generator bawaan (`dt`) menaruh control-point X
-// mundur-maju + bulge yang membesar saat anak jauh vertikal → garisnya ngehook
-// (persis keluhan "jelek"). Ganti dgn kurva smoothstep: dua control-point di
-// titik-tengah horizontal, X monoton → mulus tanpa hook. Ditutup garis mendatar
-// di bawah node anak (underline) meniru gaya mind-elixir. LHS/RHS = sisi cabang.
-function subBranch({ pT, pL, pW, pH, cT, cL, cW, cH, direction, isFirst }) {
-    const y1 = isFirst ? pT + pH / 2 : pT + pH;   // titik sambung di induk
-    const y2 = cT + cH;                           // underline node anak
-    const lhs = direction === 'lhs';
-    const x1 = lhs ? pL : pL + pW;                // tepi dalam induk
-    const x2 = lhs ? cL + cW : cL;               // tepi dalam anak
-    const xm = (x1 + x2) / 2;                     // control di tengah → mulus
-    const uEnd = lhs ? cL : cL + cW;             // rentangkan underline se-lebar anak
-    return `M ${x1} ${y1} C ${xm} ${y1} ${xm} ${y2} ${x2} ${y2} H ${uEnd}`;
-}
-
-// Tema kustom — bawaan mind-elixir tampilannya polos (kotak siku, abu-abu, rapat).
-// Yang diubah: node membulat & berjarak, root jadi pil brand, palet cabang cerah
-// tapi tetap serasi dgn biru elektrik aplikasi (#2c4bff).
+// Tema memakai konektor kurva SVG yang dihitung oleh layout engine yang sama
+// dengan posisi node. Karena itu ujung garis selalu mengikuti parent dan child.
 const TEMA = {
-    name: 'aipreneur',
-    type: 'light',
-    generateSubBranch: subBranch,   // garis cabang mulus (bukan generator bawaan yg ngehook)
-    // Warna cabang utama — dipakai bergiliran per cabang. Urutannya sengaja
-    // selang-seling gelap/terang biar cabang bersebelahan tak menyatu.
-    palette: ['#2c4bff', '#f5576c', '#10b981', '#f59e0b', '#8b5cf6', '#0ea5e9', '#ec4899', '#14b8a6'],
-    cssVar: {
-        '--node-gap-x': '32px',       // bawaan terlalu rapat → terlihat sesak
-        '--node-gap-y': '12px',
-        '--main-gap-x': '58px',
-        '--main-gap-y': '22px',
-        '--main-color': '#191a2b',    // teks cabang utama = near-black brand
-        '--main-bgcolor': '#ffffff',
-        '--main-border': '1px solid #dfe4ff',
-        '--color': '#334155',         // teks node anak
-        '--bgcolor': '#ffffff',
-        '--selected': '#2c4bff',      // garis pilih = warna brand
-        '--accent-color': '#2c4bff',
-        '--root-color': '#ffffff',    // root: pil biru brand, jadi pusat jelas
-        '--root-bgcolor': '#2c4bff',
-        '--root-border-color': '#2c4bff',
-        '--root-radius': '14px',
-        '--main-radius': '10px',
-        '--topic-padding': '9px 14px',  // bawaan terlalu tipis → teks nempel tepi
-        '--panel-color': '#334155',
-        '--panel-bgcolor': '#ffffff',
-        '--panel-border-color': '#dfe4ff',
-        '--map-padding': '60px',
+    lineStyle: 'curve',
+    lineWidth: 2,
+    lineColor: '#a5b4fc',
+    backgroundColor: 'transparent',
+    rootLineKeepSameInCurve: true,
+    rootLineStartPositionKeepSameInCurve: true,
+    root: {
+        fillColor: '#2c4bff',
+        color: '#ffffff',
+        fontSize: 17,
+        fontWeight: 'bold',
+        borderRadius: 14,
+        paddingX: 18,
+        paddingY: 11,
+    },
+    second: {
+        marginX: 72,
+        marginY: 24,
+        fillColor: '#ffffff',
+        color: '#191a2b',
+        borderColor: '#c7d2fe',
+        borderWidth: 1,
+        borderRadius: 10,
+        paddingX: 14,
+        paddingY: 9,
+    },
+    node: {
+        marginX: 54,
+        marginY: 16,
+        fillColor: '#ffffff',
+        color: '#334155',
+        borderColor: '#dfe4ff',
+        borderWidth: 1,
+        borderRadius: 9,
+        paddingX: 12,
+        paddingY: 8,
     },
 };
 
-onMounted(() => {
-    mind = new MindElixir({
-        el: mapEl.value,
-        direction: MindElixir.SIDE,   // cabang ke dua sisi
-        draggable: true,              // node bisa di-drag
-        contextMenu: true,            // klik-kanan: add child/parent/sibling, dll
-        toolBar: true,                // toolbar zoom/layout kiri-bawah
-        nodeMenu: true,               // menu styling node (warna/font)
-        keypress: true,               // shortcut (tab=child, enter=sibling, del=hapus)
-        theme: TEMA,
-    });
-    // Data tersimpan (dari getData) atau struktur default bila mindmap baru
-    const data = props.mindmap.data || MindElixir.new(title.value || 'Mindmap');
-
-    // getData() IKUT menyimpan tema, jadi mindmap yang dibuat sebelum tema ini ada
-    // membawa tema lama & akan menimpa TEMA di atas — tampilannya tetap polos
-    // padahal sudah diperbaiki. Ditimpa di sini supaya semua peta seragam.
-    data.theme = TEMA;
-
-    mind.init(data);
+// Peta lama disimpan dalam format MindElixir. Konversi rekursif ini membuat
+// semua data lama langsung terbaca; setelah Save formatnya menjadi format baru.
+const ubahNodeLama = (node) => ({
+    data: {
+        uid: node.id,
+        text: node.topic || 'Topik',
+        expand: node.expanded !== false,
+        ...(node.direction === 0 ? { dir: 'left' } : node.direction === 1 ? { dir: 'right' } : {}),
+    },
+    children: (node.children || []).map(ubahNodeLama),
 });
 
-onBeforeUnmount(() => { mind = null; }); // div dilepas otomatis saat unmount
+const dataAwal = () => {
+    const data = props.mindmap.data;
+    if (data?.nodeData) return ubahNodeLama(data.nodeData);
+    if (data?.data && Array.isArray(data.children)) return data;
+    return { data: { text: title.value || 'Mindmap', expand: true }, children: [] };
+};
+
+onMounted(async () => {
+    // Library cukup besar, jadi muat hanya saat editor dibuka agar halaman lain
+    // tidak ikut mengunduh mesin mindmap.
+    const { default: MindMap } = await import('simple-mind-map');
+    mind = new MindMap({
+        el: mapEl.value,
+        data: dataAwal(),
+        layout: 'mindMap',
+        readonly: !props.canManage,
+        themeConfig: TEMA,
+        fit: true,
+        enableAutoEnterTextEditWhenKeydown: true,
+        selectTextOnEnterEditText: true,
+        defaultInsertSecondLevelNodeText: 'Topik baru',
+        defaultInsertBelowSecondLevelNodeText: 'Subtopik baru',
+    });
+    mind.on('node_active', (_node, nodes) => { selected.value = nodes.length > 0; });
+});
+
+onBeforeUnmount(() => { mind?.destroy(); mind = null; });
+
+// Aksi dasar sengaja berada di toolbar aplikasi agar mudah ditemukan tanpa
+// bergantung pada menu klik-kanan. Shortcut: Tab, Enter, Delete, dan Ctrl+I.
+const command = (name) => { if (props.canManage && mind) mind.execCommand(name); };
+const fit = () => mind?.view.fit();
+const zoom = (arah) => arah > 0 ? mind?.view.enlarge() : mind?.view.narrow();
 
 // Simpan judul + struktur node ke server
 const save = async () => {
@@ -131,6 +143,16 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
                 <span v-if="savedAt" class="text-xs text-slate-400">tersimpan {{ savedAt }}</span>
 
                 <div class="ml-auto flex items-center gap-2">
+                    <div v-if="canManage" class="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+                        <button @click="command('INSERT_CHILD_NODE')" :disabled="!selected" title="Tambah child (Tab)" class="map-tool">+ Child</button>
+                        <button @click="command('INSERT_NODE')" :disabled="!selected" title="Tambah sibling (Enter)" class="map-tool border-l border-slate-200">+ Sibling</button>
+                        <button @click="command('REMOVE_NODE')" :disabled="!selected" title="Hapus node (Delete)" class="map-tool border-l border-slate-200 text-red-600">Hapus node</button>
+                    </div>
+                    <div class="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+                        <button @click="zoom(-1)" title="Perkecil" class="map-tool">−</button>
+                        <button @click="fit" title="Pas ke layar (Ctrl+I)" class="map-tool border-x border-slate-200">Fit</button>
+                        <button @click="zoom(1)" title="Perbesar" class="map-tool">+</button>
+                    </div>
                     <button @click="share" class="inline-flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold px-3 py-2 rounded-lg transition">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.7 10.7l6.6-3.4M8.7 13.3l6.6 3.4M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zm12 7a3 3 0 100-6 3 3 0 000 6z" /></svg>
                         {{ shared ? 'Link disalin!' : 'Share' }}
@@ -145,7 +167,7 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
                 </div>
             </div>
 
-            <!-- Kanvas mind-elixir. Latar titik-titik (bukan putih polos) supaya
+            <!-- Kanvas simple-mind-map. Latar titik-titik (bukan putih polos) supaya
                  terasa papan tulis & geseran kanvas kelihatan bergerak. -->
             <div ref="mapEl" class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"></div>
             <p v-if="!canManage" class="text-xs text-slate-400 mt-2">Mode lihat — hanya owner/manager/it yang bisa mengubah & menyimpan.</p>
@@ -154,9 +176,15 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
 </template>
 
 <style scoped>
-/* Pastikan kanvas mind-elixir mengisi kontainer */
-.mindmap-canvas :deep(me-main),
-.mindmap-canvas :deep(.map-container) { width: 100%; height: 100%; }
+.map-tool {
+    padding: .5rem .7rem;
+    color: #475569;
+    font-size: .75rem;
+    font-weight: 600;
+    transition: background-color .15s;
+}
+.map-tool:hover { background: #f8fafc; }
+.map-tool:disabled { cursor: not-allowed; opacity: .35; }
 
 /* Latar titik-titik ala papan tulis. Ditaruh di kontainer (bukan .map-container)
    supaya tak ikut bergeser saat kanvas di-pan — titiknya jadi acuan diam. */
@@ -164,38 +192,5 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
     background-color: #fbfbfd;
     background-image: radial-gradient(#d7dcf0 1px, transparent 1px);
     background-size: 22px 22px;
-}
-.mindmap-canvas :deep(me-main),
-.mindmap-canvas :deep(.map-container) { background: transparent; }
-
-/* Node: bayangan halus + transisi. Bawaan mind-elixir rata tanpa kedalaman,
-   itu penyebab utama tampilannya terasa "datar & basic". */
-.mindmap-canvas :deep(me-tpc) {
-    box-shadow: 0 1px 2px rgb(25 26 43 / 6%), 0 2px 8px rgb(25 26 43 / 5%);
-    transition: box-shadow .15s ease, transform .15s ease;
-}
-.mindmap-canvas :deep(me-tpc:hover) {
-    box-shadow: 0 2px 6px rgb(44 75 255 / 14%), 0 6px 16px rgb(44 75 255 / 10%);
-}
-/* Root sedikit lebih tebal & menonjol — pusat peta harus langsung ketemu mata */
-.mindmap-canvas :deep(me-root me-tpc) {
-    font-weight: 700;
-    letter-spacing: .01em;
-    box-shadow: 0 3px 10px rgb(44 75 255 / 30%);
-}
-/* Node terpilih: cincin brand, bukan garis tipis bawaan */
-.mindmap-canvas :deep(me-tpc.selected) {
-    box-shadow: 0 0 0 2px #2c4bff, 0 4px 12px rgb(44 75 255 / 18%);
-}
-
-/* Panel/toolbar bawaan: samakan dgn bahasa visual aplikasi (membulat + bayangan).
-   Nama kelas DIVERIFIKASI ke MindElixir.css — `.node-menu` tak pernah ada di
-   library ini, jadi aturan yang menyebutnya cuma mati diam-diam. */
-.mindmap-canvas :deep(.mind-elixir-toolbar),
-.mindmap-canvas :deep(.context-menu),
-.mindmap-canvas :deep(.menu-list) {
-    border-radius: 12px;
-    border: 1px solid #dfe4ff;
-    box-shadow: 0 4px 16px rgb(25 26 43 / 8%);
 }
 </style>
