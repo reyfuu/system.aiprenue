@@ -14,6 +14,7 @@ const ITEMS = [
     { key: 'upload',    label: 'Upload',    href: '/upload',           icon: 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4' },
     { key: 'content',   label: 'Content',   href: '/content',          icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
     { key: 'tracking',  label: 'Tracking',  href: '/tracking',         icon: 'M4 19V9m5 10V5m5 14v-7m5 7V3' },
+    { key: 'okr',       label: 'OKR',       href: '/okr',              icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11' },
     { key: 'absensi',   label: 'Absensi',   href: '/absensi',          icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
     { key: 'mindmap',   label: 'Mindmap',   href: '/mindmaps',         icon: 'M4 6a2 2 0 114 0 2 2 0 01-4 0zm12-2a2 2 0 100 4 2 2 0 000-4zm0 12a2 2 0 100 4 2 2 0 000-4zM8 6h4a2 2 0 012 2v0m0 8a2 2 0 00-2-2H8m0-8v8' },
     { key: 'script',    label: 'Script',    href: '/script',           icon: 'M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z' },
@@ -43,6 +44,7 @@ const logout = () => router.post('/logout');                // POST /logout (CSR
 
 // Ganti password sendiri (self-service). Modal kecil dari footer sidebar —
 // verifikasi pakai password lama, tanpa email/SMTP.
+const open = ref(false);   // drawer sidebar terbuka? (mobile saja)
 const pwOpen = ref(false);                                  // status modal ganti password
 const showPw = ref(false);                                  // toggle lihat/sembunyi isian
 const pwForm = useForm({                                    // form 3 field
@@ -70,7 +72,19 @@ const submitPw = () => {                                    // handler submit
 
 <template>
     <!-- Render hanya bila ada user login -->
-    <aside v-if="user" class="hidden md:flex flex-col fixed left-0 top-0 h-screen w-56 bg-brand-800 text-brand-100 z-40">
+    <!-- Bilah atas khusus mobile: brand + hamburger buka drawer (md+ tak tampil). -->
+    <div v-if="user" class="md:hidden fixed top-0 inset-x-0 z-40 h-14 bg-brand-800 text-white flex items-center gap-3 px-4">
+        <button @click="open = true" aria-label="Buka menu" class="p-1 -ml-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <p class="font-bold text-sm">SYSTEM AI PRENEUR</p>
+    </div>
+
+    <!-- Latar gelap saat drawer terbuka (mobile); klik utk menutup. -->
+    <div v-if="user && open" @click="open = false" class="md:hidden fixed inset-0 bg-black/40 z-40"></div>
+
+    <!-- Sidebar: menempel kiri di md+, jadi drawer geser di mobile (off-canvas). -->
+    <aside v-if="user" :class="['flex flex-col fixed left-0 top-0 h-screen w-56 bg-brand-800 text-brand-100 z-50 transition-transform md:translate-x-0', open ? 'translate-x-0' : '-translate-x-full']">
         <!-- Header brand -->
         <div class="px-5 py-5 border-b border-white/10">
             <p class="text-white font-bold leading-tight">SYSTEM AI PRENEUR</p>
@@ -87,6 +101,7 @@ const submitPw = () => {                                    // handler submit
                 :href="it.href"
                 :target="it.external ? '_blank' : undefined"
                 :rel="it.external ? 'noreferrer' : undefined"
+                @click="open = false"
                 :class="['flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition', it.href === activeHref ? 'bg-white text-brand-700 font-semibold' : 'hover:bg-white/10']"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

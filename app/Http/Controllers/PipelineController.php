@@ -162,6 +162,7 @@ class PipelineController extends Controller
                 'link' => $p->link,
                 'labels' => $p->labels ?? [],
                 'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
+                'revisi' => (int) $p->revisi,                        // 0=tanpa revisi, 1-3
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline' => $p->deadline?->toDateString(),
                 'description' => $p->description,
@@ -358,6 +359,7 @@ class PipelineController extends Controller
             'endorse' => 'required|string|max:255',
             'description' => 'nullable|string',
             'progress' => ['required', Rule::in($validProgress ?: ['script'])],
+            'revisi' => 'nullable|integer|min:0|max:3',
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
             'deadline' => 'nullable|date',

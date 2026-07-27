@@ -15,7 +15,7 @@ class Pipeline extends Model
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
-        'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done',
+        'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done', 'revisi',
         'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
     ];
 
