@@ -100,7 +100,8 @@ class EnsureMenuAccess
             // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
             // Sebelumnya mutasinya lolos: tombolnya disembunyikan di Vue lewat `canManage`,
             // tapi request langsung tetap tembus.
-            || in_array($name, ['mindmaps.store', 'mindmaps.update', 'mindmaps.destroy'], true);
+            || in_array($name, ['mindmaps.store', 'mindmaps.update', 'mindmaps.destroy'], true)
+            || in_array($name, ['okr.store', 'okr.update', 'okr.destroy'], true);
     }
 
     /** Route name → menu terkait (array; null = bebas). */
@@ -139,6 +140,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'insight.') => ['insight'],
             str_starts_with($name, 'upload.') => ['upload'],
             str_starts_with($name, 'akses.') => ['akses'],   // Manajemen Akses
+            str_starts_with($name, 'okr.') => ['okr'],        // OKR
             default => null,
         };
     }

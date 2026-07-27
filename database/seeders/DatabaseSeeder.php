@@ -55,6 +55,7 @@ class DatabaseSeeder extends Seeder
             PipelineSeeder::class,
             PembukuanSeeder::class,
             OrderSeeder::class,
+            OkrSeeder::class,
         ]);
     }
 }

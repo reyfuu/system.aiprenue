@@ -13,6 +13,7 @@ use App\Http\Controllers\InsightController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
+use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
@@ -125,6 +126,12 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
+
+    // OKR — Objective + Key Result. Mutasi dibatasi canManage() via EnsureMenuAccess.
+    Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
+    Route::post('/okr', [OkrController::class, 'store'])->name('okr.store');
+    Route::put('/okr/{objective}', [OkrController::class, 'update'])->name('okr.update');
+    Route::delete('/okr/{objective}', [OkrController::class, 'destroy'])->name('okr.destroy');
 
     // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
     // Approve/tolak dibatasi canManage() di dalam AbsenceController.
