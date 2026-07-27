@@ -114,6 +114,65 @@ class KanbanStaffAccessTest extends TestCase
         $this->assertSame('Deal', $sales->fresh()->endorse);
     }
 
+    /**
+     * Capaian kuartal board = penilaian kinerja tim, bukan alat kerja.
+     *
+     *  Yang diuji BUKAN "panelnya tak tampil", tapi "datanya tak dikirim".
+     *  Props Inertia terbaca utuh di source halaman, jadi v-if di Vue tidak
+     *  menutup apa pun — assertion ini yang membedakan gerbang di server dari
+     *  sekadar penyembunyian di frontend.
+     */
+    public function test_staff_tidak_menerima_capaian_kuartal_board(): void
+    {
+        $this->actingAs($this->staff())
+            ->get('/pipelines/kanban?category=todolist')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('quarterStats', null));
+    }
+
+    /** Filter kuartal itu kendali navigasi, bukan informasi kinerja — staff
+     *  tetap harus bisa memakainya, termasuk saat menyaring. */
+    public function test_staff_tetap_dapat_filter_kuartal(): void
+    {
+        $this->actingAs($this->staff())
+            ->get('/pipelines/kanban?category=todolist&q=2026-Q3')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('quarterOptions')
+                ->where('quarter.filtering', true)
+                ->where('quarter.key', '2026-Q3')
+                ->where('quarterStats', null)      // menyaring boleh, angkanya tidak
+            );
+    }
+
+    /** Badge ketepatan per kartu tetap ada: itu turunan `deadline` & `done`
+     *  yang memang sudah terlihat staff, bukan agregat kinerja tim. */
+    public function test_staff_tetap_melihat_ketepatan_kartunya(): void
+    {
+        Pipeline::create([
+            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Task telat',
+            'progress' => 'todo', 'payment_status' => 'belum',
+            'deadline' => '2026-01-10', 'completed_at' => '2026-01-20 09:00:00',
+        ]);
+
+        $this->actingAs($this->staff())
+            ->get('/pipelines/kanban?category=todolist')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('board.todo.0.ketepatan', 'terlambat'));
+    }
+
+    /** Peran pengelola tetap menerimanya — gerbangnya jangan sampai menutup
+     *  semua orang. */
+    public function test_peran_pengelola_menerima_capaian_kuartal(): void
+    {
+        foreach (['owner', 'manager', 'it', 'admin'] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]))
+                ->get('/pipelines/kanban?category=todolist')
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page->has('quarterStats.ketepatan'));
+        }
+    }
+
     public function test_staff_tak_boleh_kelola_struktur_kanban(): void
     {
         $col = BoardColumn::where('board_key', 'todolist')->first();
