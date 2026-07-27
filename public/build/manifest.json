@@ -52,7 +52,7 @@
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "node_modules/simple-mind-map/index.js": {
-    "file": "assets/simple-mind-map-Bb_htvzP.js",
+    "file": "assets/simple-mind-map-B0IdMDef.js",
     "name": "simple-mind-map",
     "src": "node_modules/simple-mind-map/index.js",
     "isDynamicEntry": true,
@@ -61,7 +61,7 @@
     ]
   },
   "resources/css/app.css": {
-    "file": "assets/app-jzbq1XTJ.css",
+    "file": "assets/app-BKJ12d7m.css",
     "name": "app",
     "names": [
       "app.css"
@@ -70,7 +70,7 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-DRj3G9Tz.js",
+    "file": "assets/app-CRh-_Yjv.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
@@ -79,7 +79,7 @@
     ],
     "css": [
       "assets/app-By8HEDBo.css",
-      "assets/app-jzbq1XTJ.css"
+      "assets/app-BKJ12d7m.css"
     ]
   }
 }

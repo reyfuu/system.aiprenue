@@ -181,7 +181,7 @@ class ScriptTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Script')
                 ->where('brands.0.key', 'raveloux')
-                ->where('brands.0.count', 4)
+                ->where('brands.0.count', 2)                  // 2 paket (per generated_for), bukan jumlah naskah
                 ->where('brands.0.latest', '25 Jul 2026')     // paket terbaru, bukan yg pertama
                 ->where('brands.1.count', 0)                  // brand tanpa naskah tetap tampil
                 ->where('brands.1.latest', null)

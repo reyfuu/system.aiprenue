@@ -2,7 +2,7 @@
 // Halaman Manajemen Akses: matriks centang peran × menu.
 // Sumber kebenaran hak akses ada di tabel `role_menu_access` (lihat User::canSee),
 // halaman ini yang mengubahnya — jadi aturan bisa diganti tanpa deploy ulang.
-import { computed } from 'vue';                          // computed: cek peran user login
+import { computed, ref } from 'vue';                    // computed: cek peran user login; ref: pesan gagal simpan
 import { useForm, usePage, router } from '@inertiajs/vue3'; // useForm matriks, usePage auth, router aksi
 import Layout from '../Layout.vue';                      // layout bersama (sidebar + toast)
 
@@ -71,7 +71,20 @@ const toggleBaris = (role) => {
     if (kosongkan) form.kelola[role] = [];
 };
 
-const simpan = () => form.put('/akses', { preserveScroll: true });
+// Umpan balik gagal simpan. Tanpa ini halaman diam saat server MENOLAK simpan:
+// centang optimistis bertahan lalu "hilang" setelah refresh — persis keluhan yang
+// muncul kalau bundle/izin/migrasi server tak sinkron. Sukses tetap lewat toast Layout.
+const pesanGagal = ref(null);
+const simpan = () => {
+    pesanGagal.value = null;
+    form.put('/akses', {
+        preserveScroll: true,
+        onError: (errors) => {
+            pesanGagal.value = Object.values(errors)[0]
+                || 'Gagal menyimpan hak akses. Coba muat ulang halaman lalu simpan lagi.';
+        },
+    });
+};
 </script>
 
 <template>
@@ -91,6 +104,11 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
         </header>
 
         <div class="p-6">
+            <!-- Umpan balik gagal simpan: tanpa ini penolakan server tak terlihat. -->
+            <div v-if="pesanGagal" class="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86l-8.48 14.7A1 1 0 002.67 20h18.66a1 1 0 00.86-1.44l-8.48-14.7a1 1 0 00-1.72 0z" /></svg>
+                <span>{{ pesanGagal }}</span>
+            </div>
             <!-- Matriks. overflow-x-auto: 10 kolom menu lebih lebar dari layar sempit,
                  dan tabel TIDAK boleh bikin seluruh halaman geser mendatar. -->
             <div class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-x-auto">

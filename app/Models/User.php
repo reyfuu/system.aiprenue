@@ -51,6 +51,7 @@ class User extends Authenticatable
         'content' => 'Content',
         'tracking' => 'Tracking',
         'okr' => 'OKR',
+        'kpi' => 'KPI Board',
         'pembukuan' => 'Pembukuan',
         'user' => 'User',
         'insight' => 'Insight',
