@@ -2,7 +2,7 @@
 
 System AI Preneur — aplikasi manajemen bisnis (Dashboard, Pipeline, Kanban, Pembukuan, Script, User) dengan hak akses per peran.
 
-Konvensi lengkap ada di **[AGENTS.md](AGENTS.md)** · arsitektur di **[DESIGN.md](DESIGN.md)**. File ini ringkasan operasional.
+Konvensi lengkap ada di **[AGENTS.md](docs/AGENTS.md)** · arsitektur di **[DESIGN.md](docs/DESIGN.md)**. File ini ringkasan operasional.
 
 ## Stack
 - **Laravel 13 / PHP 8.5**, **SQLite (WAL)** untuk dev.
