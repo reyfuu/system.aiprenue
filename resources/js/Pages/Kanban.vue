@@ -6,6 +6,8 @@ import { router, useForm, usePage, Link } from '@inertiajs/vue3';  // Inertia: n
 import Layout from '../Layout.vue';                                // kerangka + sidebar
 import ModalWrap from '../ModalWrap.vue';                          // pembungkus modal
 import draggable from 'vuedraggable';                              // drag-drop kartu (SortableJS) ala Trello
+import '../scripts/lib/charts';                                   // registrasi elemen Chart.js (dipakai bareng Dashboard/Pembukuan/OKR)
+import { Bar } from 'vue-chartjs';                                // chart batang siap pakai
 
 // Props dari controller.
 // baseUrl/pageTitle/showGallery membuat halaman ini dipakai dua modul:
@@ -85,6 +87,43 @@ onUnmounted(() => scrollObserver?.disconnect());
 const cloneBoard = (b) => Object.fromEntries(Object.entries(b || {}).map(([k, v]) => [k, [...(v || [])]]));
 const cols = ref(cloneBoard(props.board));
 watch(() => props.board, (b) => { cols.value = cloneBoard(b); }); // sinkron ulang saat Inertia kirim board baru
+
+// ---- Statistik / KPI Anggota (agregat kartu yang tampil di board, per PJ) ----
+// Client-side dari kartu board: tiap kartu sudah membawa assignee, completed_at,
+// dan `ketepatan` (verdict tepat/terlambat/lewat dari server), jadi rumus telat
+// TIDAK diduplikasi di sini. Cakupan = kartu yang sedang tampil, ikut filter
+// aktif/arsip/jenis/kuartal — angkanya cocok dengan apa yang terlihat di board.
+const statistikAnggota = computed(() => {
+    const per = new Map(); // nama PJ → agregat
+    for (const kartu of Object.values(cols.value).flat()) {
+        const nama = kartu.assignee || 'Belum ditugaskan';
+        const s = per.get(nama) || { nama, total: 0, selesai: 0, telat: 0 };
+        s.total += 1;
+        if (kartu.completed_at) s.selesai += 1;
+        if (kartu.ketepatan === 'lewat') s.telat += 1; // belum selesai & lewat deadline
+        per.set(nama, s);
+    }
+    return [...per.values()]
+        .map((s) => ({ ...s, berjalan: s.total - s.selesai, skor: s.total ? Math.round((s.selesai / s.total) * 100) : 0 }))
+        // "Belum ditugaskan" selalu di dasar; sisanya skor tertinggi dulu, seri → total terbanyak.
+        .sort((a, b) => (a.nama === 'Belum ditugaskan') - (b.nama === 'Belum ditugaskan') || b.skor - a.skor || b.total - a.total);
+});
+
+// Chart batang per anggota (Selesai/Berjalan/Telat) — warna sama dgn kolom tabel.
+const barData = computed(() => ({
+    labels: statistikAnggota.value.map((s) => s.nama),
+    datasets: [
+        { label: 'Selesai', data: statistikAnggota.value.map((s) => s.selesai), backgroundColor: '#10b981', borderRadius: 4 },
+        { label: 'Berjalan', data: statistikAnggota.value.map((s) => s.berjalan), backgroundColor: '#f59e0b', borderRadius: 4 },
+        { label: 'Telat', data: statistikAnggota.value.map((s) => s.telat), backgroundColor: '#ef4444', borderRadius: 4 },
+    ],
+}));
+const barOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } },
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+};
 
 // Urutan kolom — salinan prop dgn alasan yang sama persis dgn `cols` di atas:
 // SortableJS memutasi array ini via splice saat drag, dan prop Inertia readonly,
@@ -584,6 +623,54 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                         · {{ quarterStats.no_deadline }} kartu tanpa deadline (di luar hitungan)
                     </span>
                     <span v-if="boardCreator" class="ml-auto text-[11px] text-slate-400">Board dibuat oleh <b class="text-slate-500">{{ boardCreator }}</b></span>
+                </div>
+            </div>
+
+            <!-- Statistik / KPI Anggota: agregat kartu yang tampil, per PJ.
+                 Client-side (pakai `ketepatan` server, tak menduplikasi rumus telat).
+                 Hanya peran pengelola — sejajar dgn panel capaian board di atas. -->
+            <div v-if="canManage && statistikAnggota.length" class="bg-white border border-slate-200 rounded-2xl shadow-sm mb-5 overflow-hidden">
+                <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                    <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l3-4 3 3 5-7" /></svg>
+                    <span class="font-bold text-sm text-slate-700">Statistik / KPI Anggota</span>
+                    <span class="hidden sm:inline text-[11px] text-slate-400 ml-auto">Selesai = kartu di kolom Done · Telat = lewat deadline</span>
+                </div>
+                <div class="grid lg:grid-cols-2 items-start">
+                    <div class="overflow-x-auto lg:border-r border-slate-100">
+                    <table class="w-full text-sm min-w-[480px]">
+                        <thead>
+                            <tr class="text-left text-[10px] uppercase tracking-widest text-slate-400 bg-slate-50 border-b border-slate-100">
+                                <th class="py-2.5 px-4 font-semibold">Anggota</th>
+                                <th class="py-2.5 px-4 font-semibold text-center w-16">Total</th>
+                                <th class="py-2.5 px-4 font-semibold text-center w-16">Selesai</th>
+                                <th class="py-2.5 px-4 font-semibold text-center w-16">Berjalan</th>
+                                <th class="py-2.5 px-4 font-semibold text-center w-16">Telat</th>
+                                <th class="py-2.5 px-4 font-semibold w-48">Skor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="s in statistikAnggota" :key="s.nama" class="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                                <td class="py-2.5 px-4 font-semibold text-slate-700">{{ s.nama }}</td>
+                                <td class="py-2.5 px-4 text-center tabular-nums text-slate-600">{{ s.total }}</td>
+                                <td class="py-2.5 px-4 text-center tabular-nums font-semibold text-emerald-600">{{ s.selesai }}</td>
+                                <td :class="['py-2.5 px-4 text-center tabular-nums', s.berjalan ? 'text-amber-600' : 'text-slate-300']">{{ s.berjalan }}</td>
+                                <td :class="['py-2.5 px-4 text-center tabular-nums', s.telat ? 'font-bold text-red-600' : 'text-slate-300']">{{ s.telat }}</td>
+                                <td class="py-2.5 px-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div :class="['h-full rounded-full transition-all', s.skor >= 100 ? 'bg-emerald-500' : s.skor >= 60 ? 'bg-amber-500' : s.skor > 0 ? 'bg-red-500' : 'bg-slate-200']" :style="{ width: s.skor + '%' }"></div>
+                                        </div>
+                                        <span class="text-xs font-bold text-slate-600 w-10 text-right">{{ s.skor }}%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    </div>
+                    <!-- Chart batang per anggota (Selesai/Berjalan/Telat). -->
+                    <div class="p-4">
+                        <div class="h-64"><Bar :data="barData" :options="barOpts" /></div>
+                    </div>
                 </div>
             </div>
 

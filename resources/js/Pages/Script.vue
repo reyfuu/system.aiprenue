@@ -37,7 +37,7 @@ defineProps({
                         </div>
                         <div class="min-w-0">
                             <p class="font-bold text-slate-700 truncate">{{ b.name }}</p>
-                            <p class="text-xs text-slate-400">{{ b.count }} naskah</p>
+                            <p class="text-xs text-slate-400">{{ b.count }} paket</p>
                         </div>
                     </div>
                     <!-- Paket terbaru = jawaban cepat "agennya masih jalan tidak?" -->

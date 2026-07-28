@@ -13,7 +13,7 @@ const ITEMS = [
     { key: 'insight',   label: 'Insight',   href: '/insight',          icon: 'M3 3v18h18M7 15l3-4 3 3 5-7' },
     { key: 'upload',    label: 'Upload',    href: '/upload',           icon: 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4' },
     { key: 'content',   label: 'Content',   href: '/content',          icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
-    { key: 'tracking',  label: 'Tracking',  href: '/tracking',         icon: 'M4 19V9m5 10V5m5 14v-7m5 7V3' },
+    // { key: 'tracking', label: 'Tracking', href: '/tracking', icon: 'M4 19V9m5 10V5m5 14v-7m5 7V3' }, // sementara disembunyikan
     { key: 'kpi',       label: 'KPI Board', href: '/kpi',              icon: 'M9 19v-6m4 6V9m4 10v-4M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z' },
     { key: 'okr',       label: 'OKR',       href: '/okr',              icon: 'M12 12m-9 0a9 9 0 1018 0 9 9 0 10-18 0M12 12m-5 0a5 5 0 1010 0 5 5 0 10-10 0M12 12m-1 0a1 1 0 102 0 1 1 0 10-2 0' },
     { key: 'absensi',   label: 'Absensi',   href: '/absensi',          icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
