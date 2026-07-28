@@ -51,7 +51,6 @@ class User extends Authenticatable
         'content' => 'Content',
         'tracking' => 'Tracking',
         'okr' => 'OKR',
-        'kpi' => 'KPI Board',
         'pembukuan' => 'Pembukuan',
         'user' => 'User',
         'insight' => 'Insight',
@@ -180,7 +179,7 @@ class User extends Authenticatable
 
     /** Route landing pertama yang boleh diakses user.
      *
-     *  Wajib mengembalikan route yang benar-benar DIBOLEHKAN: kalau bukan,
+ https://github.com/reyfuu/system.aiprenue/pull/39/conflict?name=public%252Fbuild%252Fmanifest.json&ancestor_oid=9187962467d5529f6d89e322d36546398d87ab2f&base_oid=d000806ec7810a451ce5869319592319845cca5d&head_oid=bf2d895306134d6767e6de965a1fb9afe55c35f5    *  Wajib mengembalikan route yang benar-benar DIBOLEHKAN: kalau bukan,
      *  EnsureMenuAccess langsung menolak (403) begitu user mendarat. Ini
      *  menggigit peran yang aksesnya dipangkas dari Manajemen Akses — dan
      *  paling kentara saat owner "masuk sebagai" peran itu. Jadi telusuri
@@ -198,7 +197,6 @@ class User extends Authenticatable
             'insight'   => 'insight.index',
             'content'   => 'content.index',
             'tracking'  => 'tracking.index',
-            'kpi'       => 'kpi.index',
             'okr'       => 'okr.index',
             'pembukuan' => 'pembukuan.index',
             'upload'    => 'upload.index',
