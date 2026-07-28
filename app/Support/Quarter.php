@@ -62,6 +62,10 @@ final class Quarter
         $out = [];
         for ($i = $ahead; $i >= -$back; $i--) {
             $q = $now->addQuarters($i);
+            // OKR baru dipakai sejak 2026 — jangan tampilkan tahun sebelumnya (2024/2025) di menu.
+            if ($q->year < 2026) {
+                continue;
+            }
             $out[] = [
                 'year' => (int) $q->year,
                 'quarter' => (int) $q->quarter,

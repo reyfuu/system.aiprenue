@@ -12,7 +12,9 @@ const title = ref(props.mindmap.title);
 const saving = ref(false);
 const savedAt = ref('');          // jam terakhir simpan
 let mind = null;                  // instance simple-mind-map
+let dragRegistered = false;       // plugin Drag diregistrasi sekali (global pada konstruktor)
 const selected = ref(false);
+const ctx = ref({ show: false, x: 0, y: 0 }); // menu klik-kanan pada node
 
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
 
@@ -81,6 +83,10 @@ onMounted(async () => {
     // Library cukup besar, jadi muat hanya saat editor dibuka agar halaman lain
     // tidak ikut mengunduh mesin mindmap.
     const { default: MindMap } = await import('simple-mind-map');
+    // Plugin Drag: node bisa di-grab untuk dipindah/disusun ulang. Diregistrasi sekali
+    // (usePlugin global pada konstruktor); otomatis nonaktif saat readonly (view-only).
+    const { default: Drag } = await import('simple-mind-map/src/plugins/Drag.js');
+    if (!dragRegistered) { MindMap.usePlugin(Drag); dragRegistered = true; }
     mind = new MindMap({
         el: mapEl.value,
         data: dataAwal(),
@@ -94,13 +100,23 @@ onMounted(async () => {
         defaultInsertBelowSecondLevelNodeText: 'Subtopik baru',
     });
     mind.on('node_active', (_node, nodes) => { selected.value = nodes.length > 0; });
+    // Klik-kanan node → menu tambah child/sibling/hapus. Node yang diklik dijadikan
+    // aktif dulu supaya execCommand (yang bekerja pada node aktif) mengenainya.
+    mind.on('node_contextmenu', (e, node) => {
+        if (!props.canManage) return;
+        e.preventDefault?.();
+        mind.execCommand('SET_NODE_ACTIVE', node, true);
+        selected.value = true;
+        ctx.value = { show: true, x: e.clientX, y: e.clientY };
+    });
 });
 
 onBeforeUnmount(() => { mind?.destroy(); mind = null; });
 
-// Aksi dasar sengaja berada di toolbar aplikasi agar mudah ditemukan tanpa
-// bergantung pada menu klik-kanan. Shortcut: Tab, Enter, Delete, dan Ctrl+I.
+// Aksi dasar ada di toolbar (mudah ditemukan) DAN via klik-kanan node (menu ctx).
+// Shortcut: Tab, Enter, Delete, dan Ctrl+I.
 const command = (name) => { if (props.canManage && mind) mind.execCommand(name); };
+const ctxAction = (name) => { command(name); ctx.value.show = false; };
 const fit = () => mind?.view.fit();
 const zoom = (arah) => arah > 0 ? mind?.view.enlarge() : mind?.view.narrow();
 
@@ -169,7 +185,17 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
 
             <!-- Kanvas simple-mind-map. Latar titik-titik (bukan putih polos) supaya
                  terasa papan tulis & geseran kanvas kelihatan bergerak. -->
-            <div ref="mapEl" class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"></div>
+            <div ref="mapEl" @contextmenu.prevent class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"></div>
+
+            <!-- Menu klik-kanan node (owner/manager/it). Backdrop transparan menutup menu saat klik di luar. -->
+            <template v-if="canManage && ctx.show">
+                <div class="fixed inset-0 z-40" @click="ctx.show = false" @contextmenu.prevent="ctx.show = false"></div>
+                <div class="fixed z-50 min-w-[9rem] bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }">
+                    <button @click="ctxAction('INSERT_CHILD_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">+ Tambah child</button>
+                    <button @click="ctxAction('INSERT_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">+ Tambah sibling</button>
+                    <button @click="ctxAction('REMOVE_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">Hapus node</button>
+                </div>
+            </template>
             <p v-if="!canManage" class="text-xs text-slate-400 mt-2">Mode lihat — hanya owner/manager/it yang bisa mengubah & menyimpan.</p>
         </div>
     </Layout>
