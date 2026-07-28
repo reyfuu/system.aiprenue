@@ -228,6 +228,7 @@ const fillForm = (card) => {
     editForm.kontak_wa = card.kontak_wa ?? '';
     editForm.kontak_gmail = card.kontak_gmail ?? '';
     editForm.kontak_ig = card.kontak_ig ?? '';
+    editForm.newAttachment = null;
 };
 
 const openAdd = (progress) => {
@@ -241,7 +242,12 @@ const openDetail = (card) => {
     detailId.value = card.id;
     if (props.canManage) fillForm(card);
 };
-const closeCard = () => { detailId.value = null; creating.value = false; };
+const closeCard = () => {
+    detailId.value = null;
+    creating.value = false;
+    editForm.newAttachment = null;
+    attachForm.reset('file');
+};
 
 // Textarea Deskripsi/Notes mengikuti tinggi isi sampai 320px; setelah itu
 // scrollbar internal menjaga modal tidak tumbuh melewati layar.
@@ -325,6 +331,29 @@ const submitAttach = () => {
     attachForm.post(`/pipelines/${detailId.value}/attachments`, { forceFormData: true, preserveScroll: true, onSuccess: () => attachForm.reset('file') });
 };
 const deleteAttachment = (id) => router.delete(`/attachments/${id}`, { preserveScroll: true });
+
+// Screenshot dari clipboard dapat langsung masuk ke upload lampiran lewat
+// Ctrl+V (Windows/Linux) atau Cmd+V (Mac). Paste teks biasa tidak disentuh:
+// event hanya dicegah bila clipboard benar-benar membawa sebuah image.
+const pasteScreenshot = (event) => {
+    if ((!creating.value && !detailCard.value) || !props.canManageStructure) return;
+    const item = [...(event.clipboardData?.items || [])].find((entry) => entry.type.startsWith('image/'));
+    const blob = item?.getAsFile();
+    if (!blob) return;
+
+    const extension = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = new File([blob], `screenshot-${stamp}.${extension}`, {
+        type: blob.type,
+        lastModified: Date.now(),
+    });
+
+    if (creating.value) editForm.newAttachment = file;
+    else attachForm.file = file;
+    event.preventDefault();
+};
+onMounted(() => window.addEventListener('paste', pasteScreenshot));
+onUnmounted(() => window.removeEventListener('paste', pasteScreenshot));
 
 // ---- Kelola kategori (OWNER only) — internalnya tetap tabel `labels` ----
 const isOwner = computed(() => authUser?.role === 'owner');
@@ -1074,7 +1103,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                 </label>
                 <!-- Lampiran opsional saat membuat kartu — filenya ikut di request buat-kartu. -->
                 <div v-if="creating" class="col-span-2">
-                    <p class="font-medium text-slate-600 mb-1">Lampiran <span class="font-normal text-slate-400 text-xs">(opsional · jpeg, png, pdf, dll · maks 10 MB)</span></p>
+                    <p class="font-medium text-slate-600 mb-1">Lampiran <span class="font-normal text-slate-400 text-xs">(opsional · pilih file atau Ctrl/Cmd+V screenshot · maks 10 MB)</span></p>
                     <input id="new-attach" type="file" @change="editForm.newAttachment = $event.target.files[0]" class="hidden" />
                     <div class="flex items-center gap-2">
                         <label for="new-attach" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition">
@@ -1140,7 +1169,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
 
             <!-- Lampiran — perlu id kartu, jadi baru muncul setelah kartunya ada -->
             <div v-if="detailCard" class="border-t border-slate-100 pt-4 mt-2">
-                <p class="font-semibold text-slate-700 mb-2 text-sm">Lampiran ({{ detailCard.attachments.length }})</p>
+                <p class="font-semibold text-slate-700 mb-2 text-sm">Lampiran ({{ detailCard.attachments.length }}) <span v-if="canManageStructure" class="font-normal text-[11px] text-slate-400">· pilih file atau Ctrl/Cmd+V screenshot</span></p>
                 <div class="space-y-1.5 mb-2">
                     <div v-for="a in detailCard.attachments" :key="a.id" class="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
                         <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
