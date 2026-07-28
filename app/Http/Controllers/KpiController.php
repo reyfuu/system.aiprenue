@@ -16,10 +16,10 @@ use Inertia\Inertia;
  * ketepatan waktu.
  *
  *  Terpisah dari OkrController secara sengaja. OKR memuat omset & pertumbuhan
- *  audiens — angka tingkat perusahaan yang hanya untuk owner & manager. Yang
- *  ada di sini murni operasional papan, jadi boleh dilihat tim yang memang
- *  mengelola board. Selama keduanya satu halaman, memberi akses ke yang satu
- *  berarti memberi akses ke yang lain.
+ *  audiens — angka tingkat perusahaan untuk owner, manager, dan IT super
+ *  admin. Yang ada di sini murni operasional papan, jadi boleh dilihat tim
+ *  yang memang mengelola board. Selama keduanya satu halaman, memberi akses
+ *  ke yang satu berarti memberi akses ke yang lain.
  *
  *  Kuartal dipilih lewat ?q=YYYY-Qn; tanpa itu memakai kuartal berjalan.
  */

@@ -324,7 +324,7 @@ const addTask = () => taskForm.post(`/pipelines/${detailId.value}/tasks`, {
 const toggleTask = (task) => router.patch(`/pipeline-tasks/${task.id}`, { done: !task.done }, { preserveScroll: true });
 const deleteTask = (task) => router.delete(`/pipeline-tasks/${task.id}`, { preserveScroll: true });
 
-// ---- Lampiran (upload manager; unduh semua) ----
+// ---- Lampiran (pilih file atau paste screenshot dari clipboard) ----
 const attachForm = useForm({ file: null });
 const submitAttach = () => {
     if (!attachForm.file) return;

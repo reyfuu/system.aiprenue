@@ -24,9 +24,9 @@ class KeyResult extends Model
     /** Dari mana realisasinya berasal.
      *  `auto`   — dihitung dari Insight/Pembukuan, tak bisa diketik tangan.
      *  `manual` — diperbarui sendiri; untuk target tanpa sumber data.
-     *  `kartu`  — dihitung dari kartu Kanban todolist yang ditautkan ke KR ini
-     *             & sudah selesai. Otomatis seperti `auto`, tapi sumbernya
-     *             pekerjaan di papan, bukan modul Insight/Pembukuan. */
+     *  `kartu`  — dihitung dari card Kanban yang ditautkan ke KR ini dan sudah
+     *             selesai. Otomatis seperti `auto`, tetapi sumbernya pekerjaan
+     *             pada board pilihan, bukan modul Insight/Pembukuan. */
     public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kanban'];
 
     /** Satuan, dipakai UI untuk memformat angka. */
