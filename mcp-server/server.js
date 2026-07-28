@@ -142,10 +142,533 @@ async function ownerId() {
 const OKR_SOURCES = ['auto', 'manual', 'kartu'];
 const OKR_METRICS = ['view', 'subscriber', 'omset'];
 const OKR_UNITS = ['angka', 'rupiah', 'persen'];
+const LIMIT = z.number().int().min(1).max(200).default(50);
+
+// Modul non-board diberikan sebagai tool eksplisit agar model dapat menemukan
+// kapabilitasnya tanpa mendapat akses SQL generik. Semua nilai dinamis tetap
+// masuk sebagai parameter query, bukan interpolasi.
+function registerSystemReadTools(server) {
+    server.registerTool(
+        'get_dashboard_summary',
+        { title: 'Dashboard Summary', description: 'Ringkasan seluruh sistem: omzet order, sales, kanban, content, insight, dan pembukuan.', inputSchema: {} },
+        async () => {
+            const [[orders]] = await db.query(`SELECT COUNT(*) total, COALESCE(SUM(total_idr),0) omzet_idr, COALESCE(SUM(total_usd),0) omzet_usd FROM orders`);
+            const [[sales]] = await db.query(`SELECT COUNT(*) total, COALESCE(SUM(amount_idr),0) nilai_idr, COALESCE(SUM(amount_usd),0) nilai_usd FROM pipelines p JOIN categories c ON c.\`key\`=p.category WHERE c.type='pipeline' AND p.archived_at IS NULL`);
+            const [[kanban]] = await db.query(`SELECT COUNT(*) total, SUM(completed_at IS NOT NULL) selesai FROM pipelines p JOIN categories c ON c.\`key\`=p.category WHERE c.type='kanban' AND p.archived_at IS NULL`);
+            const [[content]] = await db.query(`SELECT COUNT(*) total, SUM(progress='published') published FROM contents`);
+            const [[finance]] = await db.query(`SELECT COALESCE(SUM(CASE WHEN type='pemasukan' THEN amount_idr ELSE 0 END),0) pemasukan, COALESCE(SUM(CASE WHEN type='pengeluaran' THEN amount_idr ELSE 0 END),0) pengeluaran FROM transactions`);
+            const [[insight]] = await db.query(`SELECT COUNT(*) konten, COALESCE(SUM(views),0) views FROM insight_contents`);
+            return jsonText({ orders, sales, kanban, content, finance: { ...finance, laba: Number(finance.pemasukan) - Number(finance.pengeluaran) }, insight });
+        }
+    );
+
+    server.registerTool(
+        'list_orders',
+        {
+            title: 'List Orders',
+            description: 'Daftar order terbaru beserta customer, pembayaran, deadline, dan nilai.',
+            inputSchema: { limit: LIMIT, account: z.enum(['fk', 'ai_preneur']).optional() },
+        },
+        async ({ limit, account }) => {
+            const where = account ? 'WHERE account=?' : '';
+            const args = account ? [account, limit] : [limit];
+            const [rows] = await db.query(
+                `SELECT id, tipe_order, account, nama_customer, telepon, email, tanggal_deadline,
+                        tipe_pembayaran, tanggal_bayar, total_idr, total_usd, invoice
+                 FROM orders ${where} ORDER BY id DESC LIMIT ?`, args);
+            return jsonText({ count: rows.length, orders: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_finance',
+        {
+            title: 'List Finance',
+            description: 'Ringkasan dan transaksi Pembukuan pada rentang tanggal.',
+            inputSchema: {
+                start: z.string().optional().describe('YYYY-MM-DD'),
+                end: z.string().optional().describe('YYYY-MM-DD'),
+                limit: LIMIT,
+            },
+        },
+        async ({ start, end, limit }) => {
+            const where = [], args = [];
+            if (start) { where.push('date>=?'); args.push(start); }
+            if (end) { where.push('date<=?'); args.push(end); }
+            const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+            const [[summary]] = await db.query(
+                `SELECT COALESCE(SUM(CASE WHEN type='pemasukan' THEN amount_idr ELSE 0 END),0) pemasukan,
+                        COALESCE(SUM(CASE WHEN type='pengeluaran' THEN amount_idr ELSE 0 END),0) pengeluaran
+                 FROM transactions ${clause}`, args);
+            const [transactions] = await db.query(
+                `SELECT id, type, category, description, amount_idr, date
+                 FROM transactions ${clause} ORDER BY date DESC, id DESC LIMIT ?`, [...args, limit]);
+            return jsonText({ summary: { ...summary, laba: Number(summary.pemasukan) - Number(summary.pengeluaran) }, transactions });
+        }
+    );
+
+    server.registerTool(
+        'list_content',
+        {
+            title: 'List Content',
+            description: 'Daftar rencana produksi Content beserta editor, progress, jadwal, dan tautan hasil.',
+            inputSchema: { progress: z.enum(['draft', 'script', 'editing', 'review', 'scheduled', 'published']).optional(), limit: LIMIT },
+        },
+        async ({ progress, limit }) => {
+            const where = progress ? 'WHERE progress=?' : '';
+            const args = progress ? [progress, limit] : [limit];
+            const [rows] = await db.query(
+                `SELECT id, comp, jenis_postingan, kategori, inti_pesan, editor, progress,
+                        tanggal_upload, link_hasil_editing, caption
+                 FROM contents ${where} ORDER BY id DESC LIMIT ?`, args);
+            return jsonText({ count: rows.length, contents: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_scripts',
+        {
+            title: 'List Scripts',
+            description: 'Daftar naskah Script terbaru. Body disertakan agar AI dapat melanjutkan atau meninjau naskah.',
+            inputSchema: { brand: z.enum(['raveloux', 'rave_tailor', 'fk']).optional(), limit: LIMIT },
+        },
+        async ({ brand, limit }) => {
+            const where = brand ? 'WHERE brand=?' : '';
+            const args = brand ? [brand, limit] : [limit];
+            const [rows] = await db.query(
+                `SELECT id, brand, title, body, generated_for, created_at FROM scripts ${where} ORDER BY id DESC LIMIT ?`, args);
+            return jsonText({ count: rows.length, scripts: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_insights',
+        {
+            title: 'List Insights',
+            description: 'Ringkasan performa Insight Instagram/YouTube dan konten teratas pada rentang tanggal.',
+            inputSchema: {
+                platform: z.enum(['instagram', 'youtube']).optional(),
+                start: z.string().optional(),
+                end: z.string().optional(),
+                limit: LIMIT,
+            },
+        },
+        async ({ platform, start, end, limit }) => {
+            const where = [], args = [];
+            if (platform) { where.push('platform=?'); args.push(platform); }
+            if (start) { where.push('published_at>=?'); args.push(start); }
+            if (end) { where.push('published_at<=?'); args.push(`${end} 23:59:59`); }
+            const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+            const [[summary]] = await db.query(
+                `SELECT COUNT(*) konten, COALESCE(SUM(views),0) views, COALESCE(SUM(likes+comments+shares+saves),0) interactions
+                 FROM insight_contents ${clause}`, args);
+            const [contents] = await db.query(
+                `SELECT id, platform, judul, content_type, published_at, views, reach, likes, comments, shares, saves, followers_gained
+                 FROM insight_contents ${clause} ORDER BY views DESC LIMIT ?`, [...args, limit]);
+            return jsonText({ summary, contents });
+        }
+    );
+
+    server.registerTool(
+        'list_users',
+        {
+            title: 'List Users',
+            description: 'Daftar user dan perannya. Tidak pernah mengirim password atau remember token.',
+            inputSchema: { role: z.enum(['owner', 'manager', 'it', 'admin', 'staff']).optional() },
+        },
+        async ({ role }) => {
+            const [rows] = role
+                ? await db.query(`SELECT id, name, email, role, created_at FROM users WHERE role=? ORDER BY name`, [role])
+                : await db.query(`SELECT id, name, email, role, created_at FROM users ORDER BY name`);
+            return jsonText({ count: rows.length, users: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_absences',
+        {
+            title: 'List Absences',
+            description: 'Daftar pengajuan absensi/cuti beserta user dan status persetujuan.',
+            inputSchema: { status: z.enum(['menunggu', 'disetujui', 'ditolak']).optional(), limit: LIMIT },
+        },
+        async ({ status, limit }) => {
+            const where = status ? 'WHERE a.status=?' : '';
+            const args = status ? [status, limit] : [limit];
+            const [rows] = await db.query(
+                `SELECT a.id, a.user_id, u.name AS user_name, a.type, a.start_date, a.end_date, a.reason, a.status
+                 FROM absences a JOIN users u ON u.id=a.user_id ${where} ORDER BY a.id DESC LIMIT ?`, args);
+            return jsonText({ count: rows.length, absences: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_mindmaps',
+        {
+            title: 'List Mindmaps',
+            description: 'Daftar mindmap. Isi data JSON opsional karena dapat berukuran besar.',
+            inputSchema: { include_data: z.boolean().default(false), limit: LIMIT },
+        },
+        async ({ include_data, limit }) => {
+            const fields = include_data ? ', m.data' : '';
+            const [rows] = await db.query(
+                `SELECT m.id, m.title, m.user_id, u.name AS user_name, m.updated_at${fields}
+                 FROM mindmaps m LEFT JOIN users u ON u.id=m.user_id ORDER BY m.updated_at DESC LIMIT ?`, [limit]);
+            return jsonText({ count: rows.length, mindmaps: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_okr',
+        {
+            title: 'List OKR',
+            description: 'Objective dan Key Result satu kuartal beserta realisasi otomatis/manual/Kanban.',
+            inputSchema: {
+                year: z.number().int().min(2000).max(2100).optional(),
+                quarter: z.number().int().min(1).max(4).optional(),
+            },
+        },
+        async ({ year, quarter }) => {
+            const current = currentQuarter();
+            year ??= current.year;
+            quarter ??= current.quarter;
+            const metrics = await okrRealisasi(year, quarter);
+            const [objectives] = await db.query(
+                `SELECT id, title, description, position FROM objectives WHERE year=? AND quarter=? ORDER BY position,id`, [year, quarter]);
+            for (const objective of objectives) {
+                const [krs] = await db.query(
+                    `SELECT id, title, source, metric, target, actual_manual, unit, board_key, owner_id
+                     FROM key_results WHERE objective_id=? ORDER BY position,id`, [objective.id]);
+                for (const kr of krs) {
+                    let actual = Number(kr.actual_manual || 0);
+                    if (kr.source === 'auto') actual = Number(metrics[kr.metric] || 0);
+                    if (kr.source === 'kartu') {
+                        const [[done]] = await db.query(`SELECT COUNT(*) n FROM pipelines WHERE key_result_id=? AND completed_at IS NOT NULL`, [kr.id]);
+                        actual = Number(done.n);
+                    }
+                    kr.actual = actual;
+                    kr.percent = pct(actual, kr.target);
+                }
+                objective.key_results = krs;
+                const scored = krs.map((kr) => kr.percent).filter((v) => v !== null).map((v) => Math.min(100, v));
+                objective.progress = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length * 10) / 10 : null;
+            }
+            return jsonText({ year, quarter, metrics, objectives });
+        }
+    );
+
+    server.registerTool(
+        'list_kpi',
+        {
+            title: 'List KPI',
+            description: 'Target dan realisasi penyelesaian kartu per board pada satu kuartal.',
+            inputSchema: {
+                year: z.number().int().min(2000).max(2100).optional(),
+                quarter: z.number().int().min(1).max(4).optional(),
+            },
+        },
+        async ({ year, quarter }) => {
+            const current = currentQuarter();
+            year ??= current.year;
+            quarter ??= current.quarter;
+            const [start, end] = quarterRange(year, quarter);
+            const [rows] = await db.query(
+                `SELECT c.\`key\` board_key, c.name,
+                        COALESCE(t.target_done,0) target,
+                        COUNT(p.id) total,
+                        SUM(p.completed_at IS NOT NULL) selesai
+                 FROM categories c
+                 LEFT JOIN board_quarter_targets t ON t.board_key=c.\`key\` AND t.year=? AND t.quarter=?
+                 LEFT JOIN pipelines p ON p.category=c.\`key\` AND p.deadline BETWEEN ? AND ? AND p.archived_at IS NULL
+                 WHERE c.type='kanban'
+                 GROUP BY c.\`key\`, c.name, t.target_done ORDER BY c.name`, [year, quarter, start, end]);
+            return jsonText({ year, quarter, boards: rows.map((row) => ({ ...row, percent: pct(Number(row.selesai), Number(row.target)) })) });
+        }
+    );
+
+    server.registerTool(
+        'list_tracking',
+        {
+            title: 'List Tracking',
+            description: 'Tracking deadline dan ketepatan card Kanban, termasuk PIC.',
+            inputSchema: { start: z.string().optional(), end: z.string().optional(), limit: LIMIT },
+        },
+        async ({ start, end, limit }) => {
+            const where = [`c.type='kanban'`, 'p.archived_at IS NULL'], args = [];
+            if (start) { where.push('p.deadline>=?'); args.push(start); }
+            if (end) { where.push('p.deadline<=?'); args.push(end); }
+            const [rows] = await db.query(
+                `SELECT p.id, p.endorse AS title, c.name AS board, p.progress, p.deadline, p.completed_at,
+                        u.name AS assignee,
+                        CASE WHEN p.deadline IS NULL THEN NULL
+                             WHEN p.completed_at IS NOT NULL AND DATE(p.completed_at)<=p.deadline THEN 'tepat'
+                             WHEN p.completed_at IS NOT NULL THEN 'terlambat'
+                             WHEN p.deadline<CURDATE() THEN 'lewat' ELSE NULL END AS ketepatan
+                 FROM pipelines p JOIN categories c ON c.\`key\`=p.category
+                 LEFT JOIN users u ON u.id=p.assigned_to
+                 WHERE ${where.join(' AND ')} ORDER BY p.deadline IS NULL, p.deadline, p.id LIMIT ?`, [...args, limit]);
+            return jsonText({ count: rows.length, cards: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_access',
+        { title: 'List Access', description: 'Matriks hak akses menu per role dari konfigurasi database.', inputSchema: {} },
+        async () => {
+            const [rows] = await db.query(`SELECT role, menu, can_manage FROM role_menu_access ORDER BY role, menu`);
+            return jsonText({ access: rows });
+        }
+    );
+
+    server.registerTool(
+        'list_inventory',
+        {
+            title: 'List Inventory',
+            description: 'Daftar inventaris Pembukuan dan nilai total tiap item.',
+            inputSchema: { limit: LIMIT },
+        },
+        async ({ limit }) => {
+            const [rows] = await db.query(
+                `SELECT id, name, qty, unit_value_idr, month, qty*unit_value_idr AS total_value_idr
+                 FROM inventories ORDER BY month DESC, id DESC LIMIT ?`, [limit]);
+            return jsonText({ count: rows.length, inventory: rows });
+        }
+    );
+
+    server.registerTool(
+        'get_upload_status',
+        { title: 'Upload Status', description: 'Status data terakhir yang masuk ke modul Insight melalui upload/ingest.', inputSchema: {} },
+        async () => {
+            const [[contents]] = await db.query(`SELECT COUNT(*) total, MAX(updated_at) last_updated FROM insight_contents`);
+            const [[accounts]] = await db.query(`SELECT COUNT(*) total, MAX(updated_at) last_updated FROM insight_accounts`);
+            return jsonText({ insight_contents: contents, insight_accounts: accounts });
+        }
+    );
+}
+
+function registerSystemWriteTools(server) {
+    server.registerTool(
+        'create_objective',
+        {
+            title: 'Create Objective',
+            description: 'Buat Objective perusahaan untuk satu kuartal.',
+            inputSchema: {
+                year: z.number().int().min(2000).max(2100),
+                quarter: z.number().int().min(1).max(4),
+                title: z.string().min(1).max(255),
+                description: z.string().max(2000).optional(),
+            },
+        },
+        async (a) => {
+            const creator = await ownerId();
+            const [[position]] = await db.query(
+                `SELECT COALESCE(MAX(position),0)+1 n FROM objectives WHERE year=? AND quarter=?`, [a.year, a.quarter]);
+            const [result] = await db.query(
+                `INSERT INTO objectives (year, quarter, title, description, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.year, a.quarter, a.title, a.description || null, position.n, creator]);
+            return jsonText({ ok: true, objective: { id: result.insertId, ...a } });
+        }
+    );
+
+    server.registerTool(
+        'create_key_result',
+        {
+            title: 'Create Key Result',
+            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber/omset; manual memakai actual_manual; kartu dihitung dari card selesai.',
+            inputSchema: {
+                objective_id: z.number().int().positive(),
+                title: z.string().min(1).max(255),
+                source: z.enum(OKR_SOURCES),
+                metric: z.enum(OKR_METRICS).nullable().optional(),
+                board_key: z.string().nullable().optional(),
+                target: z.number().nonnegative(),
+                unit: z.enum(OKR_UNITS),
+            },
+        },
+        async (a) => {
+            const [[objective]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [a.objective_id]);
+            if (!objective) return errText(`Objective id ${a.objective_id} tidak ditemukan.`);
+            if (a.source === 'auto' && !a.metric) return errText('KR otomatis wajib memiliki metric.');
+            if (a.source === 'kartu' && !a.board_key) return errText('KR Kanban wajib memiliki board_key.');
+            if (a.board_key) {
+                const [[board]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
+                if (!board) return errText(`Board Kanban "${a.board_key}" tidak ditemukan.`);
+            }
+            const creator = await ownerId();
+            const [[position]] = await db.query(
+                `SELECT COALESCE(MAX(position),0)+1 n FROM key_results WHERE objective_id=?`, [a.objective_id]);
+            const metric = a.source === 'auto' ? a.metric : null;
+            const boardKey = a.source === 'kartu' ? a.board_key : null;
+            const unit = a.source === 'auto' ? (a.metric === 'omset' ? 'rupiah' : 'angka') : (a.source === 'kartu' ? 'angka' : a.unit);
+            const [result] = await db.query(
+                `INSERT INTO key_results
+                    (objective_id, title, source, board_key, metric, target, unit, position, owner_id, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit, position.n, creator, creator]);
+            return jsonText({ ok: true, key_result: { id: result.insertId, ...a, metric, board_key: boardKey, unit } });
+        }
+    );
+
+    server.registerTool(
+        'link_task_to_kr',
+        {
+            title: 'Link Task to Key Result',
+            description: 'Tautkan card Kanban ke Key Result bersumber kartu.',
+            inputSchema: {
+                task_id: z.number().int().positive(),
+                key_result_id: z.number().int().positive(),
+            },
+        },
+        async (a) => {
+            const [[kr]] = await db.query(`SELECT id, source, board_key FROM key_results WHERE id=?`, [a.key_result_id]);
+            if (!kr) return errText(`Key Result id ${a.key_result_id} tidak ditemukan.`);
+            if (kr.source !== 'kartu') return errText('Hanya Key Result bersumber Kanban yang dapat menerima card.');
+            const [[task]] = await db.query(
+                `SELECT p.id, p.category FROM pipelines p JOIN categories c ON c.\`key\`=p.category
+                 WHERE p.id=? AND c.type='kanban' AND p.archived_at IS NULL`, [a.task_id]);
+            if (!task) return errText(`Card Kanban id ${a.task_id} tidak ditemukan.`);
+            if (kr.board_key && task.category !== kr.board_key) {
+                return errText(`Card harus berasal dari board "${kr.board_key}".`);
+            }
+            await db.query(`UPDATE pipelines SET key_result_id=?, updated_at=NOW() WHERE id=?`, [a.key_result_id, a.task_id]);
+            return jsonText({ ok: true, task_id: a.task_id, key_result_id: a.key_result_id });
+        }
+    );
+
+    server.registerTool(
+        'create_transaction',
+        {
+            title: 'Create Transaction',
+            description: 'Tambah transaksi Pembukuan. Omzet OKR otomatis ikut berubah untuk transaksi pemasukan.',
+            inputSchema: {
+                type: z.enum(['pemasukan', 'pengeluaran']),
+                category: z.string().min(1).max(255),
+                description: z.string().max(255).optional(),
+                amount_idr: z.number().nonnegative(),
+                date: z.string().describe('YYYY-MM-DD'),
+            },
+        },
+        async (a) => {
+            const [result] = await db.query(
+                `INSERT INTO transactions (type, category, description, amount_idr, date, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.type, a.category, a.description || null, a.amount_idr, a.date]);
+            return jsonText({ ok: true, transaction: { id: result.insertId, ...a } });
+        }
+    );
+
+    server.registerTool(
+        'create_order',
+        {
+            title: 'Create Order',
+            description: 'Buat Order baru. Bukti pembayaran dan output dapat dilengkapi dari aplikasi.',
+            inputSchema: {
+                nama_customer: z.string().min(1).max(255),
+                tipe_order: z.enum(['coaching_1on1', 'coaching_perusahaan', 'endorse', 'speaker', 'agency']),
+                account: z.enum(['fk', 'ai_preneur']).default('fk'),
+                tanggal_deadline: z.string().nullable().optional(),
+                telepon: z.string().max(50).optional(),
+                email: z.string().email().optional(),
+                kota: z.string().max(255).optional(),
+                alamat: z.string().optional(),
+                tipe_pembayaran: z.enum(['full', 'dp']).default('full'),
+                tanggal_bayar: z.string().nullable().optional(),
+                total_idr: z.number().nonnegative().default(0),
+                total_usd: z.number().nonnegative().default(0),
+            },
+        },
+        async (a) => {
+            const [result] = await db.query(
+                `INSERT INTO orders
+                    (nama_customer, tipe_order, account, tanggal_deadline, telepon, email, kota, alamat,
+                     tipe_pembayaran, tanggal_bayar, total_idr, total_usd, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.nama_customer, a.tipe_order, a.account, a.tanggal_deadline || null, a.telepon || null,
+                 a.email || null, a.kota || null, a.alamat || null, a.tipe_pembayaran,
+                 a.tanggal_bayar || null, a.total_idr, a.total_usd]);
+            return jsonText({ ok: true, order: { id: result.insertId, ...a } });
+        }
+    );
+
+    server.registerTool(
+        'create_script',
+        {
+            title: 'Create Script',
+            description: 'Simpan naskah baru ke modul Script.',
+            inputSchema: {
+                brand: z.enum(['raveloux', 'rave_tailor', 'fk']),
+                title: z.string().min(1).max(255),
+                body: z.string().min(1),
+                generated_for: z.string().describe('YYYY-MM-DD'),
+            },
+        },
+        async (a) => {
+            const [result] = await db.query(
+                `INSERT INTO scripts (brand, title, body, generated_for, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, NOW(), NOW())`,
+                [a.brand, a.title, a.body, a.generated_for]);
+            return jsonText({ ok: true, script: { id: result.insertId, brand: a.brand, title: a.title, generated_for: a.generated_for } });
+        }
+    );
+
+    server.registerTool(
+        'create_content',
+        {
+            title: 'Create Content',
+            description: 'Buat item baru dalam kalender produksi Content.',
+            inputSchema: {
+                comp: z.string().max(255).optional(),
+                jenis_postingan: z.string().max(255).optional(),
+                kategori: z.string().max(255).optional(),
+                inti_pesan: z.string().optional(),
+                hook_material: z.string().optional(),
+                editor: z.string().max(255).optional(),
+                progress: z.enum(['draft', 'script', 'editing', 'review', 'scheduled', 'published']).default('draft'),
+                tanggal_upload: z.string().nullable().optional(),
+                caption: z.string().optional(),
+            },
+        },
+        async (a) => {
+            const [result] = await db.query(
+                `INSERT INTO contents
+                    (comp, jenis_postingan, kategori, inti_pesan, hook_material, editor, progress, tanggal_upload, caption, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.comp || null, a.jenis_postingan || null, a.kategori || null, a.inti_pesan || null,
+                 a.hook_material || null, a.editor || null, a.progress, a.tanggal_upload || null, a.caption || null]);
+            return jsonText({ ok: true, content: { id: result.insertId, ...a } });
+        }
+    );
+
+    server.registerTool(
+        'create_absence',
+        {
+            title: 'Create Absence',
+            description: 'Ajukan cuti, sakit, atau izin untuk user.',
+            inputSchema: {
+                user_id: z.number().int().positive(),
+                type: z.enum(['cuti', 'sakit', 'izin']),
+                start_date: z.string(),
+                end_date: z.string().nullable().optional(),
+                reason: z.string().optional(),
+            },
+        },
+        async (a) => {
+            const [[user]] = await db.query(`SELECT id FROM users WHERE id=?`, [a.user_id]);
+            if (!user) return errText(`User id ${a.user_id} tidak ditemukan.`);
+            const [result] = await db.query(
+                `INSERT INTO absences (user_id, type, start_date, end_date, reason, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, 'menunggu', NOW(), NOW())`,
+                [a.user_id, a.type, a.start_date, a.end_date || null, a.reason || null]);
+            return jsonText({ ok: true, absence: { id: result.insertId, status: 'menunggu', ...a } });
+        }
+    );
+}
 
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
-    const server = new McpServer({ name: 'pipeline-mcp', version: '0.1.0' });
+    const server = new McpServer({ name: 'system-aipreneur', version: '0.2.0' });
+    registerSystemReadTools(server);
+    registerSystemWriteTools(server);
 
     // 1) Daftar board kanban + jumlah task
     server.registerTool(

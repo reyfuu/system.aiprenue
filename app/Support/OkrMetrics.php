@@ -23,9 +23,9 @@ final class OkrMetrics
      *  dibarengi cabang baru di realisasi(), kalau tidak angkanya diam-diam 0
      *  dan terbaca sbg "belum ada pencapaian" — bukan "belum didukung". */
     public const METRICS = [
-        'view' => 'View',
+        'view' => 'Views dari Insight',
         'subscriber' => 'Subscriber',
-        'omset' => 'Omset',
+        'omset' => 'Omzet dari Pembukuan',
     ];
 
     /** Satuan tiap metrik, dipakai UI untuk memformat angka. */

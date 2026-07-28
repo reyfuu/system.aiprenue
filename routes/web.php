@@ -18,6 +18,7 @@ use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
+use App\Http\Controllers\PipelineTaskController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -91,6 +92,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines', [PipelineController::class, 'store'])->name('pipelines.store');
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');
     Route::delete('/pipelines/{pipeline}', [PipelineController::class, 'destroy'])->name('pipelines.destroy');
+    Route::post('/pipelines/{pipeline}/tasks', [PipelineTaskController::class, 'store'])->name('pipeline-tasks.store');
+    Route::patch('/pipeline-tasks/{task}', [PipelineTaskController::class, 'update'])->name('pipeline-tasks.update');
+    Route::delete('/pipeline-tasks/{task}', [PipelineTaskController::class, 'destroy'])->name('pipeline-tasks.destroy');
 
     // Order (pesanan) — tabel + CRUD modal. Mutasi dibatasi EnsureMenuAccess.
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');

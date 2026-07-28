@@ -74,10 +74,10 @@ class PembukuanCrudTest extends TestCase
         $this->assertSame(0, Transaction::count());
     }
 
-    public function test_admin_dan_it_tak_punya_akses_pembukuan(): void
+    public function test_admin_tak_punya_akses_dan_it_bisa_melihat_pembukuan(): void
     {
         $this->actingAs($this->user('admin'))->get('/pembukuan')->assertForbidden();
-        $this->actingAs($this->user('it'))->get('/pembukuan')->assertForbidden();
+        $this->actingAs($this->user('it'))->get('/pembukuan')->assertOk();
     }
 
     public function test_manager_boleh_kelola_transaksi(): void

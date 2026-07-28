@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class KeyResult extends Model
 {
     protected $fillable = [
-        'objective_id', 'title', 'source', 'metric', 'target', 'actual_manual', 'unit', 'position',
+        'objective_id', 'title', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'position',
         'owner_id', 'created_by',
     ];
 
@@ -27,7 +27,7 @@ class KeyResult extends Model
      *  `kartu`  — dihitung dari kartu Kanban todolist yang ditautkan ke KR ini
      *             & sudah selesai. Otomatis seperti `auto`, tapi sumbernya
      *             pekerjaan di papan, bukan modul Insight/Pembukuan. */
-    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kartu Todolist'];
+    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kanban'];
 
     /** Satuan, dipakai UI untuk memformat angka. */
     public const UNITS = ['angka' => 'Angka', 'rupiah' => 'Rupiah', 'persen' => 'Persen'];

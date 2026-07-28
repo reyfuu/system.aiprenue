@@ -21,6 +21,16 @@ const call = async (client, name, args = {}) => {
 
     const tools = await client.listTools();
     console.log('✓ tools:', tools.tools.map((t) => t.name).join(', '));
+    if (process.env.MCP_LIST_ONLY === '1') {
+        console.log(`✓ ${tools.tools.length} tools discovered`);
+        await client.close();
+        return;
+    }
+    if (process.env.MCP_SMOKE_TOOL) {
+        console.log(await call(client, process.env.MCP_SMOKE_TOOL));
+        await client.close();
+        return;
+    }
 
     console.log('\n— list_boards —\n' + (await call(client, 'list_boards')));
     console.log('\n— create_task (board=kerja) —\n' + (await call(client, 'create_task', { board: 'kerja', title: 'Task dari MCP test' })));
