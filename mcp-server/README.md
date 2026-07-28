@@ -86,7 +86,17 @@ cp .env.example .env      # isi DB + MCP_TOKEN
 npm install
 npm start                 # http://127.0.0.1:8765/mcp
 npm test                  # jalankan test-client.js (server harus nyala)
+node task.js tools        # lihat seluruh tool dari server
+node task.js describe create_order
+node task.js call list_okr '{"year":2026,"quarter":3}'
 ```
+
+`task.js` juga menyediakan alias baca: `dashboard`, `orders`, `finance`,
+`content`, `scripts`, `insights`, `users`, `absences`, `mindmaps`, `okr`,
+`kpi`, `tracking`, `access`, `inventory`, `upload`, dan `boards`. Untuk semua
+aksi tulis gunakan `call`; schema argumennya dapat dilihat lewat `describe`.
+Karena `call` memakai hasil discovery server, tool baru di `server.js` langsung
+dapat dipakai tanpa menambah hardcode baru di CLI.
 
 ## Deploy ke VPS (Ubuntu 24.04)
 
