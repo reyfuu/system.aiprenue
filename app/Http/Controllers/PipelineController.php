@@ -106,7 +106,7 @@ class PipelineController extends Controller
         [$qStart, $qEnd] = Quarter::range($quarterPanel['year'], $quarterPanel['quarter']);
 
         $pipelines = Pipeline::where('category', $category)
-            ->with(['outputs', 'assignee', 'creator', 'comments.user', 'attachments.user'])
+            ->with(['outputs', 'assignee', 'creator', 'comments.user', 'attachments.user', 'tasks.assignee'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
             ->when($quarterPilih, fn ($q) => $q->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()]))
@@ -181,6 +181,20 @@ class PipelineController extends Controller
                 'completed_at' => $p->completed_at?->toDateString(),
                 'link' => $p->link,
                 'labels' => $p->labels ?? [],
+                'key_result_id' => $p->key_result_id,
+                'is_kr_master' => (bool) $p->is_kr_master,
+                'tasks' => $p->tasks->map(fn ($task) => [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'assigned_to' => $task->assigned_to,
+                    'assignee' => $task->assignee?->name,
+                    'deadline' => $task->deadline?->toDateString(),
+                    'done' => $task->completed_at !== null,
+                ])->values(),
+                'task_progress' => [
+                    'done' => $p->tasks->whereNotNull('completed_at')->count(),
+                    'total' => $p->tasks->count(),
+                ],
                 'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
                 'revisi' => (int) $p->revisi,                        // 0=tanpa revisi, 1-3
                 // fitur kartu: deadline, deskripsi, arsip
@@ -301,8 +315,12 @@ class PipelineController extends Controller
             'currentBoard' => $currentBoard,
             // Pembuat board. null utk board bawaan seeder & board lama.
             'boardCreator' => $currentBoard?->creator?->name,
-            // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
-            'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),
+            // Process khusus board Kanban; Sales tetap memakai kategori deal lama.
+            // $showGallery membedakan pemanggil Kanban dari Sales pada renderer bersama ini.
+            'labels' => Label::query()
+                ->when(! $showGallery, fn ($query) => $query->where('name', '!=', 'Process'))
+                ->orderBy('id')
+                ->get(['id', 'name', 'color']),
             // Referensi untuk form tambah/edit kartu
             'accounts' => Pipeline::ACCOUNTS,
             'jenisList' => Pipeline::JENIS,          // endorse/coaching/agensi/speaker

@@ -13,7 +13,7 @@
 //
 // Kuartal dipilih lewat querystring ?q=YYYY-Qn supaya tautannya bisa dibagikan
 // dan tombol back browser tetap masuk akal — bukan state lokal Vue.
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import Layout from '../Layout.vue';
 import ModalWrap from '../ModalWrap.vue';
@@ -31,6 +31,10 @@ const props = defineProps({
     sources: { type: Object, default: () => ({}) },   // auto | manual → label
     units: { type: Object, default: () => ({}) },
     kartuTersedia: { type: Array, default: () => [] }, // kartu todolist belum tertaut (untuk "tautkan yang ada")
+    kanbanBoards: { type: Array, default: () => [] },
+    kanbanColumns: { type: Object, default: () => ({}) },
+    cardCategories: { type: Array, default: () => [] },
+    staff: { type: Array, default: () => [] },
     canManage: Boolean,
     bisaSalin: Boolean,                               // kuartal ini kosong & kuartal lalu ada isinya
     kuartalLaluLabel: { type: String, default: '' },
@@ -97,15 +101,15 @@ const textColor = (p) => {
     return 'text-red-600';
 };
 
-// ---- Pilihan tampilan (Versi 1/2/3) ----
+// ---- Pilihan tampilan (List/Kartu) ----
 // Cuma gaya render Objective+KR; datanya sama persis. Disimpan di localStorage
 // supaya pilihan pengguna nempel antar-kunjungan. Modal & tren dipakai bersama.
 const TAMPILAN = [
     { id: 1, label: 'Versi 1 · List' },
     { id: 2, label: 'Versi 2 · Kartu' },
-    { id: 3, label: 'Versi 3 · Dashboard' },
 ];
-const tampilan = ref(Number(localStorage.getItem('okr_tampilan')) || 2);
+const tampilanTersimpan = Number(localStorage.getItem('okr_tampilan'));
+const tampilan = ref(TAMPILAN.some((item) => item.id === tampilanTersimpan) ? tampilanTersimpan : 2);
 const gantiTampilan = (v) => { tampilan.value = Number(v); localStorage.setItem('okr_tampilan', tampilan.value); };
 
 // Badge status gaya ClickUp/Jira dari persen capaian — dipakai di semua versi.
@@ -193,16 +197,36 @@ const hapusObjective = (o) => {
 
 // ---- Form Key Result ----
 const krModal = ref(null);           // { mode: 'baru'|'edit', objective, kr? }
-const krForm = useForm({ objective_id: null, title: '', source: 'manual', metric: '', target: 0, unit: 'angka' });
+const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
+const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
+
+watch(() => krForm.kanban_board_key, () => {
+    if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
+        krForm.kanban_column_key = executionColumns.value[0]?.key ?? '';
+    }
+});
+
+watch(() => krForm.metric, (metric) => {
+    if (krForm.source === 'auto') {
+        krForm.unit = metric === 'omset' ? 'rupiah' : 'angka';
+    }
+});
 
 const bukaKr = (objective, kr = null) => {
     krModal.value = { mode: kr ? 'edit' : 'baru', objective, kr };
     krForm.objective_id = objective.id;
     krForm.title = kr?.title ?? '';
     krForm.source = kr?.source ?? 'manual';
+    krForm.board_key = kr?.board_key ?? '';
     krForm.metric = kr?.metric ?? '';
     krForm.target = kr?.target ?? 0;
     krForm.unit = kr?.unit ?? 'angka';
+    krForm.kanban_board_key = kr?.kartu?.find((k) => k.is_master)?.board ?? props.kanbanBoards[0]?.key ?? '';
+    krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
+    krForm.card_category = '';
+    krForm.card_description = '';
+    krForm.assigned_to = '';
+    krForm.deadline = '';
     krForm.clearErrors();
 };
 
@@ -255,7 +279,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     >
                         <option v-for="o in quarterOptions" :key="o.key" :value="o.key" class="text-slate-700">{{ o.label }}</option>
                     </select>
-                    <!-- Pemilih tampilan Versi 1/2/3. Sekadar gaya render; pilihan disimpan lokal. -->
+                    <!-- Pemilih tampilan List/Kartu. Sekadar gaya render; pilihan disimpan lokal. -->
                     <select
                         :value="tampilan"
                         class="bg-white/15 border border-white/30 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-white/50"
@@ -359,18 +383,23 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                  Penautan dikelola DI SINI (bukan di Kanban — Kanban
                                  murni delegasi). Kartunya sendiri tetap dikerjakan &
                                  diselesaikan di papan Kanban todolist. -->
-                            <template v-if="kr.source === 'kartu'">
-                                <ul v-if="kr.kartu.length" class="mt-2 space-y-1">
+                            <p v-if="kr.source === 'kartu' && kr.board_key" class="mt-1.5 text-[11px] font-medium text-emerald-700">
+                                Board: {{ kr.board_name }}
+                            </p>
+                            <ul v-if="kr.kartu.length" class="mt-2 space-y-1">
                                     <li v-for="k in kr.kartu" :key="k.id" class="group flex items-center gap-2 text-[11px]">
                                         <svg v-if="k.selesai" class="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
                                         <span v-else class="w-3.5 h-3.5 rounded-full border border-slate-300 flex-shrink-0"></span>
                                         <span :class="k.selesai ? 'text-slate-500 line-through' : 'text-slate-600'">{{ k.judul }}</span>
+                                        <span class="text-slate-400">{{ k.board }}</span>
+                                        <span v-if="k.pic" class="text-slate-400">· {{ k.pic }}</span>
                                         <span v-if="k.ketepatan === 'terlambat'" class="text-red-600 font-semibold">telat</span>
                                         <button v-if="canManage" type="button" class="ml-auto text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition" title="Lepas dari goal ini" @click="lepasKartu(kr.id, k.id)">lepas</button>
                                     </li>
-                                </ul>
-                                <p v-else class="text-[11px] text-slate-400 mt-1.5 italic">Belum ada kartu todolist yang ditautkan.</p>
+                            </ul>
+                            <p v-else class="text-[11px] text-slate-400 mt-1.5 italic">Belum ada tugas Kanban yang terhubung.</p>
 
+                            <template v-if="kr.source === 'kartu' && !kr.board_key">
                                 <!-- Kelola langkah (owner/manager). Toggle supaya kartu KR
                                      tak penuh kontrol saat cuma dibaca. -->
                                 <button v-if="canManage" type="button" class="mt-1.5 text-[11px] font-semibold text-brand-700 hover:underline" @click="bukaKartu(kr.id)">
@@ -491,37 +520,6 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </div>
                 </div>
 
-                <!-- ============ VERSI 3 · Dashboard (kartu ringkas + status dot) ============ -->
-                <div v-if="tampilan === 3" class="grid gap-4 md:grid-cols-2">
-                    <article v-for="o in objectives" :key="o.id" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                                <h3 class="font-bold text-slate-700 truncate">{{ o.title }}</h3>
-                                <p class="text-[11px] text-slate-400 mt-0.5">{{ o.key_results.length }} Key Result</p>
-                            </div>
-                            <div class="text-right shrink-0 leading-none">
-                                <b :class="['text-3xl font-black', textColor(o.progress)]">{{ o.progress === null ? '—' : o.progress }}</b>
-                                <span v-if="o.progress !== null" class="text-sm font-bold text-slate-400">%</span>
-                            </div>
-                        </div>
-                        <div class="h-2 bg-slate-100 rounded-full overflow-hidden mt-3">
-                            <div :class="['h-full rounded-full transition-all', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
-                        </div>
-                        <div class="mt-4 space-y-2">
-                            <div v-for="kr in o.key_results" :key="kr.id" class="flex items-center gap-2 text-sm">
-                                <span :class="['w-2 h-2 rounded-full shrink-0', barColor(kr.percent)]"></span>
-                                <span class="text-slate-600 truncate flex-1">{{ kr.title }}</span>
-                                <span :class="['text-xs font-bold shrink-0', textColor(kr.percent)]">{{ kr.percent === null ? '—' : kr.percent + '%' }}</span>
-                            </div>
-                            <p v-if="!o.key_results.length" class="text-xs text-slate-400">Belum ada Key Result.</p>
-                        </div>
-                        <div v-if="canManage" class="flex items-center gap-3 mt-4 pt-3 border-t border-slate-100">
-                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
-                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
-                            <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
-                        </div>
-                    </article>
-                </div>
             </section>
 
             <!-- ================= Tren antar kuartal ================= -->
@@ -611,9 +609,13 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </select>
                     <p class="text-[11px] text-slate-400 mt-1">
                         {{ krForm.source === 'auto'
-                            ? 'Realisasi dihitung sendiri dari Insight/Pembukuan dan tidak bisa diisi manual.'
+                            ? krForm.metric === 'omset'
+                                ? 'Realisasi mengambil total pemasukan pada Pembukuan di kuartal ini.'
+                                : krForm.metric === 'view'
+                                ? 'Realisasi mengambil total views konten Insight yang terbit di kuartal ini.'
+                                : 'Realisasi dihitung otomatis dari data yang tersedia.'
                             : krForm.source === 'kartu'
-                            ? 'Realisasi = jumlah kartu todolist yang ditautkan ke KR ini dan sudah selesai. Kartunya dibuat & ditautkan di Kanban.'
+                            ? 'Realisasi dan target diambil dari board Kanban yang dipilih untuk kuartal Objective ini.'
                             : 'Realisasi kamu perbarui sendiri lewat tombol “Perbarui angka”.' }}
                     </p>
                 </div>
@@ -630,9 +632,18 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">{{ krForm.source === 'kartu' ? 'Target (jumlah kartu)' : 'Target' }}</label>
-                        <input v-model="krForm.target" type="number" min="0" :step="krForm.source === 'kartu' ? 1 : 'any'"
+                    <div v-if="krForm.source === 'kartu'">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target Kanban</label>
+                        <select v-model="krForm.board_key"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                            <option value="">— pilih board —</option>
+                            <option v-for="board in kanbanBoards" :key="board.key" :value="board.key">{{ board.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.board_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.board_key }}</p>
+                    </div>
+                    <div v-else>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target</label>
+                        <input v-model="krForm.target" type="number" min="0" step="any"
                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                         <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
                     </div>
@@ -640,9 +651,52 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                          server memaksanya, jadi pemilih satuan disembunyikan. -->
                     <div v-if="krForm.source !== 'kartu'">
                         <label class="block text-xs font-semibold text-slate-500 mb-1">Satuan</label>
-                        <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <select v-model="krForm.unit" :disabled="krForm.source === 'auto'"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:bg-slate-50 disabled:text-slate-500">
                             <option v-for="(label, key) in units" :key="key" :value="key">{{ label }}</option>
                         </select>
+                    </div>
+                </div>
+
+                <div v-if="krModal.mode === 'baru'" class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Board eksekusi</label>
+                        <select v-model="krForm.kanban_board_key" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option v-for="board in kanbanBoards" :key="board.key" :value="board.key">{{ board.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.kanban_board_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.kanban_board_key }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Masuk kolom</label>
+                        <select v-model="krForm.kanban_column_key" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option v-for="column in executionColumns" :key="column.key" :value="column.key">{{ column.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.kanban_column_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.kanban_column_key }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Kategori</label>
+                        <select v-model="krForm.card_category" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— tanpa kategori —</option>
+                            <option v-for="category in cardCategories" :key="category.name" :value="category.name">{{ category.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.card_category" class="text-xs text-red-600 mt-1">{{ krForm.errors.card_category }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">PIC card utama</label>
+                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— belum ditugaskan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deadline eksekusi</label>
+                        <input v-model="krForm.deadline" type="date" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deskripsi card</label>
+                        <textarea v-model="krForm.card_description" rows="3" placeholder="Jelaskan hasil yang harus dicapai dan batasan pekerjaannya"
+                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm resize-y"></textarea>
+                        <p v-if="krForm.errors.card_description" class="text-xs text-red-600 mt-1">{{ krForm.errors.card_description }}</p>
                     </div>
                 </div>
 

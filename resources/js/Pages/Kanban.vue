@@ -44,24 +44,6 @@ const authUser = usePage().props.auth.user;                        // user login
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || ''; // token utk fetch
 const todayStr = () => new Date().toISOString().slice(0, 10);      // 'YYYY-MM-DD' hari ini
 const isUrgent = (card) => (card.labels || []).some((l) => l.name === 'Urgent'); // kartu mendesak?
-const STATUS_LABEL_ORDER = ['selesai', 'urgent', 'penting', 'review', 'info'];
-const statusLabelKey = (label) => label.name?.trim().toLowerCase();
-const isStatusLabel = (label) => STATUS_LABEL_ORDER.includes(statusLabelKey(label));
-// Label status mengganti badge besar, bukan menambah chip kedua. Bila beberapa
-// dipilih sekaligus, urutan di atas menentukan status yang paling utama.
-const cardStatus = (card, col) => {
-    const labels = card.labels || [];
-    for (const key of STATUS_LABEL_ORDER) {
-        const label = labels.find((item) => statusLabelKey(item) === key);
-        if (label) return { name: label.name, color: label.color };
-    }
-
-    // Status penyelesaian otomatis hanya menjadi fallback saat kartu tidak
-    // memiliki kategori. Jadi mengganti Selesai → Review langsung terlihat.
-    if (card.done || card.completed_at) return { name: 'Selesai', color: 'bg-emerald-500' };
-
-    return { name: col.name, color: col.color };
-};
 // Tautan kontak. WA: buang non-digit, awalan 0 → 62 (format wa.me Indonesia).
 // IG: buang '@' di depan kalau ada. Isian bebas dari user, jadi selalu dibersihkan.
 const waLink = (v) => 'https://wa.me/' + String(v).replace(/\D/g, '').replace(/^0/, '62');
@@ -326,6 +308,15 @@ const submitComment = () => {
     commentForm.post(`/pipelines/${detailId.value}/comments`, { preserveScroll: true, onSuccess: () => commentForm.reset('body') });
 };
 const deleteComment = (id) => router.delete(`/comments/${id}`, { preserveScroll: true });
+
+// Tugas terdelegasi di dalam card utama KR.
+const taskForm = useForm({ title: '', assigned_to: '', deadline: '' });
+const addTask = () => taskForm.post(`/pipelines/${detailId.value}/tasks`, {
+    preserveScroll: true,
+    onSuccess: () => taskForm.reset(),
+});
+const toggleTask = (task) => router.patch(`/pipeline-tasks/${task.id}`, { done: !task.done }, { preserveScroll: true });
+const deleteTask = (task) => router.delete(`/pipeline-tasks/${task.id}`, { preserveScroll: true });
 
 // ---- Lampiran (upload manager; unduh semua) ----
 const attachForm = useForm({ file: null });
@@ -824,91 +815,28 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                 <template #item="{ element: card }">
                                     <div
                                         @click="openDetail(card)"
-                                        :class="[
-                                            'group border shadow-sm hover:shadow-md transition overflow-hidden',
-                                            isKanban
-                                                ? (isUrgent(card) ? 'rounded-xl bg-white border-red-500 ring-1 ring-red-300' : 'rounded-xl bg-white border-sky-500 hover:border-sky-600')
-                                                : (isUrgent(card) ? 'rounded-xl p-3 bg-white border-red-300 ring-1 ring-red-200' : 'rounded-xl p-3 bg-white border-brand-100 hover:border-brand-200'),
-                                            showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-                                        ]"
+                                        :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
                                     >
-                                <!-- Card task Kanban mengikuti kartu referensi: status sebagai
-                                     elemen utama, metadata berupa pill putih, dan PJ di footer. -->
-                                <template v-if="isKanban">
-                                    <div class="relative px-4 pt-3.5 pb-4">
-                                        <button
-                                            v-if="canManage"
-                                            @click.stop="deleteCard(card)"
-                                            title="Hapus kartu"
-                                            class="absolute right-3 top-3 p-1 rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
-                                        >
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
-                                        </button>
-
-                                        <span :class="['inline-flex min-h-8 items-center rounded-xl px-4 py-1.5 text-sm font-medium uppercase text-white', cardStatus(card, col).color]">
-                                            {{ cardStatus(card, col).name }}
-                                        </span>
-
-                                        <div v-if="card.labels?.some((label) => !isStatusLabel(label))" class="mt-2 flex flex-wrap gap-1.5">
-                                            <span
-                                                v-for="(lb, li) in card.labels.filter((label) => !isStatusLabel(label))"
-                                                :key="li"
-                                                :class="['rounded px-2 py-0.5 text-[10px] font-semibold text-white', lb.color]"
-                                            >
-                                                {{ lb.name }}
-                                            </span>
-                                        </div>
-
-                                        <p class="mt-5 text-base font-medium leading-snug text-black">{{ card.endorse }}</p>
-
-                                        <div class="mt-3 flex flex-wrap items-center gap-2">
-                                            <span v-if="card.deadline" class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm">
-                                                {{ card.deadline }}
-                                            </span>
-                                            <span class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm">
-                                                Dibuat {{ fmtCreated(card.created_date) }}
-                                            </span>
-                                            <span
-                                                v-if="KETEPATAN[card.ketepatan]"
-                                                class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm"
-                                                :title="card.completed_at ? `Selesai ${fmtCreated(card.completed_at)}` : 'Belum selesai & deadline sudah lewat'"
-                                            >
-                                                {{ KETEPATAN[card.ketepatan].label }}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="flex min-h-12 items-center gap-2.5 border-t border-slate-600 px-3 py-2">
+                                <!-- Kategori dan aksi berada dalam satu baris agar tidak
+                                     menciptakan ruang kosong tambahan sebelum judul. -->
+                                <div v-if="card.labels?.length || canManage" class="mb-1.5 flex min-h-5 items-start justify-between gap-2">
+                                    <div class="flex flex-wrap gap-1">
                                         <span
-                                            v-if="card.assignee"
-                                            class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-700"
-                                            :title="card.assignee"
+                                            v-for="(lb, li) in card.labels || []"
+                                            :key="li"
+                                            :class="['rounded px-2 py-0.5 text-[10px] font-semibold uppercase text-white', lb.color]"
                                         >
-                                            {{ card.assignee.charAt(0).toUpperCase() }}
+                                            {{ lb.name }}
                                         </span>
-                                        <span v-if="card.assignee" class="truncate text-sm font-medium uppercase text-slate-900">{{ card.assignee }}</span>
-                                        <span v-else class="text-xs italic text-slate-500">BELUM DITUGASKAN</span>
                                     </div>
-                                </template>
-
-                                <template v-else>
-                                <!-- Label kartu: NAMA sebagai teks (warna cuma aksen). 'Urgent' tak dichip di sini — sudah diwakili badge URGENT + border merah di dalam kartu. -->
-                                <div v-if="card.labels && card.labels.some((l) => l.name !== 'Urgent')" class="flex flex-wrap gap-1 mb-1.5">
-                                    <span v-for="(lb, li) in card.labels.filter((l) => l.name !== 'Urgent')" :key="li" :class="['text-xs font-medium leading-none px-2 py-0.5 rounded text-white', lb.color]">{{ lb.name }}</span>
-                                </div>
-                                <!-- Hapus kartu (muncul saat hover).
-                                     Centang & kode kartu sudah tak dipajang di kartu — tandai selesai
-                                     pindah ke modal detail, kode kartu tetap ada di judul modal. -->
-                                <div v-if="canManage" class="flex justify-end mb-1">
-                                    <button @click.stop="deleteCard(card)" title="Hapus kartu" class="p-1 -m-1 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                    <button v-if="canManage" @click.stop="deleteCard(card)" title="Hapus kartu" class="flex-shrink-0 p-1 -m-1 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                                     </button>
                                 </div>
                                 <p class="font-semibold text-sm leading-snug mb-2 text-slate-700">{{ card.endorse }}</p>
 
                                 <!-- Meta: urgent, deadline, deskripsi, komentar, lampiran -->
                                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
-                                    <span v-if="isUrgent(card)" class="text-xs font-bold px-2 py-0.5 rounded bg-red-500 text-white">URGENT</span>
                                     <span v-if="card.deadline" :class="['inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded', card.deadline < todayStr() ? 'bg-red-100 text-red-700 font-semibold' : 'bg-slate-100 text-slate-600']">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" /></svg>
                                         {{ card.deadline }}
@@ -917,10 +845,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                     <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Tanggal kartu dibuat">
                                         Dibuat {{ fmtCreated(card.created_date) }}
                                     </span>
-                                    <!-- Ketepatan waktu kartu. Tak dirender sama sekali bila
-                                         belum bisa dinilai (tanpa deadline, atau masih berjalan
-                                         & deadline belum tiba) — badge "netral" hanya menambah
-                                         ramai tanpa memberi tahu apa pun. -->
                                     <span v-if="KETEPATAN[card.ketepatan]"
                                           :class="['inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded', KETEPATAN[card.ketepatan].cls]"
                                           :title="card.completed_at ? `Selesai ${fmtCreated(card.completed_at)}` : 'Belum selesai & deadline sudah lewat'">
@@ -938,14 +862,12 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
 
                                 <!-- Badge jenis + akun + pembayaran -->
                                 <div class="flex items-center gap-1.5 text-[10px] mb-1.5">
-                                    <!-- jenis deal: dulu board sendiri, kini atribut kartu -->
                                     <span v-if="isPipeline && card.jenis_label" class="font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{{ card.jenis_label }}</span>
                                     <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.account_color]">{{ card.account }}</span>
                                     <span v-if="isPipeline" :class="['font-semibold px-2 py-0.5 rounded-full', card.payment_status === 'lunas' ? 'bg-emerald-600 text-white' : card.payment_status === 'dp' ? 'bg-amber-400 text-amber-900' : 'bg-red-600 text-white']">{{ card.payment }}</span>
                                     <span v-if="isPipeline && card.dp_count > 0" class="font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200" title="Sudah bayar DP berapa kali">DP {{ card.dp_count }}×</span>
                                 </div>
-                                <!-- Progres DP: uang yang sudah masuk vs total deal. Cuma tampil
-                                     kalau ada DP terbayar. -->
+
                                 <div v-if="isPipeline && card.dp_count > 0" class="mb-1.5">
                                     <div class="flex items-center justify-between text-xs text-slate-500 mb-0.5">
                                         <span class="font-medium">DP masuk</span>
@@ -955,16 +877,14 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                         <div class="h-full rounded-full bg-amber-400" :style="{ width: Math.min(100, cardValue(card) > 0 ? (cardDpPaid(card) / cardValue(card)) * 100 : 0) + '%' }"></div>
                                     </div>
                                 </div>
-                                <!-- PJ + nilai deal + link (nilai = info utama kartu, ala Pipedrive) -->
+
+                                <!-- PJ + nilai deal + link -->
                                 <div class="flex items-center justify-between gap-2 text-[10px] pt-1.5 border-t border-brand-50">
                                     <span v-if="card.assignee" class="flex items-center gap-1.5 text-slate-500 truncate">
                                         <span class="w-4 h-4 flex-shrink-0 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[9px] font-bold">{{ card.assignee.charAt(0).toUpperCase() }}</span>
                                         <span class="truncate font-medium">{{ card.assignee }}</span>
                                     </span>
                                     <span v-else class="text-slate-300 italic">belum ditugaskan</span>
-                                    <!-- Pembuat kartu — terpisah dari PJ di atas: yang membuat
-                                         & yang mengerjakan sering bukan orang yang sama.
-                                         Kartu lama tak punya data ini, jadi tak dirender. -->
                                     <span v-if="card.created_by_name" class="text-slate-400 truncate" :title="'Dibuat oleh ' + card.created_by_name">
                                         oleh {{ card.created_by_name }}
                                     </span>
@@ -976,7 +896,6 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                         <span v-if="isPipeline" :class="['font-bold text-xs', cardValue(card) > 0 ? 'text-slate-700' : 'text-slate-300']">{{ rp(cardValue(card)) }}</span>
                                     </span>
                                 </div>
-                                </template>
                                     </div>
                                 </template>
                             </draggable>
@@ -1193,6 +1112,31 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                     <p class="text-slate-700 whitespace-pre-line">{{ detailCard.description || '—' }}</p>
                 </div>
                 <a v-if="detailCard.link" :href="detailCard.link" target="_blank" rel="noreferrer" class="text-brand-600 hover:underline text-sm">Buka link video →</a>
+            </div>
+
+            <div v-if="detailCard?.is_kr_master" class="border-t border-slate-100 pt-4 mt-3">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="font-semibold text-slate-700 text-sm">Delegasi tugas</p>
+                    <span class="text-xs text-slate-400">{{ detailCard.task_progress.done }}/{{ detailCard.task_progress.total }} selesai</span>
+                </div>
+                <div class="space-y-1.5">
+                    <div v-for="task in detailCard.tasks" :key="task.id" class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                        <button type="button" @click="toggleTask(task)" :class="['h-4 w-4 rounded border flex-shrink-0', task.done ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300']"></button>
+                        <span :class="['flex-1', task.done ? 'line-through text-slate-400' : 'text-slate-700']">{{ task.title }}</span>
+                        <span class="text-[10px] text-slate-400">{{ task.assignee || 'Belum ada PIC' }}</span>
+                        <span v-if="task.deadline" class="text-[10px] text-slate-400">{{ task.deadline }}</span>
+                        <button v-if="canManage" type="button" @click="deleteTask(task)" class="text-slate-300 hover:text-red-500">&times;</button>
+                    </div>
+                </div>
+                <form v-if="canManage" @submit.prevent="addTask" class="mt-2 grid grid-cols-2 gap-2">
+                    <input v-model="taskForm.title" required placeholder="Tugas baru…" class="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                    <select v-model="taskForm.assigned_to" class="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                        <option value="">— pilih PIC —</option>
+                        <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
+                    </select>
+                    <input v-model="taskForm.deadline" type="date" class="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                    <button type="submit" class="col-span-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Tambah tugas</button>
+                </form>
             </div>
 
             <!-- Lampiran — perlu id kartu, jadi baru muncul setelah kartunya ada -->

@@ -61,6 +61,25 @@ class SalesPipelineTest extends TestCase
             );
     }
 
+    public function test_process_hanya_tersedia_sebagai_kategori_kanban(): void
+    {
+        $owner = $this->user('owner');
+
+        $this->actingAs($owner)
+            ->get('/pipelines')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('labels', fn ($labels) => collect($labels)->doesntContain('name', 'Process'))
+            );
+
+        $this->actingAs($owner)
+            ->get('/pipelines/kanban?category=todolist')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('labels', fn ($labels) => collect($labels)->contains(
+                    fn ($label) => $label['name'] === 'Process' && $label['color'] === 'bg-brand-600'
+                ))
+            );
+    }
+
     /** endorse/coaching/agensi/speaker berhenti jadi board — turun jadi `jenis` kartu. */
     public function test_board_pipeline_lama_sudah_lebur_jadi_satu(): void
     {

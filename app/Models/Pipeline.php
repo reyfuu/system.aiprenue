@@ -17,7 +17,7 @@ class Pipeline extends Model
         'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
 
         'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done',
-        'completed_at', 'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
+        'completed_at', 'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig', 'is_kr_master',
 
     ];
 
@@ -35,6 +35,7 @@ class Pipeline extends Model
         'todos' => 'array',
         'labels' => 'array',
         'done' => 'boolean',
+        'is_kr_master' => 'boolean',
     ];
 
     public function outputs(): BelongsToMany
@@ -102,6 +103,11 @@ class Pipeline extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(PipelineAttachment::class);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(PipelineTask::class)->orderBy('position')->orderBy('id');
     }
 
     /** Kategori/board dinamis dari tabel categories: ['key' => 'Name'].

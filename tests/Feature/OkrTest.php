@@ -64,12 +64,10 @@ class OkrTest extends TestCase
         $this->actingAs($this->user('staff'))->get('/okr')->assertForbidden();
     }
 
-    /** OKR dikunci owner+manager di canSee(). Peran 'it' punya akses penuh ke
-     *  hampir semua menu, jadi ia justru kasus yang paling mudah bocor kalau
-     *  penguncian itu hilang. */
-    public function test_it_ditolak_membuka_okr(): void
+    /** Peran IT adalah super admin dan dapat membuka seluruh menu. */
+    public function test_it_bisa_membuka_okr(): void
     {
-        $this->actingAs($this->user('it'))->get('/okr')->assertForbidden();
+        $this->actingAs($this->user('it'))->get('/okr')->assertOk();
     }
 
     public function test_manager_bisa_membuka_okr(): void
@@ -121,13 +119,23 @@ class OkrTest extends TestCase
     /** Route CRUD OKR yang baru ikut terjaring sbg mutasi — daftar-hitam di
      *  EnsureMenuAccess (semua okr.* kecuali okr.index), bukan daftar-putih
      *  per nama yang mudah terlupa saat route bertambah. */
-    public function test_it_tak_bisa_menyentuh_route_okr_apa_pun(): void
+    public function test_it_bisa_mengelola_okr_sebagai_super_admin(): void
     {
         $it = $this->user('it');
 
-        $this->actingAs($it)->post('/okr/objectives', ['year' => 2026, 'quarter' => 3, 'title' => 'X'])->assertForbidden();
-        $this->actingAs($it)->post('/okr/key-results', ['objective_id' => 1, 'title' => 'X', 'source' => 'manual', 'target' => 1, 'unit' => 'angka'])->assertForbidden();
-        $this->actingAs($it)->post('/okr/salin', ['year' => 2026, 'quarter' => 3])->assertForbidden();
+        $this->actingAs($it)->post('/okr/objectives', [
+            'year' => 2026, 'quarter' => 3, 'title' => 'X',
+        ])->assertSessionHasNoErrors();
+        $this->actingAs($it)->post('/okr/key-results', [
+            'objective_id' => Objective::first()->id,
+            'title' => 'X',
+            'source' => 'manual',
+            'target' => 1,
+            'unit' => 'angka',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseCount('objectives', 1);
+        $this->assertDatabaseCount('key_results', 1);
     }
 
     // ------------------------------------------------------------- target
@@ -260,7 +268,7 @@ class OkrTest extends TestCase
 
         $this->actingAs($this->user())->post('/okr/key-results', [
             'objective_id' => $o->id, 'title' => 'Langkah kolaborasi',
-            'source' => 'kartu', 'target' => 5, 'unit' => 'rupiah', 'metric' => 'omset',
+            'source' => 'kartu', 'board_key' => 'todolist', 'target' => 5, 'unit' => 'rupiah', 'metric' => 'omset',
         ])->assertSessionHasNoErrors();
 
         $kr = KeyResult::first();
@@ -268,6 +276,116 @@ class OkrTest extends TestCase
         $this->assertNull($kr->metric);
         $this->assertNull($kr->actual_manual);
         $this->assertSame('angka', $kr->unit);
+    }
+
+    public function test_key_result_kanban_memakai_board_dan_target_kuartal_terpilih(): void
+    {
+        $owner = $this->user();
+        $objective = $this->objective(2026, 3);
+        $this->board('kampanye');
+        BoardQuarterTarget::create([
+            'board_key' => 'kampanye',
+            'year' => 2026,
+            'quarter' => 3,
+            'target_done' => 4,
+            'created_by' => $owner->id,
+        ]);
+        $this->kartu([
+            'category' => 'kampanye',
+            'deadline' => '2026-08-10',
+            'completed_at' => '2026-08-09 10:00:00',
+        ]);
+        $this->kartu([
+            'category' => 'kampanye',
+            'deadline' => '2026-08-20',
+        ]);
+
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Selesaikan kampanye',
+            'source' => 'kartu',
+            'board_key' => 'kampanye',
+            'unit' => 'angka',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('kampanye', KeyResult::first()->board_key);
+        $this->actingAs($owner)->get('/okr?q=2026-Q3')
+            ->assertInertia(fn ($page) => $page
+                ->where('sources.kartu', 'Kanban')
+                ->where('objectives.0.key_results.0.board_key', 'kampanye')
+                ->where('objectives.0.key_results.0.board_name', 'Kampanye')
+                ->where('objectives.0.key_results.0.target', 4)
+                ->where('objectives.0.key_results.0.actual', 1)
+                ->where('objectives.0.key_results.0.percent', 25)
+            );
+    }
+
+    public function test_card_biasa_tidak_bisa_menautkan_diri_ke_key_result(): void
+    {
+        $owner = $this->user();
+        $objective = $this->objective(2026, 3);
+        $kr = KeyResult::create([
+            'objective_id' => $objective->id,
+            'title' => 'Naikkan konversi',
+            'source' => 'manual',
+            'target' => 20,
+            'unit' => 'persen',
+        ]);
+
+        $this->actingAs($owner)->post('/pipelines', [
+            'category' => 'todolist',
+            'endorse' => 'Follow up prospek',
+            'progress' => 'todo',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+            'key_result_id' => $kr->id,
+        ])->assertSessionHasNoErrors();
+
+        $card = Pipeline::firstWhere('endorse', 'Follow up prospek');
+        $this->assertNull($card->key_result_id);
+    }
+
+    public function test_membuat_kr_membuat_satu_card_utama_dan_tugas_bisa_didelegasikan(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $objective = $this->objective();
+        $initialColumn = BoardColumn::where('board_key', 'todolist')->orderBy('position')->value('key');
+
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Dapatkan 20 klien',
+            'source' => 'manual',
+            'target' => 20,
+            'unit' => 'angka',
+            'kanban_board_key' => 'todolist',
+            'kanban_column_key' => $initialColumn,
+            'card_category' => 'Penting',
+            'card_description' => 'Konversi prospek sampai menjadi klien aktif.',
+            'assigned_to' => $staff->id,
+            'deadline' => '2026-09-30',
+        ])->assertSessionHasNoErrors();
+
+        $card = Pipeline::firstWhere('is_kr_master', true);
+        $this->assertNotNull($card);
+        $this->assertSame(KeyResult::first()->id, $card->key_result_id);
+        $this->assertSame($staff->id, $card->assigned_to);
+        $this->assertSame($initialColumn, $card->progress);
+        $this->assertSame('Konversi prospek sampai menjadi klien aktif.', $card->description);
+        $this->assertSame('Penting', $card->labels[0]['name']);
+
+        $this->actingAs($owner)->post("/pipelines/{$card->id}/tasks", [
+            'title' => 'Hubungi prospek',
+            'assigned_to' => $staff->id,
+            'deadline' => '2026-08-10',
+        ])->assertSessionHasNoErrors();
+
+        $task = $card->tasks()->first();
+        $this->actingAs($staff)->patch("/pipeline-tasks/{$task->id}", ['done' => true])
+            ->assertSessionHasNoErrors();
+        $this->assertNotNull($task->fresh()->completed_at);
+        $this->assertTrue((bool) $card->fresh()->done);
+        $this->assertNotNull($card->fresh()->completed_at);
     }
 
     /** Langkah dibuat DARI halaman OKR: kartu todolist baru langsung tertaut.
