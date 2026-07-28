@@ -44,6 +44,24 @@ const authUser = usePage().props.auth.user;                        // user login
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || ''; // token utk fetch
 const todayStr = () => new Date().toISOString().slice(0, 10);      // 'YYYY-MM-DD' hari ini
 const isUrgent = (card) => (card.labels || []).some((l) => l.name === 'Urgent'); // kartu mendesak?
+const STATUS_LABEL_ORDER = ['selesai', 'urgent', 'penting', 'review', 'info'];
+const statusLabelKey = (label) => label.name?.trim().toLowerCase();
+const isStatusLabel = (label) => STATUS_LABEL_ORDER.includes(statusLabelKey(label));
+// Label status mengganti badge besar, bukan menambah chip kedua. Bila beberapa
+// dipilih sekaligus, urutan di atas menentukan status yang paling utama.
+const cardStatus = (card, col) => {
+    const labels = card.labels || [];
+    for (const key of STATUS_LABEL_ORDER) {
+        const label = labels.find((item) => statusLabelKey(item) === key);
+        if (label) return { name: label.name, color: label.color };
+    }
+
+    // Status penyelesaian otomatis hanya menjadi fallback saat kartu tidak
+    // memiliki kategori. Jadi mengganti Selesai → Review langsung terlihat.
+    if (card.done || card.completed_at) return { name: 'Selesai', color: 'bg-emerald-500' };
+
+    return { name: col.name, color: col.color };
+};
 // Tautan kontak. WA: buang non-digit, awalan 0 → 62 (format wa.me Indonesia).
 // IG: buang '@' di depan kalau ada. Isian bebas dari user, jadi selalu dibersihkan.
 const waLink = (v) => 'https://wa.me/' + String(v).replace(/\D/g, '').replace(/^0/, '62');
@@ -317,7 +335,7 @@ const submitAttach = () => {
 };
 const deleteAttachment = (id) => router.delete(`/attachments/${id}`, { preserveScroll: true });
 
-// ---- Kelola label (OWNER only) — CRUD definisi label di tabel `labels` ----
+// ---- Kelola kategori (OWNER only) — internalnya tetap tabel `labels` ----
 const isOwner = computed(() => authUser?.role === 'owner');
 const labelManageOpen = ref(false);
 const labelForm = useForm({ name: '', color: LABEL_COLORS[0] });            // form tambah
@@ -330,7 +348,7 @@ const addLabel = () => {
 const startEditLabel = (l) => { labelEditId.value = l.id; labelEditForm.name = l.name; labelEditForm.color = l.color; };
 const saveEditLabel = () => labelEditForm.put(`/labels/${labelEditId.value}`, { preserveScroll: true, onSuccess: () => { labelEditId.value = null; } });
 const deleteLabel = (id) => {
-    if (!confirm('Hapus label ini? Kartu yang sudah memakainya tidak berubah.')) return;
+    if (!confirm('Hapus kategori ini? Kartu yang sudah memakainya tidak berubah.')) return;
     router.delete(`/labels/${id}`, { preserveScroll: true });
 };
 
@@ -629,7 +647,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
             <!-- Statistik / KPI Anggota: agregat kartu yang tampil, per PJ.
                  Client-side (pakai `ketepatan` server, tak menduplikasi rumus telat).
                  Hanya peran pengelola — sejajar dgn panel capaian board di atas. -->
-            <div v-if="canManage && statistikAnggota.length" class="bg-white border border-slate-200 rounded-2xl shadow-sm mb-5 overflow-hidden">
+            <div v-if="isKanban && canManage && statistikAnggota.length" class="bg-white border border-slate-200 rounded-2xl shadow-sm mb-5 overflow-hidden">
                 <div class="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
                     <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 15l3-4 3 3 5-7" /></svg>
                     <span class="font-bold text-sm text-slate-700">Statistik / KPI Anggota</span>
@@ -806,11 +824,77 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                 <template #item="{ element: card }">
                                     <div
                                         @click="openDetail(card)"
-                                        :class="['group border rounded-xl p-3 shadow-sm hover:shadow-md transition', isUrgent(card) ? 'bg-white border-red-300 ring-1 ring-red-200' : 'bg-white border-brand-100 hover:border-brand-200', showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
+                                        :class="[
+                                            'group border shadow-sm hover:shadow-md transition overflow-hidden',
+                                            isKanban
+                                                ? (isUrgent(card) ? 'rounded-xl bg-white border-red-500 ring-1 ring-red-300' : 'rounded-xl bg-white border-sky-500 hover:border-sky-600')
+                                                : (isUrgent(card) ? 'rounded-xl p-3 bg-white border-red-300 ring-1 ring-red-200' : 'rounded-xl p-3 bg-white border-brand-100 hover:border-brand-200'),
+                                            showArchived ? 'opacity-70 cursor-pointer' : canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+                                        ]"
                                     >
-                                <!-- Strip label -->
-                                <div v-if="card.labels && card.labels.length" class="flex flex-wrap gap-1 mb-1.5">
-                                    <span v-for="(lb, li) in card.labels" :key="li" :class="['h-1.5 w-9 rounded-full', lb.color]" :title="lb.name"></span>
+                                <!-- Card task Kanban mengikuti kartu referensi: status sebagai
+                                     elemen utama, metadata berupa pill putih, dan PJ di footer. -->
+                                <template v-if="isKanban">
+                                    <div class="relative px-4 pt-3.5 pb-4">
+                                        <button
+                                            v-if="canManage"
+                                            @click.stop="deleteCard(card)"
+                                            title="Hapus kartu"
+                                            class="absolute right-3 top-3 p-1 rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
+                                        >
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                        </button>
+
+                                        <span :class="['inline-flex min-h-8 items-center rounded-xl px-4 py-1.5 text-sm font-medium uppercase text-white', cardStatus(card, col).color]">
+                                            {{ cardStatus(card, col).name }}
+                                        </span>
+
+                                        <div v-if="card.labels?.some((label) => !isStatusLabel(label))" class="mt-2 flex flex-wrap gap-1.5">
+                                            <span
+                                                v-for="(lb, li) in card.labels.filter((label) => !isStatusLabel(label))"
+                                                :key="li"
+                                                :class="['rounded px-2 py-0.5 text-[10px] font-semibold text-white', lb.color]"
+                                            >
+                                                {{ lb.name }}
+                                            </span>
+                                        </div>
+
+                                        <p class="mt-5 text-base font-medium leading-snug text-black">{{ card.endorse }}</p>
+
+                                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                                            <span v-if="card.deadline" class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm">
+                                                {{ card.deadline }}
+                                            </span>
+                                            <span class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm">
+                                                Dibuat {{ fmtCreated(card.created_date) }}
+                                            </span>
+                                            <span
+                                                v-if="KETEPATAN[card.ketepatan]"
+                                                class="rounded bg-slate-100 px-2.5 py-1 text-xs text-slate-900 shadow-sm"
+                                                :title="card.completed_at ? `Selesai ${fmtCreated(card.completed_at)}` : 'Belum selesai & deadline sudah lewat'"
+                                            >
+                                                {{ KETEPATAN[card.ketepatan].label }}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex min-h-12 items-center gap-2.5 border-t border-slate-600 px-3 py-2">
+                                        <span
+                                            v-if="card.assignee"
+                                            class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-700"
+                                            :title="card.assignee"
+                                        >
+                                            {{ card.assignee.charAt(0).toUpperCase() }}
+                                        </span>
+                                        <span v-if="card.assignee" class="truncate text-sm font-medium uppercase text-slate-900">{{ card.assignee }}</span>
+                                        <span v-else class="text-xs italic text-slate-500">BELUM DITUGASKAN</span>
+                                    </div>
+                                </template>
+
+                                <template v-else>
+                                <!-- Label kartu: NAMA sebagai teks (warna cuma aksen). 'Urgent' tak dichip di sini — sudah diwakili badge URGENT + border merah di dalam kartu. -->
+                                <div v-if="card.labels && card.labels.some((l) => l.name !== 'Urgent')" class="flex flex-wrap gap-1 mb-1.5">
+                                    <span v-for="(lb, li) in card.labels.filter((l) => l.name !== 'Urgent')" :key="li" :class="['text-xs font-medium leading-none px-2 py-0.5 rounded text-white', lb.color]">{{ lb.name }}</span>
                                 </div>
                                 <!-- Hapus kartu (muncul saat hover).
                                      Centang & kode kartu sudah tak dipajang di kartu — tandai selesai
@@ -824,7 +908,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
 
                                 <!-- Meta: urgent, deadline, deskripsi, komentar, lampiran -->
                                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
-                                    <span v-if="isUrgent(card)" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white">URGENT</span>
+                                    <span v-if="isUrgent(card)" class="text-xs font-bold px-2 py-0.5 rounded bg-red-500 text-white">URGENT</span>
                                     <span v-if="card.deadline" :class="['inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded', card.deadline < todayStr() ? 'bg-red-100 text-red-700 font-semibold' : 'bg-slate-100 text-slate-600']">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" /></svg>
                                         {{ card.deadline }}
@@ -892,6 +976,7 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                                         <span v-if="isPipeline" :class="['font-bold text-xs', cardValue(card) > 0 ? 'text-slate-700' : 'text-slate-300']">{{ rp(cardValue(card)) }}</span>
                                     </span>
                                 </div>
+                                </template>
                                     </div>
                                 </template>
                             </draggable>
@@ -1049,20 +1134,21 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                         </label>
                     </div>
                 </div>
-                <!-- Label -->
+                <!-- Kategori kartu (secara internal tetap memakai field `labels`
+                     agar data lama dan endpoint tidak perlu dimigrasikan). -->
                 <div class="col-span-2">
                     <div class="flex items-center justify-between mb-1.5">
-                        <p class="font-medium text-slate-600">Label <span class="font-normal text-slate-400">— pilih satu</span></p>
-                        <button v-if="isOwner" type="button" @click="labelManageOpen = true" class="text-xs text-brand-600 hover:underline font-medium">Kelola label</button>
+                        <p class="font-medium text-slate-600">Kategori <span class="font-normal text-slate-400">— pilih satu</span></p>
+                        <button v-if="isOwner" type="button" @click="labelManageOpen = true" class="text-xs text-brand-600 hover:underline font-medium">Kelola kategori</button>
                     </div>
                     <!-- role="radiogroup": tombolnya saling meniadakan, jadi harus
                          terbaca sbg pilihan tunggal oleh pembaca layar — bukan
                          sekumpulan tombol centang yang kebetulan hanya satu aktif. -->
-                    <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Label kartu">
+                    <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Kategori kartu">
                         <button v-for="lp in labels" :key="lp.id" type="button" role="radio" @click="toggleLabel(lp)" :aria-checked="hasLabel(lp.name)" :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition', hasLabel(lp.name) ? 'border-brand-400 bg-brand-50 text-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50']">
                             <span :class="['w-3 h-3 rounded-full', lp.color]"></span><span>{{ lp.name }}</span><span v-if="hasLabel(lp.name)">✓</span>
                         </button>
-                        <p v-if="!labels.length" class="text-xs text-slate-400 self-center">Belum ada label{{ isOwner ? ' — klik "Kelola label".' : '.' }}</p>
+                        <p v-if="!labels.length" class="text-xs text-slate-400 self-center">Belum ada kategori{{ isOwner ? ' — klik "Kelola kategori".' : '.' }}</p>
                     </div>
                 </div>
                 <label class="col-span-2 block font-medium text-slate-600">Notes
@@ -1158,9 +1244,9 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
         </ModalWrap>
 
         <!-- ===== Modal board baru ===== -->
-        <!-- Kelola label — OWNER only. CRUD definisi label; warna dikunci ke palet safelist. -->
+        <!-- Kelola kategori — OWNER only. Secara internal masih memakai data label. -->
         <ModalWrap v-if="isOwner && labelManageOpen" width="max-w-md" @close="labelManageOpen = false">
-            <h3 class="text-lg font-bold text-slate-800 mb-3">Kelola Label</h3>
+            <h3 class="text-lg font-bold text-slate-800 mb-3">Kelola Kategori</h3>
             <div class="space-y-2 mb-4 max-h-72 overflow-y-auto">
                 <div v-for="l in labels" :key="l.id" class="flex items-center gap-2">
                     <!-- Baris sedang diedit -->
@@ -1181,17 +1267,17 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                         <button type="button" @click="deleteLabel(l.id)" class="text-xs text-red-500 hover:underline">Hapus</button>
                     </template>
                 </div>
-                <p v-if="!labels.length" class="text-sm text-slate-400">Belum ada label.</p>
+                <p v-if="!labels.length" class="text-sm text-slate-400">Belum ada kategori.</p>
             </div>
-            <!-- Tambah label baru -->
+            <!-- Tambah kategori baru -->
             <div class="border-t border-slate-100 pt-3">
-                <p class="text-xs font-semibold text-slate-500 mb-1.5">Tambah label</p>
+                <p class="text-xs font-semibold text-slate-500 mb-1.5">Tambah kategori</p>
                 <div class="flex items-center gap-2">
                     <span :class="['w-5 h-5 rounded-full flex-shrink-0', labelForm.color]"></span>
                     <select v-model="labelForm.color" class="border border-slate-200 rounded-lg px-2 py-2 text-sm">
                         <option v-for="c in LABEL_COLORS" :key="c" :value="c">{{ c.replace('bg-', '').replace('-500', '') }}</option>
                     </select>
-                    <input v-model="labelForm.name" @keydown.enter.prevent="addLabel" placeholder="Nama label…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                    <input v-model="labelForm.name" @keydown.enter.prevent="addLabel" placeholder="Nama kategori…" class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
                     <button type="button" @click="addLabel" :disabled="labelForm.processing" class="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50">Tambah</button>
                 </div>
                 <p v-if="labelForm.errors.name" class="text-xs text-red-600 mt-1">{{ labelForm.errors.name }}</p>
