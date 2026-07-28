@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
  *  memang sah — target yang belum ditetapkan lebih jujur daripada target 0.
  *
  *  `metric` string biasa, bukan enum — mengikuti keputusan yang sama pada
- *  `progress`/`category` di repo ini (lihat CLAUDE.md): enum MySQL menuntut
+ *  `progress`/`category` di repo ini (lihat docs/CLAUDE.md): enum MySQL menuntut
  *  migrasi ubah kolom tiap kali daftarnya bertambah. Daftar sahnya ada di
  *  Okr::METRICS dan ditegakkan lewat validasi controller.
  *

@@ -114,7 +114,9 @@ class DemoOkrKpiSeeder extends Seeder
             [$now, 'Jadi rujukan utama konten AI di Indonesia', 'Diukur dari jangkauan kanal & pertumbuhan audiens, bukan jumlah unggahan.', [
                 ['Total view seluruh konten', 'auto', 'view', 750000, 'angka'],
                 ['Total subscriber semua kanal', 'auto', 'subscriber', 20000, 'angka'],
-                ['Kolaborasi dengan kreator lain', 'manual', null, 5, 'angka'],
+                // Sumber 'kartu': realisasinya dari kartu todolist tertaut yang
+                // selesai. Diisi oleh kartuGoal() di bawah.
+                ['Kolaborasi dengan kreator lain', 'kartu', null, 5, 'angka'],
             ]],
             [$now, 'Bisnis coaching tumbuh sehat', 'Omset dari transaksi yang benar-benar masuk, bukan nilai deal di kartu Sales.', [
                 ['Omset kuartal', 'auto', 'omset', 250000000, 'rupiah'],
@@ -122,9 +124,9 @@ class DemoOkrKpiSeeder extends Seeder
             ]],
         ];
 
-        // Realisasi KR manual — hanya untuk yang manual; KR otomatis mengambil
-        // angkanya sendiri dan kolom ini WAJIB null di sana.
-        $realisasiManual = ['Kolaborasi dengan kreator lain' => 3, 'Klien coaching baru' => 7];
+        // Realisasi KR manual — hanya untuk yang manual; KR otomatis & 'kartu'
+        // mengambil angkanya sendiri dan kolom ini WAJIB null di sana.
+        $realisasiManual = ['Klien coaching baru' => 7];
 
         foreach ($rencana as $i => [$q, $judul, $ket, $krs]) {
             $objective = Objective::updateOrCreate(
@@ -147,6 +149,62 @@ class DemoOkrKpiSeeder extends Seeder
                     ],
                 );
             }
+        }
+
+        $this->kartuGoal($now);
+    }
+
+    /**
+     * Kartu todolist yang menautkan ke KR bersumber 'kartu' (Kolaborasi 5
+     * kreator). Inilah demo jembatan goal → papan kerja: 3 dari 5 langkah
+     * selesai, sisanya masih berjalan, jadi KR terbaca 60%.
+     */
+    private function kartuGoal(array $now): void
+    {
+        $kr = KeyResult::where('source', 'kartu')
+            ->where('title', 'Kolaborasi dengan kreator lain')
+            ->whereHas('objective', fn ($o) => $o->where('year', $now['year'])->where('quarter', $now['quarter']))
+            ->first();
+
+        if (! $kr) {
+            return;
+        }
+
+        $penerima = User::whereIn('role', ['manager', 'it', 'admin', 'staff'])->pluck('id')->all();
+        [$start] = Quarter::range($now['year'], $now['quarter']);
+
+        // [judul, kolom, selesai?]
+        $langkah = [
+            ['DM & deal kreator A', 'done', true],
+            ['Rekam kolaborasi kreator B', 'done', true],
+            ['Publikasi kolaborasi kreator C', 'done', true],
+            ['Edit kolaborasi kreator D', 'progress', false],
+            ['Jadwalkan kolaborasi kreator E', 'todo', false],
+        ];
+
+        foreach ($langkah as $i => [$judul, $kolom, $selesai]) {
+            $kartu = Pipeline::firstOrCreate(
+                ['category' => 'todolist', 'endorse' => '[DEMO] '.$judul],
+                [
+                    'progress' => $kolom,
+                    'account' => 'fk',
+                    'payment_status' => 'belum',
+                    'key_result_id' => $kr->id,
+                    'assigned_to' => $penerima ? $penerima[$i % count($penerima)] : null,
+                    'deadline' => $start->addDays(20 + $i * 8)->toDateString(),
+                    'done' => $selesai,
+                    'completed_at' => $selesai ? $start->addDays(18 + $i * 8) : null,
+                    'position' => $i,
+                ],
+            );
+
+            // Segarkan agar menjalankan ulang seeder mengembalikan keadaan.
+            $kartu->forceFill([
+                'key_result_id' => $kr->id,
+                'progress' => $kolom,
+                'done' => $selesai,
+                'completed_at' => $selesai ? $start->addDays(18 + $i * 8) : null,
+            ])->save();
         }
     }
 

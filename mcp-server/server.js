@@ -99,6 +99,50 @@ const db = mysql.createPool({
 const jsonText = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] });
 const errText = (msg) => ({ content: [{ type: 'text', text: `Error: ${msg}` }], isError: true });
 
+// ── Helper OKR ────────────────────────────────────────────────────────────────
+// Kuartal & realisasi WAJIB sama persis dgn app Laravel (Quarter + OkrMetrics),
+// kalau tidak MCP & halaman /okr menampilkan angka berbeda untuk hal yang sama.
+const QSPAN = { 1: ['01-01', '03-31'], 2: ['04-01', '06-30'], 3: ['07-01', '09-30'], 4: ['10-01', '12-31'] };
+
+function currentQuarter() {
+    const d = new Date();
+    return { year: d.getFullYear(), quarter: Math.floor(d.getMonth() / 3) + 1 };
+}
+function quarterRange(year, quarter) {
+    const [a, b] = QSPAN[quarter];
+    return [`${year}-${a} 00:00:00`, `${year}-${b} 23:59:59`];
+}
+
+// Realisasi metrik auto — cerminan App\Support\OkrMetrics::realisasi().
+//  view       = SUM(views) konten yang published_at di kuartal
+//  omset      = SUM(amount_idr) transaksi pemasukan di kuartal
+//  subscriber = SUM(followers) snapshot TERAKHIR tiap akun (≤ akhir kuartal),
+//               bukan jumlah seluruh baris (itu menghitung orang yg sama berkali)
+async function okrRealisasi(year, quarter) {
+    const [start, end] = quarterRange(year, quarter);
+    const [[v]] = await db.query(
+        `SELECT COALESCE(SUM(views),0) n FROM insight_contents WHERE published_at BETWEEN ? AND ?`, [start, end]);
+    const [[o]] = await db.query(
+        `SELECT COALESCE(SUM(amount_idr),0) n FROM transactions WHERE type='pemasukan' AND date BETWEEN ? AND ?`, [start, end]);
+    const [[s]] = await db.query(
+        `SELECT COALESCE(SUM(ia.followers),0) n FROM insight_accounts ia
+         JOIN (SELECT platform, akun, MAX(tanggal) tanggal FROM insight_accounts WHERE tanggal <= ? GROUP BY platform, akun) t
+           ON ia.platform=t.platform AND ia.akun=t.akun AND ia.tanggal=t.tanggal`, [end]);
+    return { view: Number(v.n), subscriber: Number(s.n), omset: Number(o.n) };
+}
+
+const pct = (actual, target) => (Number(target) > 0 ? Math.round((actual / target) * 1000) / 10 : null);
+
+// Owner sbg pencatat default objek OKR baru (kolom created_by/owner_id).
+async function ownerId() {
+    const [[u]] = await db.query(`SELECT id FROM users WHERE role='owner' ORDER BY id LIMIT 1`);
+    return u ? u.id : null;
+}
+
+const OKR_SOURCES = ['auto', 'manual', 'kartu'];
+const OKR_METRICS = ['view', 'subscriber', 'omset'];
+const OKR_UNITS = ['angka', 'rupiah', 'persen'];
+
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
     const server = new McpServer({ name: 'pipeline-mcp', version: '0.1.0' });

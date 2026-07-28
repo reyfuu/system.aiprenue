@@ -5,10 +5,20 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Tautan kartu Kanban ke Key Result.
+ * Tautan kartu Kanban → Key Result: satu kartu adalah langkah menuju satu KR.
  *
- * Kolom dibuat nullable agar kartu lama tetap valid. Menghapus Key Result hanya
- * melepas tautannya; kartu Kanban tidak ikut terhapus.
+ *  Ini yang menghubungkan menu OKR dgn papan kerja: goal per kuartal ditulis
+ *  sbg Objective + Key Result di /okr, lalu langkah-langkah untuk mencapainya
+ *  dibuat sbg kartu di Kanban todolist dan ditautkan ke KR-nya. KR bersumber
+ *  'kartu' menghitung realisasinya dari kartu tautan yang sudah selesai.
+ *
+ *  nullOnDelete, BUKAN cascade: menghapus sebuah Key Result tak boleh ikut
+ *  menghapus kartunya — pekerjaan yang sudah dilakukan tetap ada, ia cuma
+ *  kehilangan kaitan ke goal yang mungkin sudah dibatalkan. Kartu tetap hidup
+ *  di papannya.
+ *
+ *  Idempoten per kolom, mengikuti pola migrasi created_by/completed_at: skema
+ *  server pernah menyimpang dari catatan migrasi.
  */
 return new class extends Migration
 {
@@ -19,11 +29,10 @@ return new class extends Migration
         }
 
         Schema::table('pipelines', function (Blueprint $table) {
-            $table->foreignId('key_result_id')
-                ->nullable()
-                ->after('assigned_to')
-                ->constrained('key_results')
-                ->nullOnDelete();
+            // Ikut di-index: menghitung kartu-selesai per KR menyaring lewat
+            // kolom ini pada tiap render halaman OKR.
+            $table->foreignId('key_result_id')->nullable()->after('assigned_to')
+                ->constrained('key_results')->nullOnDelete();
         });
     }
 

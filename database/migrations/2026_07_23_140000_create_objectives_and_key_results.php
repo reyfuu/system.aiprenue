@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
  *  saat menyusun OKR.
  *
  *  `source`/`metric`/`unit` string biasa, bukan enum — mengikuti keputusan yang
- *  sama pada `progress`/`category` (CLAUDE.md): enum MySQL menuntut migrasi
+ *  sama pada `progress`/`category` (docs/CLAUDE.md): enum MySQL menuntut migrasi
  *  ubah kolom tiap kali daftarnya bertambah. Daftar sahnya ada di konstanta
  *  model & ditegakkan lewat validasi controller.
  *

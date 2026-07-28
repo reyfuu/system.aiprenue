@@ -2,7 +2,7 @@
 
 Aplikasi manajemen bisnis untuk ekosistem **AI Preneur** — mengelola **pipeline endorsement**, **papan Kanban** produksi, **order**, **mindmap**, **pembukuan keuangan**, **script** harian, dan **manajemen user** berbasis peran. Menggantikan spreadsheet manual; pembayaran mendukung IDR & USD dengan konversi kurs otomatis.
 
-Dokumen terkait: [PRD.md](PRD.md) · [DESIGN.md](DESIGN.md) · [SKILLS.md](SKILLS.md) · [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md)
+Dokumen terkait: [PRD.md](docs/PRD.md) · [DESIGN.md](docs/DESIGN.md) · [SKILLS.md](docs/SKILLS.md) · [AGENTS.md](docs/AGENTS.md) · [CLAUDE.md](docs/CLAUDE.md)
 
 ---
 
