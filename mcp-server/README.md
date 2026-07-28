@@ -44,17 +44,20 @@ eksplisit per fitur; tidak ada tool SQL generik.
 |------|--------|
 | `list_okr` | Objective + Key Result satu kuartal + realisasi & capaian (default kuartal berjalan). **Baca ini dulu** sebelum menyusun strategi. |
 | `create_objective` | Buat Objective (goal kualitatif) untuk satu kuartal |
-| `create_key_result` | Tambah KR terukur — `source`: `auto` (view/subscriber/omset dari data) · `manual` · `kartu` (dari task todolist tertaut yang selesai) |
-| `link_task_to_kr` | Tautkan task todolist ke KR bersumber `kartu` (langkah pencapaian goal) |
+| `create_key_result` | Tambah KR terukur — `source`: `auto` (view/subscriber/omset dari data) · `manual` · `kartu` (dari card board yang selesai) |
+| `link_task_to_kr` | Tautkan card dari board KR ke KR bersumber `kartu` |
 
 **Alur menyusun strategi lewat AI (Claude/ChatGPT):**
 1. `list_okr` — lihat posisi kuartal ini (realisasi view/subscriber/omset nyata).
 2. `create_objective` → `create_key_result` — susun goal & KR terukur.
-3. Untuk KR `kartu`: `create_task` (board `todolist`) → `link_task_to_kr` — pecah goal jadi langkah. Menyelesaikan task menggerakkan angka KR otomatis.
+3. Untuk KR `kartu`: `create_task` pada board KR → `link_task_to_kr` — pecah goal jadi langkah. Menyelesaikan task menggerakkan angka KR otomatis.
 
 > Realisasi metrik `auto` (view/subscriber/omset) memakai rumus **sama persis** dengan app Laravel (`OkrMetrics`): view = tayangan konten terbit di kuartal · subscriber = snapshot follower terakhir per akun · omset = pemasukan Pembukuan di kuartal. Angka MCP = angka halaman `/okr`.
 
-> Tulisan langsung ke DB (bypass validasi Laravel), tapi `create_key_result` & `link_task_to_kr` menegakkan aturan yang sama: KR `auto` wajib punya metric, tautan kartu hanya board `todolist` + KR bersumber `kartu`.
+> Tulisan langsung ke DB (bypass validasi Laravel), tetapi `create_key_result`
+> dan `link_task_to_kr` menegakkan aturan inti yang sama: KR `auto` wajib punya
+> metric, KR Kanban wajib memilih board, dan card yang ditautkan harus berasal
+> dari board KR tersebut.
 
 > Kanban terverifikasi lokal via `test-client.js`; OKR terverifikasi via `tools/list` + `list_okr` live (angka realisasi cocok dengan `/okr`).
 
@@ -83,7 +86,17 @@ cp .env.example .env      # isi DB + MCP_TOKEN
 npm install
 npm start                 # http://127.0.0.1:8765/mcp
 npm test                  # jalankan test-client.js (server harus nyala)
+node task.js tools        # lihat seluruh tool dari server
+node task.js describe create_order
+node task.js call list_okr '{"year":2026,"quarter":3}'
 ```
+
+`task.js` juga menyediakan alias baca: `dashboard`, `orders`, `finance`,
+`content`, `scripts`, `insights`, `users`, `absences`, `mindmaps`, `okr`,
+`kpi`, `tracking`, `access`, `inventory`, `upload`, dan `boards`. Untuk semua
+aksi tulis gunakan `call`; schema argumennya dapat dilihat lewat `describe`.
+Karena `call` memakai hasil discovery server, tool baru di `server.js` langsung
+dapat dipakai tanpa menambah hardcode baru di CLI.
 
 ## Deploy ke VPS (Ubuntu 24.04)
 

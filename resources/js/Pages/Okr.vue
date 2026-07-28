@@ -28,7 +28,7 @@ const props = defineProps({
     ringkasan: { type: Object, default: () => ({}) },
     tren: { type: Array, default: () => [] },
     metrics: { type: Object, default: () => ({}) },   // key metrik otomatis → label
-    sources: { type: Object, default: () => ({}) },   // auto | manual → label
+    sources: { type: Object, default: () => ({}) },   // auto | manual | kartu → label
     units: { type: Object, default: () => ({}) },
     kartuTersedia: { type: Array, default: () => [] }, // kartu todolist belum tertaut (untuk "tautkan yang ada")
     kanbanBoards: { type: Array, default: () => [] },
@@ -378,11 +378,10 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                  sekarang selalu owner & belum bisa dipilih di form. -->
                             <p v-if="kr.owner_name" class="text-[11px] text-slate-400 mt-0.5">PJ: {{ kr.owner_name }}</p>
 
-                            <!-- Langkah-langkah: kartu todolist yang ditautkan ke KR
-                                 bersumber 'kartu'. Inilah jembatan goal → papan kerja.
-                                 Penautan dikelola DI SINI (bukan di Kanban — Kanban
-                                 murni delegasi). Kartunya sendiri tetap dikerjakan &
-                                 diselesaikan di papan Kanban todolist. -->
+                            <!-- Card eksekusi KR: card utama dibuat otomatis pada
+                                 board pilihan saat KR dibuat. KR bersumber Kanban
+                                 juga dapat memiliki langkah tambahan dari todolist.
+                                 Seluruh card tetap dikerjakan di board asalnya. -->
                             <p v-if="kr.source === 'kartu' && kr.board_key" class="mt-1.5 text-[11px] font-medium text-emerald-700">
                                 Board: {{ kr.board_name }}
                             </p>
@@ -422,7 +421,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                         </select>
                                         <button type="button" :disabled="!attachId" class="text-[11px] font-semibold text-brand-700 hover:underline disabled:opacity-40" @click="tautkanKartu(kr.id)">Tautkan</button>
                                     </div>
-                                    <p class="text-[10px] text-slate-400">Kartu dikerjakan & diselesaikan di Kanban todolist; menyelesaikannya menggerakkan angka KR ini.</p>
+                                    <p class="text-[10px] text-slate-400">Langkah tambahan dikerjakan di Kanban todolist; menyelesaikannya menggerakkan angka KR ini.</p>
                                 </div>
                             </template>
                         </div>

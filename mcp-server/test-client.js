@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-const ENDPOINT = `http://127.0.0.1:${process.env.MCP_PORT || 8765}/mcp`;
+const ENDPOINT = process.env.MCP_ENDPOINT || `http://127.0.0.1:${process.env.MCP_PORT || 8765}/mcp`;
 const TOKEN = process.env.MCP_TOKEN || '';
 
 const call = async (client, name, args = {}) => {

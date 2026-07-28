@@ -26,9 +26,10 @@ use Inertia\Inertia;
  *  di sini, jadi ia tak bisa basi saat data sumbernya dikoreksi. KR `manual`
  *  ada untuk target yang memang tak punya sumber data.
  *
- *  Halaman ini TERKUNCI untuk owner & manager lewat User::canSee(), sejajar
- *  dgn pembukuan & tracking: isinya omset dan pertumbuhan audiens. KPI board
- *  dan rapor per orang ada di KpiController — audiensnya lebih luas.
+ *  Halaman ini TERKUNCI untuk owner, manager, dan IT super admin lewat
+ *  User::canSee(), sejajar dgn pembukuan & tracking: isinya omset dan
+ *  pertumbuhan audiens. KPI board dan rapor per orang ada di KpiController —
+ *  audiensnya lebih luas.
  *
  *  Kuartal dipilih lewat ?q=YYYY-Qn; tanpa itu memakai kuartal berjalan.
  */
@@ -433,10 +434,10 @@ class OkrController extends Controller
 
     // ------------------------------------------------- kartu (langkah) KR
     //
-    //  Penautan kartu todolist ke KR dikelola DARI SINI, bukan dari Kanban.
-    //  Kanban murni untuk delegasi; goal & langkah pencapaiannya tinggal di
-    //  satu tempat (halaman OKR). Semua endpoint di bawah hanya untuk KR
-    //  bersumber 'kartu' — menautkan langkah ke KR auto/manual tak berarti.
+    //  Endpoint lama di bawah melayani langkah tambahan pada board `todolist`.
+    //  Card utama KR dibuat oleh storeKeyResult() pada board yang dipilih di
+    //  form. Semua endpoint ini hanya untuk KR bersumber `kartu`; menautkan
+    //  langkah hitungan ke KR auto/manual tidak memiliki arti.
 
     /** Buat kartu todolist baru langsung sbg langkah menuju sebuah KR. */
     public function storeKartu(Request $request, KeyResult $keyResult)

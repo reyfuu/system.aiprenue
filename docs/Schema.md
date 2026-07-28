@@ -85,7 +85,7 @@ Tabel terbesar; dipakai bersama modul Sales dan Kanban (dibedakan `categories.ty
 | account | enum(fk, ai_preneur) | |
 | assigned_to | FK users? | PJ kartu — **dasar rapor KPI per orang** |
 | created_by | FK users? | pembuat; nullOnDelete |
-| **key_result_id** | FK key_results? | tautan ke goal OKR (todolist saja); nullOnDelete |
+| **key_result_id** | FK key_results? | tautan card Kanban ke goal OKR; nullOnDelete |
 | endorse | varchar | judul kartu |
 | description, notes | text? | |
 | deadline | date? | **penentu kuartal kartu** & ketepatan waktu |

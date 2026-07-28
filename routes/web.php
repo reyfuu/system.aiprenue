@@ -67,7 +67,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines/{pipeline}/comments', [CommentController::class, 'store'])->name('comments.store');
     Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])->name('comments.destroy');
 
-    // Lampiran kartu — hanya super admin/IT (dibatasi EnsureMenuAccess)
+    // Lampiran kartu — mengikuti izin pengelola struktur di EnsureMenuAccess.
     Route::post('/pipelines/{pipeline}/attachments', [AttachmentController::class, 'store'])->name('attachments.store');
     Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
 
@@ -129,11 +129,11 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/content/{content}', [ContentController::class, 'update'])->name('content.update');
     Route::delete('/content/{content}', [ContentController::class, 'destroy'])->name('content.destroy');
 
-    // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
+    // Tracking — read-only lintas board untuk owner, manager, dan IT super admin.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
 
-    // OKR perusahaan (view/subscriber/omset). TERKUNCI owner & manager di
-    // User::canSee() — isinya omset, sejajar pembukuan & tracking.
+    // OKR perusahaan (view/subscriber/omset) untuk owner, manager, dan IT
+    // super admin lewat User::canSee().
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
     Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
     Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
