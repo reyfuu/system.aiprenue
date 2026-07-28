@@ -30,8 +30,8 @@ class AksesController extends Controller
                     $role => DB::table('role_menu_access')->where('role', $role)
                         ->where('can_manage', true)->pluck('menu')->all(),
                 ]),
-            // owner tak bisa diubah (pagar anti-kekunci di User::canSee)
-            'terkunci' => ['owner'],
+            // owner & it tak bisa diubah — keduanya super admin, selalu penuh (User::canSee)
+            'terkunci' => ['owner', 'it'],
         ]);
     }
 
@@ -53,7 +53,7 @@ class AksesController extends Controller
         // baris yatim akan hidup terus tanpa pernah tampil di halaman.
         $bersih = collect($data['akses'])
             ->only(array_keys(User::ROLES))
-            ->reject(fn ($_, $role) => in_array($role, ['owner'], true))  // owner: selalu penuh, abaikan kiriman
+            ->reject(fn ($_, $role) => in_array($role, ['owner', 'it'], true))  // owner & it: selalu penuh, abaikan kiriman
             ->map(function ($menus, $role) {
                 // Pembukuan adalah izin tetap: Manager selalu dapat, role lain tidak.
                 $menus = array_values(array_diff($menus, ['pembukuan']));

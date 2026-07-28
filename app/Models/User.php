@@ -103,6 +103,13 @@ class User extends Authenticatable
             return true;
         }
 
+        // owner & it = super admin: SELALU lihat semua menu (termasuk okr/pembukuan/
+        // tracking), tak bisa dicabut lewat Manajemen Akses. it perlu akses penuh
+        // untuk melakukan perbaikan teknis di semua halaman.
+        if (in_array($this->role, ['owner', 'it'], true)) {
+            return true;
+        }
+
         // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
         // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
         // 'okr' ikut di sini: isinya target & realisasi omset serta pertumbuhan
@@ -110,10 +117,6 @@ class User extends Authenticatable
         // di sini; ia menu terpisah ('kpi') berisi data operasional papan saja.
         if (in_array($menu, ['pembukuan', 'tracking', 'okr'], true)) {
             return in_array($this->role, ['owner', 'manager'], true);
-        }
-
-        if ($this->role === 'owner') {
-            return true;
         }
 
         if (($izin = $this->izinDariDb()) !== null) {
