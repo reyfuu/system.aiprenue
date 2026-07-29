@@ -54,7 +54,7 @@ Riwayat notifikasi personal yang persisten di server (format bawaan Laravel).
 | data | text/json | judul, pesan, URL aman, id Objective/KR, prioritas |
 | read_at | timestamp? | null = belum dibaca |
 
-Notifikasi OKR dikirim sinkron ke channel `database`, jadi tidak membutuhkan queue worker. Staff membaca isinya lewat Layout global; notifikasi target omzet tidak menautkan ke `/okr` karena menu itu tetap tertutup untuk staff.
+Notifikasi OKR dikirim sinkron ke channel `database`, jadi tidak membutuhkan queue worker. Staff membaca isinya lewat Layout global; notifikasi target omzet tidak menautkan ke `/okr` karena menu itu tetap tertutup untuk staff. `data.kind` membedakan jenisnya: `okr_assignment` (penugasan), `okr_perubahan` (koreksi PIC/target/deadline), `okr_selesai` (laporan kartu selesai ke pemilik OKR), `okr_deadline` (pengingat deadline). Pengingat deadline dibuat malas saat penerima membuka halaman — maks. 1/kartu/hari, dedup lewat `data.pipeline_id` — sehingga tidak membutuhkan scheduler/cron di shared hosting.
 
 ### `role_menu_access`
 Izin menu dinamis per peran (dikelola di halaman `/akses`).
@@ -135,13 +135,15 @@ Kuartal diturunkan, bukan disimpan: helper `App\Support\Quarter` memetakan tangg
 |---|---|---|
 | year | smallint | index `(year, quarter)` |
 | quarter | tinyint | 1–4 |
-| title | varchar | kalimat tujuan (tak diukur langsung) |
+| title | varchar | kalimat tujuan utama |
 | description | text? | |
 | priority | json? | snapshot `{name,color}` untuk status `Urgent`/`Penting` |
+| omset_target | decimal(20,2)? | target omzet Objective; realisasi dari Pembukuan |
+| omset_owner_id | FK users? | PIC target omzet (nullOnDelete) |
 | position | int | urutan |
 | created_by | FK users? | |
 
-Progress Objective = **rata-rata persen Key Result-nya, tiap KR dibatasi 100% dulu** (`Objective::progress()`) — cegah satu KR 300% menutupi dua KR 0%.
+Progress Objective = **rata-rata pencapaian target omzet (bila ada) dan persen Key Result-nya; setiap kontribusi dibatasi 100% dulu** (`Objective::progress()`) — cegah satu hasil 300% menutupi hasil lain yang 0%.
 
 ### `key_results` — bagian OKR yang terukur
 | Kolom | Tipe | Catatan |
@@ -149,7 +151,7 @@ Progress Objective = **rata-rata persen Key Result-nya, tiap KR dibatasi 100% du
 | objective_id | FK objectives | **cascadeOnDelete** (KR tanpa Objective tak berarti) |
 | title | varchar | |
 | source | varchar | `auto` · `manual` · `kartu` |
-| metric | varchar? | wajib saat `auto`: `view`/`subscriber`/`omset` |
+| metric | varchar? | wajib saat `auto`: `view`/`subscriber` |
 | target | decimal(20,2) | |
 | actual_manual | decimal(20,2)? | hanya saat `manual` |
 | unit | varchar | `angka`/`rupiah`/`persen` |
@@ -157,10 +159,10 @@ Progress Objective = **rata-rata persen Key Result-nya, tiap KR dibatasi 100% du
 | owner_id | FK users? | PJ (nullOnDelete) |
 | created_by | FK users? | |
 
-Saat Objective dibuat dengan target omzet, `owner_id` dapat dipilih dari user aktif. PIC menerima notifikasi database. Saat KR sekaligus membentuk card eksekusi, `assigned_to` card juga menjadi `owner_id` KR dan menerima notifikasi bertaut langsung ke card Kanban.
+Saat Objective dibuat dengan target omzet, `omset_owner_id` dapat dipilih dari user aktif. PIC menerima notifikasi database. Saat KR sekaligus membentuk card eksekusi, `assigned_to` card juga menjadi `owner_id` KR dan menerima notifikasi bertaut langsung ke card Kanban.
 
 **Realisasi KR (`KeyResult::actual()`) — tak ada angka realisasi yang diketik untuk auto/kartu:**
-- `auto` → dihitung dari Insight/Pembukuan lewat `OkrMetrics::realisasi()` (satu kali per kuartal, dioper ke tiap KR — hindari N+1).
+- `auto` → dihitung dari Insight lewat `OkrMetrics::realisasi()` (satu kali per kuartal, dioper ke tiap KR — hindari N+1).
 - `kartu` → jumlah `pipelines` yang `key_result_id` = KR ini **dan** `completed_at` terisi. Ini jembatan goal → papan kerja: kartu todolist ditautkan ke KR, menyelesaikannya menggerakkan angka.
 - `manual` → `actual_manual`. Endpoint `updateActual` **menolak** (422) source `auto`/`kartu` — angka otomatis yang bisa ditimpa tangan berhenti bisa dipercaya.
 

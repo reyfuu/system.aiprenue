@@ -7,16 +7,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
-/** Satu Objective kuartalan: kalimat tujuan yang tidak diukur langsung —
- *  yang terukur adalah Key Result di bawahnya. */
+/** Satu Objective kuartalan: tujuan utama, termasuk target omzet bila ada. */
 class Objective extends Model
 {
-    protected $fillable = ['year', 'quarter', 'title', 'description', 'priority', 'position', 'created_by'];
+    protected $fillable = [
+        'year', 'quarter', 'title', 'description', 'priority',
+        'omset_target', 'omset_owner_id', 'position', 'created_by',
+    ];
 
     protected $casts = [
         'year' => 'integer',
         'quarter' => 'integer',
         'priority' => 'array',
+        'omset_target' => 'decimal:2',
         'position' => 'integer',
     ];
 
@@ -30,9 +33,15 @@ class Objective extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** PIC yang bertanggung jawab mengejar target omzet Objective. */
+    public function omsetOwner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'omset_owner_id');
+    }
+
     /**
-     * Progress Objective = rata-rata persen Key Result-nya, TIAP KR DIBATASI
-     * 100% LEBIH DULU.
+     * Progress Objective = rata-rata target omzet (bila ada) dan persen Key
+     * Result-nya. Setiap kontribusi DIBATASI 100% LEBIH DULU.
      *
      *  Batas itu yang membuat angkanya jujur. Tanpa dibatasi, satu KR yang
      *  300% menutupi dua KR yang 0% dan Objective terbaca "tercapai" padahal
@@ -54,13 +63,18 @@ class Objective extends Model
             ->filter(fn ($p) => $p !== null)
             ->map(fn ($p) => min(100, $p));
 
+        $omsetTarget = (float) ($this->omset_target ?? 0);
+        if ($omsetTarget > 0) {
+            $persen->prepend(min(100, (float) ($realisasi['omset'] ?? 0) / $omsetTarget * 100));
+        }
+
         return $persen->isEmpty() ? null : round($persen->avg(), 1);
     }
 
     /** Objective satu kuartal beserta Key Result-nya, terurut. */
     public static function forQuarter(int $year, int $quarter): Collection
     {
-        return static::with(['keyResults', 'creator'])
+        return static::with(['keyResults', 'creator', 'omsetOwner'])
             ->where('year', $year)->where('quarter', $quarter)
             ->orderBy('position')->orderBy('id')->get();
     }

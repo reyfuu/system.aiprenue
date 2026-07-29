@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Pipeline;
 use App\Models\PipelineTask;
+use App\Support\OkrNotifications;
 use Illuminate\Http\Request;
 
 class PipelineTaskController extends Controller
@@ -50,6 +51,14 @@ class PipelineTaskController extends Controller
         $total = $pipeline->tasks()->count();
         $selesai = $pipeline->tasks()->whereNotNull('completed_at')->count();
         $done = $total > 0 && $selesai === $total;
+        // Transisi dinilai dari nilai SEBELUM update: kartu yang memang baru
+        // rampung karena tugas terakhirnya dicentang — bukan kartu yang sudah
+        // lama selesai lalu tugasnya diutak-atik.
+        $baruSelesai = $done && $pipeline->completed_at === null;
         $pipeline->update(['done' => $done, 'completed_at' => $done ? ($pipeline->completed_at ?? now()) : null]);
+
+        if ($baruSelesai && $pipeline->key_result_id) {
+            OkrNotifications::laporkanKartuSelesai($pipeline, request()->user());
+        }
     }
 }
