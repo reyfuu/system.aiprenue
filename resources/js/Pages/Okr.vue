@@ -30,6 +30,7 @@ const props = defineProps({
     metrics: { type: Object, default: () => ({}) },   // key metrik otomatis → label
     sources: { type: Object, default: () => ({}) },   // auto | manual | kartu → label
     units: { type: Object, default: () => ({}) },
+    priorities: { type: Array, default: () => [] },   // penanda Urgent/Penting dari tabel labels
     kartuTersedia: { type: Array, default: () => [] }, // kartu todolist belum tertaut (untuk "tautkan yang ada")
     kanbanBoards: { type: Array, default: () => [] },
     kanbanColumns: { type: Object, default: () => ({}) },
@@ -170,7 +171,15 @@ const lineOpts = computed(() => ({
 
 // ---- Form Objective ----
 const objModal = ref(null);          // 'baru' | objek objective yang diedit
-const objForm = useForm({ year: 0, quarter: 0, title: '', description: '' });
+const objForm = useForm({
+    year: 0,
+    quarter: 0,
+    title: '',
+    description: '',
+    priority_name: '',
+    omset_target: '',
+    omset_owner_id: '',
+});
 
 const bukaObjective = (o = null) => {
     objModal.value = o ?? 'baru';
@@ -179,6 +188,11 @@ const bukaObjective = (o = null) => {
     objForm.quarter = props.quarter.quarter;
     objForm.title = o?.title ?? '';
     objForm.description = o?.description ?? '';
+    objForm.priority_name = o?.priority?.name ?? '';
+    // Target omzet hanya dipakai saat membuat Objective baru. Mengosongkannya
+    // saat modal dibuka mencegah nilai dari percobaan sebelumnya ikut terkirim.
+    objForm.omset_target = '';
+    objForm.omset_owner_id = '';
     objForm.clearErrors();
 };
 
@@ -197,8 +211,13 @@ const hapusObjective = (o) => {
 
 // ---- Form Key Result ----
 const krModal = ref(null);           // { mode: 'baru'|'edit', objective, kr? }
-const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
+const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', priority_name: '', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
 const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
+// Omzet baru hanya dibuat bersama Objective. Saat mengedit KR omzet yang sudah
+// ada, opsinya tetap disertakan agar form tidak kehilangan nilai tersimpan.
+const krMetrics = computed(() => Object.fromEntries(
+    Object.entries(props.metrics).filter(([key]) => key !== 'omset' || krModal.value?.mode === 'edit'),
+));
 
 watch(() => krForm.kanban_board_key, () => {
     if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
@@ -221,6 +240,7 @@ const bukaKr = (objective, kr = null) => {
     krForm.metric = kr?.metric ?? '';
     krForm.target = kr?.target ?? 0;
     krForm.unit = kr?.unit ?? 'angka';
+    krForm.priority_name = kr?.priority?.name ?? '';
     krForm.kanban_board_key = kr?.kartu?.find((k) => k.is_master)?.board ?? props.kanbanBoards[0]?.key ?? '';
     krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
     krForm.card_category = '';
@@ -343,7 +363,13 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <!-- Kepala Objective: judul + progress roll-up -->
                     <div class="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-4">
                         <div class="min-w-0">
-                            <h3 class="font-bold text-slate-700">{{ o.title }}</h3>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="font-bold text-slate-700">{{ o.title }}</h3>
+                                <span v-if="o.priority"
+                                      :class="['text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', o.priority.color]">
+                                    {{ o.priority.name }}
+                                </span>
+                            </div>
                             <p v-if="o.description" class="text-xs text-slate-500 mt-1 max-w-prose">{{ o.description }}</p>
                             <div v-if="canManage" class="flex items-center gap-3 mt-2">
                                 <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
@@ -368,6 +394,10 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                          class="px-5 py-3 border-b border-slate-50 last:border-b-0 grid gap-3 md:grid-cols-[minmax(0,1fr)_200px_140px] md:items-center">
                         <div class="min-w-0">
                             <span class="text-sm font-semibold text-slate-700">{{ kr.title }}</span>
+                            <span v-if="kr.priority"
+                                  :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', kr.priority.color]">
+                                {{ kr.priority.name }}
+                            </span>
                             <span :class="['ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border',
                                            kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100'
                                            : kr.source === 'kartu' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -469,6 +499,10 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                 <tr class="bg-brand-50/40 border-b border-brand-100">
                                     <td class="py-2.5 px-4 font-bold text-slate-700">
                                         {{ o.title }}
+                                        <span v-if="o.priority"
+                                              :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', o.priority.color]">
+                                            {{ o.priority.name }}
+                                        </span>
                                         <span class="ml-1 text-[11px] font-normal text-slate-400">· {{ o.key_results.length }} KR</span>
                                         <button v-if="canManage" class="ml-2 text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ KR</button>
                                         <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
@@ -492,6 +526,10 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                 <tr v-for="kr in o.key_results" :key="kr.id" class="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
                                     <td class="py-2 px-4 pl-8 text-slate-700">
                                         {{ kr.title }}
+                                        <span v-if="kr.priority"
+                                              :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', kr.priority.color]">
+                                            {{ kr.priority.name }}
+                                        </span>
                                         <span v-if="kr.owner_name" class="text-[11px] text-slate-400">· {{ kr.owner_name }}</span>
                                     </td>
                                     <td class="py-2 px-4">
@@ -581,6 +619,46 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <textarea v-model="objForm.description" rows="2" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"></textarea>
                     <p v-if="objForm.errors.description" class="text-xs text-red-600 mt-1">{{ objForm.errors.description }}</p>
                 </div>
+                <!-- Penanda memakai preset yang sama dengan kartu Kanban. -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Status prioritas</label>
+                    <select v-model="objForm.priority_name" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option value="">— tanpa status —</option>
+                        <option v-for="priority in priorities" :key="priority.name" :value="priority.name">{{ priority.name }}</option>
+                    </select>
+                    <p v-if="objForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ objForm.errors.priority_name }}</p>
+                </div>
+                <!-- Target omzet dibuat bersama Objective agar pengguna tidak
+                     perlu membuka modal Key Result kedua kali. Saat edit, target
+                     tetap dikelola lewat KR omzet yang sudah terbentuk. -->
+                <div v-if="objModal === 'baru'" class="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Target omzet kuartal <span class="font-normal text-slate-400">(opsional)</span></label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
+                        <input v-model="objForm.omset_target" type="number" min="0" step="1000" inputmode="decimal"
+                               placeholder="250000000"
+                               class="w-full border border-slate-200 rounded-xl pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    </div>
+                    <p class="mt-1 text-[11px] text-slate-500">Jika diisi, sistem otomatis membuat Key Result “Omzet kuartal” dengan realisasi dari Pembukuan.</p>
+                    <p v-if="objForm.errors.omset_target" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_target }}</p>
+
+                    <!-- PIC dipilih dari user aktif yang sama dengan pilihan PIC
+                         card. Saat disimpan, server membuat notifikasi database
+                         untuk user ini; staff tetap dapat membacanya tanpa akses
+                         ke halaman OKR. -->
+                    <div class="mt-3">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">PIC target omzet</label>
+                        <select v-model="objForm.omset_owner_id"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300">
+                            <option value="">— owner utama —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">
+                                {{ person.name }} · {{ person.role }}
+                            </option>
+                        </select>
+                        <p class="mt-1 text-[11px] text-slate-500">PIC akan menerima notifikasi yang tersimpan di server.</p>
+                        <p v-if="objForm.errors.omset_owner_id" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_owner_id }}</p>
+                    </div>
+                </div>
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" @click="objModal = null">Batal</button>
                     <button type="submit" :disabled="objForm.processing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50">Simpan</button>
@@ -599,6 +677,15 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <input v-model="krForm.title" type="text" placeholder="Total view seluruh konten"
                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                     <p v-if="krForm.errors.title" class="text-xs text-red-600 mt-1">{{ krForm.errors.title }}</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Status prioritas</label>
+                    <select v-model="krForm.priority_name" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option value="">— tanpa status —</option>
+                        <option v-for="priority in priorities" :key="priority.name" :value="priority.name">{{ priority.name }}</option>
+                    </select>
+                    <p v-if="krForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ krForm.errors.priority_name }}</p>
                 </div>
 
                 <div>
@@ -625,7 +712,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <label class="block text-xs font-semibold text-slate-500 mb-1">Metrik</label>
                     <select v-model="krForm.metric" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
                         <option value="">— pilih —</option>
-                        <option v-for="(label, key) in metrics" :key="key" :value="key">{{ label }}</option>
+                        <option v-for="(label, key) in krMetrics" :key="key" :value="key">{{ label }}</option>
                     </select>
                     <p v-if="krForm.errors.metric" class="text-xs text-red-600 mt-1">{{ krForm.errors.metric }}</p>
                 </div>

@@ -15,6 +15,7 @@ Struktur database. Produk: [PRD.md](PRD.md) · Arsitektur: [DESIGN.md](DESIGN.md
 users ─┬─< pipelines            (assigned_to · created_by)
        ├─< objectives           (created_by)
        ├─< key_results          (owner_id · created_by)
+       ├─< notifications        (notifiable polymorphic)
        ├─< board_quarter_targets(created_by)
        ├─< pipeline_comments · pipeline_attachments · absences · mindmaps
 
@@ -42,6 +43,18 @@ Realisasi OKR tak disimpan sebagai kolom — **dihitung** dari `insight_*`, `tra
 | role | varchar | `owner` · `manager` · `it` · `admin` · `staff` |
 
 Peran bukan tabel; nilai string divalidasi ke `User::ROLES`. Logika hak akses ada di method `User::canSee($menu)`, `canManage()`, `canManageBoard($cat)`, `homeRoute()`.
+
+### `notifications`
+Riwayat notifikasi personal yang persisten di server (format bawaan Laravel).
+| Kolom | Tipe | Catatan |
+|---|---|---|
+| id | UUID | primary key |
+| type | varchar | class notifikasi |
+| notifiable_type, notifiable_id | morph | penerima; saat ini `User` |
+| data | text/json | judul, pesan, URL aman, id Objective/KR, prioritas |
+| read_at | timestamp? | null = belum dibaca |
+
+Notifikasi OKR dikirim sinkron ke channel `database`, jadi tidak membutuhkan queue worker. Staff membaca isinya lewat Layout global; notifikasi target omzet tidak menautkan ke `/okr` karena menu itu tetap tertutup untuk staff.
 
 ### `role_menu_access`
 Izin menu dinamis per peran (dikelola di halaman `/akses`).
@@ -124,6 +137,7 @@ Kuartal diturunkan, bukan disimpan: helper `App\Support\Quarter` memetakan tangg
 | quarter | tinyint | 1–4 |
 | title | varchar | kalimat tujuan (tak diukur langsung) |
 | description | text? | |
+| priority | json? | snapshot `{name,color}` untuk status `Urgent`/`Penting` |
 | position | int | urutan |
 | created_by | FK users? | |
 
@@ -139,8 +153,11 @@ Progress Objective = **rata-rata persen Key Result-nya, tiap KR dibatasi 100% du
 | target | decimal(20,2) | |
 | actual_manual | decimal(20,2)? | hanya saat `manual` |
 | unit | varchar | `angka`/`rupiah`/`persen` |
+| priority | json? | snapshot `{name,color}` untuk status `Urgent`/`Penting` |
 | owner_id | FK users? | PJ (nullOnDelete) |
 | created_by | FK users? | |
+
+Saat Objective dibuat dengan target omzet, `owner_id` dapat dipilih dari user aktif. PIC menerima notifikasi database. Saat KR sekaligus membentuk card eksekusi, `assigned_to` card juga menjadi `owner_id` KR dan menerima notifikasi bertaut langsung ke card Kanban.
 
 **Realisasi KR (`KeyResult::actual()`) — tak ada angka realisasi yang diketik untuk auto/kartu:**
 - `auto` → dihitung dari Insight/Pembukuan lewat `OkrMetrics::realisasi()` (satu kali per kuartal, dioper ke tiap KR — hindari N+1).

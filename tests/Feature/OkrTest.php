@@ -160,6 +160,194 @@ class OkrTest extends TestCase
         $this->assertSame($owner->id, KeyResult::first()->owner_id);
     }
 
+    /** Target omzet dapat ditulis sekali saat membuat Objective; server
+     *  membentuk KR auto yang mengambil realisasi dari Pembukuan. */
+    public function test_buat_objective_sekaligus_membuat_key_result_omzet(): void
+    {
+        $owner = $this->user();
+
+        $this->actingAs($owner)->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Bisnis tumbuh sehat',
+            'priority_name' => 'Urgent',
+            'omset_target' => 250_000_000,
+        ])->assertSessionHasNoErrors()
+            ->assertSessionHas('status', 'Objective dan target omzet ditambahkan.');
+
+        $objective = Objective::firstOrFail();
+        $kr = KeyResult::firstOrFail();
+
+        $this->assertSame($objective->id, $kr->objective_id);
+        $this->assertSame('Omzet kuartal', $kr->title);
+        $this->assertSame('auto', $kr->source);
+        $this->assertSame('omset', $kr->metric);
+        $this->assertSame('250000000.00', $kr->target);
+        $this->assertSame('rupiah', $kr->unit);
+        $this->assertSame($objective->priority, $kr->priority);
+        $this->assertSame($owner->id, $kr->created_by);
+    }
+
+    /** PIC omzet boleh berupa staff. Penugasannya harus tersimpan pada KR dan
+     *  notifikasi database harus terlihat dari halaman yang memang boleh dibuka
+     *  staff—bukan mengarahkan staff ke /okr yang akan 403. */
+    public function test_pic_staff_menerima_notifikasi_target_omzet_dari_server(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+
+        $this->actingAs($owner)->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Omzet bertumbuh',
+            'priority_name' => 'Urgent',
+            'omset_target' => 125_000_000,
+            'omset_owner_id' => $staff->id,
+        ])->assertSessionHasNoErrors();
+
+        $keyResult = KeyResult::firstOrFail();
+        $this->assertSame($staff->id, $keyResult->owner_id);
+
+        $notification = $staff->notifications()->firstOrFail();
+        $this->assertSame('Target omzet baru', $notification->data['title']);
+        $this->assertStringContainsString('Rp 125.000.000', $notification->data['message']);
+        $this->assertNull($notification->data['url']);
+        $this->assertSame($keyResult->id, $notification->data['key_result_id']);
+
+        // Shared prop berasal dari database server dan tersedia di Layout global.
+        $this->actingAs($staff)->get('/kpi')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('unreadNotificationsCount', 1)
+                ->where('serverNotifications.0.id', $notification->id)
+                ->where('serverNotifications.0.title', 'Target omzet baru')
+                ->where('serverNotifications.0.read_at', null)
+            );
+
+        // User lain tidak boleh menandai notifikasi staff sebagai sudah dibaca.
+        $this->actingAs($owner)
+            ->patch("/notifications/{$notification->id}/read")
+            ->assertForbidden();
+        $this->assertNull($notification->fresh()->read_at);
+
+        $this->actingAs($staff)
+            ->patch("/notifications/{$notification->id}/read")
+            ->assertRedirect();
+        $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_staff_dapat_menandai_semua_notifikasinya_sudah_dibaca(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+
+        foreach (['Target A', 'Target B'] as $title) {
+            $this->actingAs($owner)->post('/okr/objectives', [
+                'year' => 2026,
+                'quarter' => 3,
+                'title' => $title,
+                'omset_target' => 10_000_000,
+                'omset_owner_id' => $staff->id,
+            ])->assertSessionHasNoErrors();
+        }
+
+        $this->assertSame(2, $staff->unreadNotifications()->count());
+
+        $this->actingAs($staff)
+            ->patch('/notifications/read-all')
+            ->assertSessionHas('status', 'Semua notifikasi sudah dibaca.');
+
+        $this->assertSame(0, $staff->unreadNotifications()->count());
+    }
+
+    /** Nilai omzet tidak sah harus menolak seluruh request sebelum Objective
+     *  tersimpan, bukan meninggalkan goal tanpa KR. */
+    public function test_target_omzet_objective_tidak_boleh_negatif(): void
+    {
+        $this->actingAs($this->user())->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Bisnis tumbuh sehat',
+            'omset_target' => -1,
+        ])->assertSessionHasErrors('omset_target');
+
+        $this->assertDatabaseCount('objectives', 0);
+        $this->assertDatabaseCount('key_results', 0);
+    }
+
+    /** Omzet baru hanya lewat pembuatan Objective agar satu langkah membentuk
+     *  goal dan KR-nya; endpoint KR biasa tidak boleh membuat duplikat. */
+    public function test_key_result_omzet_baru_harus_dibuat_bersama_objective(): void
+    {
+        $objective = $this->objective();
+
+        $this->actingAs($this->user())->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Omzet lain',
+            'source' => 'auto',
+            'metric' => 'omset',
+            'target' => 100_000_000,
+            'unit' => 'rupiah',
+        ])->assertSessionHasErrors('metric');
+
+        $this->assertDatabaseCount('key_results', 0);
+    }
+
+    /** Urgent/Penting memakai preset label Kanban yang sama, tetapi snapshot-nya
+     *  disimpan pada item OKR supaya tetap tampil bila preset kelak berubah. */
+    public function test_status_urgent_dan_penting_tersimpan_dan_tampil_di_okr(): void
+    {
+        $owner = $this->user();
+
+        $this->actingAs($owner)->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Pertumbuhan prioritas',
+            'priority_name' => 'Urgent',
+        ])->assertSessionHasNoErrors();
+
+        $objective = Objective::firstOrFail();
+        $this->assertSame(
+            ['name' => 'Urgent', 'color' => 'bg-red-500'],
+            $objective->priority
+        );
+
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Capai target utama',
+            'source' => 'manual',
+            'target' => 10,
+            'unit' => 'angka',
+            'priority_name' => 'Penting',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(
+            ['name' => 'Penting', 'color' => 'bg-amber-500'],
+            KeyResult::firstOrFail()->priority
+        );
+
+        $this->actingAs($owner)->get('/okr?q=2026-Q3')
+            ->assertInertia(fn ($page) => $page
+                ->where('priorities.0.name', 'Urgent')
+                ->where('priorities.1.name', 'Penting')
+                ->where('objectives.0.priority.name', 'Urgent')
+                ->where('objectives.0.key_results.0.priority.name', 'Penting')
+            );
+    }
+
+    /** Browser tidak boleh menyisipkan nama/warna status sendiri. */
+    public function test_status_okr_di_luar_urgent_dan_penting_ditolak(): void
+    {
+        $this->actingAs($this->user())->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Status tidak sah',
+            'priority_name' => 'Review',
+        ])->assertSessionHasErrors('priority_name');
+
+        $this->assertDatabaseCount('objectives', 0);
+    }
+
     /** Menghapus Objective ikut menghapus Key Result-nya — KR tanpa induk tak
      *  punya arti apa pun (cascadeOnDelete di skema). */
     public function test_hapus_objective_menghapus_key_result(): void
@@ -370,9 +558,19 @@ class OkrTest extends TestCase
         $this->assertNotNull($card);
         $this->assertSame(KeyResult::first()->id, $card->key_result_id);
         $this->assertSame($staff->id, $card->assigned_to);
+        $this->assertSame($staff->id, KeyResult::first()->owner_id);
         $this->assertSame($initialColumn, $card->progress);
         $this->assertSame('Konversi prospek sampai menjadi klien aktif.', $card->description);
         $this->assertSame('Penting', $card->labels[0]['name']);
+
+        // Penugasan bukan hanya reminder deadline: staff langsung mendapat
+        // notifikasi persisten dengan tautan ke card Kanban yang dapat ia buka.
+        $notification = $staff->notifications()->firstOrFail();
+        $this->assertSame('Pekerjaan OKR baru', $notification->data['title']);
+        $this->assertSame(route('pipelines.kanban', [
+            'category' => $card->category,
+            'card' => $card->id,
+        ]), $notification->data['url']);
 
         $this->actingAs($owner)->post("/pipelines/{$card->id}/tasks", [
             'title' => 'Hubungi prospek',

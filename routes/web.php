@@ -14,6 +14,7 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KpiController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
@@ -41,6 +42,13 @@ Route::middleware('throttle:6,1')->group(function () {
 });
 
 Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->homeRoute() : 'login'));
+
+// Notifikasi personal bukan menu dan harus dapat dipakai semua role, termasuk
+// staff yang menerima penugasan OKR tetapi tidak boleh membuka halaman OKR.
+Route::middleware('auth')->group(function () {
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+});
 
 // Pipeline (butuh login) + batasan akses per role
 Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
