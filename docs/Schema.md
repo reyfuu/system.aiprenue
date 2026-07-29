@@ -54,7 +54,7 @@ Riwayat notifikasi personal yang persisten di server (format bawaan Laravel).
 | data | text/json | judul, pesan, URL aman, id Objective/KR, prioritas |
 | read_at | timestamp? | null = belum dibaca |
 
-Notifikasi OKR dikirim sinkron ke channel `database`, jadi tidak membutuhkan queue worker. Staff membaca isinya lewat Layout global; notifikasi target omzet tidak menautkan ke `/okr` karena menu itu tetap tertutup untuk staff.
+Notifikasi OKR dikirim sinkron ke channel `database`, jadi tidak membutuhkan queue worker. Staff membaca isinya lewat Layout global; notifikasi target omzet tidak menautkan ke `/okr` karena menu itu tetap tertutup untuk staff. `data.kind` membedakan jenisnya: `okr_assignment` (penugasan), `okr_perubahan` (koreksi PIC/target/deadline), `okr_selesai` (laporan kartu selesai ke pemilik OKR), `okr_deadline` (pengingat deadline). Pengingat deadline dibuat malas saat penerima membuka halaman — maks. 1/kartu/hari, dedup lewat `data.pipeline_id` — sehingga tidak membutuhkan scheduler/cron di shared hosting.
 
 ### `role_menu_access`
 Izin menu dinamis per peran (dikelola di halaman `/akses`).

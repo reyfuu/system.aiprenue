@@ -591,6 +591,13 @@ class OkrTest extends TestCase
         $this->assertNotNull($task->fresh()->completed_at);
         $this->assertTrue((bool) $card->fresh()->done);
         $this->assertNotNull($card->fresh()->completed_at);
+
+        // Penyelesaian lewat sync tugas ikut melaporkan ke pemilik OKR;
+        // pelaku (staff) tak menerima laporan atas pekerjaannya sendiri.
+        $laporan = $owner->notifications()->firstOrFail();
+        $this->assertSame('okr_selesai', $laporan->data['kind']);
+        $this->assertSame('Pekerjaan OKR selesai', $laporan->data['title']);
+        $this->assertSame(1, $staff->notifications()->count());
     }
 
     /** Langkah dibuat DARI halaman OKR: kartu todolist baru langsung tertaut.
@@ -1075,5 +1082,282 @@ class OkrTest extends TestCase
 
         $this->actingAs($this->user())->get('/pipelines/kanban?category=proyek')
             ->assertInertia(fn ($page) => $page->where('quarterStats.percent', null));
+    }
+
+    // ------------------------------------------------- notifikasi lanjutan
+
+    /** Helper: KR + card utama di todolist yang ditugaskan ke $pic. */
+    private function krDenganCard(User $pic, array $override = []): array
+    {
+        $objective = $this->objective();
+        $initialColumn = BoardColumn::where('board_key', 'todolist')->orderBy('position')->value('key');
+
+        $this->post('/okr/key-results', array_merge([
+            'objective_id' => $objective->id,
+            'title' => 'Dapatkan 20 klien',
+            'source' => 'manual',
+            'target' => 20,
+            'unit' => 'angka',
+            'kanban_board_key' => 'todolist',
+            'kanban_column_key' => $initialColumn,
+            'assigned_to' => $pic->id,
+        ], $override))->assertSessionHasNoErrors();
+
+        return [KeyResult::firstOrFail(), Pipeline::firstWhere('is_kr_master', true)];
+    }
+
+    /** KR tanpa card eksekusi: penanggung jawab tetap diberi tahu, tanpa
+     *  tautan Kanban — pekerjaannya memang tak punya card. */
+    public function test_kr_tanpa_card_tetap_memberi_tahu_penanggung_jawab(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $objective = $this->objective();
+
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Susun playbook penjualan',
+            'source' => 'manual',
+            'target' => 1,
+            'unit' => 'angka',
+            'assigned_to' => $staff->id,
+        ])->assertSessionHasNoErrors();
+
+        $kr = KeyResult::firstOrFail();
+        $this->assertSame($staff->id, $kr->owner_id);
+        $this->assertDatabaseCount('pipelines', 0);   // tak ada card eksekusi
+
+        $notification = $staff->notifications()->firstOrFail();
+        $this->assertSame('Penanggung jawab KR baru', $notification->data['title']);
+        $this->assertNull($notification->data['url']);
+        $this->assertSame($kr->id, $notification->data['key_result_id']);
+    }
+
+    /** Menugaskan diri sendiri = tak ada notifikasi. Kabar untuk keputusan
+     *  yang baru saja diambil sendiri hanyalah derau di lonceng. */
+    public function test_kr_tanpa_pic_tak_mengirim_notifikasi_ke_pembuat(): void
+    {
+        $owner = $this->user();
+        $objective = $this->objective();
+
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Riset pasar',
+            'source' => 'manual',
+            'target' => 1,
+            'unit' => 'angka',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($owner->id, KeyResult::firstOrFail()->owner_id);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    /** Pemilik OKR menerima laporan saat PIC menandai card selesai — dan tak
+     *  ada laporan kedua saat tombol yang sama ditekan ulang. */
+    public function test_pemilik_okr_menerima_laporan_saat_card_tertaut_selesai(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $this->actingAs($owner);
+        [, $card] = $this->krDenganCard($staff);
+
+        $this->actingAs($staff)->patch("/pipelines/{$card->id}/done", ['done' => true])->assertOk();
+
+        $laporan = $owner->notifications()->firstOrFail();
+        $this->assertSame('okr_selesai', $laporan->data['kind']);
+        $this->assertSame('Pekerjaan OKR selesai', $laporan->data['title']);
+        $this->assertStringContainsString($staff->name, $laporan->data['message']);
+        // Owner boleh membuka /okr → tautan disertakan.
+        $this->assertSame(route('okr.index'), $laporan->data['url']);
+
+        // Staff hanya punya notifikasi penugasan; tak ada laporan untuk diri sendiri.
+        $this->assertSame(1, $staff->notifications()->count());
+
+        // Menekan ulang tombol selesai bukan transisi baru → tak ada laporan kedua.
+        $this->actingAs($staff)->patch("/pipelines/{$card->id}/done", ['done' => true])->assertOk();
+        $this->assertSame(1, $owner->notifications()->count());
+    }
+
+    /** Jalur paling lazim menyelesaikan pekerjaan adalah drag ke kolom
+     *  terakhir — laporannya harus sama seperti lewat tombol selesai. */
+    public function test_laporan_selesai_juga_terkirim_lewat_drag(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $this->actingAs($owner);
+        [, $card] = $this->krDenganCard($staff);
+
+        $kolomTerakhir = BoardColumn::where('board_key', 'todolist')->orderBy('position')->get()->last()->key;
+        $this->actingAs($staff)->patch('/pipelines/reorder', [
+            'progress' => $kolomTerakhir,
+            'ids' => [$card->id],
+        ])->assertOk();
+
+        $this->assertNotNull($card->fresh()->completed_at);
+        $this->assertSame('okr_selesai', $owner->notifications()->firstOrFail()->data['kind']);
+    }
+
+    /** Koreksi PIC card utama dari edit KR: PIC lama diberi tahu dialihkan,
+     *  PIC baru menerima penugasan, dan owner KR mengikuti PIC baru. */
+    public function test_mengubah_pic_card_utama_memberi_tahu_pic_lama_dan_baru(): void
+    {
+        $owner = $this->user();
+        $staffLama = $this->user('staff');
+        $staffBaru = $this->user('staff');
+        $this->actingAs($owner);
+        [$kr, $card] = $this->krDenganCard($staffLama);
+
+        $this->put("/okr/key-results/{$kr->id}", [
+            'title' => 'Dapatkan 20 klien',
+            'source' => 'manual',
+            'target' => 20,
+            'unit' => 'angka',
+            'assigned_to' => $staffBaru->id,
+            'deadline' => '2026-09-30',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($staffBaru->id, $card->fresh()->assigned_to);
+        $this->assertSame($staffBaru->id, $kr->fresh()->owner_id);
+
+        // Notifikasi dicari per judul, bukan latest('id'): primary key tabel
+        // notifications adalah UUID, jadi urutan id bukan urutan waktu.
+        $alih = $staffLama->notifications()->get()
+            ->first(fn ($n) => ($n->data['title'] ?? null) === 'Penugasan OKR dialihkan');
+        $this->assertNotNull($alih);
+        $this->assertSame('okr_perubahan', $alih->data['kind']);
+        $this->assertNull($alih->data['url']);   // bukan lagi miliknya
+
+        $baru = $staffBaru->notifications()->firstOrFail();
+        $this->assertSame('Pekerjaan OKR baru', $baru->data['title']);
+        $this->assertSame(route('pipelines.kanban', [
+            'category' => $card->category,
+            'card' => $card->id,
+        ]), $baru->data['url']);
+    }
+
+    /** PIC tetap tetapi deadline diganti → PIC diberi tahu tanggal barunya. */
+    public function test_mengubah_deadline_card_utama_memberi_tahu_pic(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $this->actingAs($owner);
+        [$kr, $card] = $this->krDenganCard($staff, ['deadline' => '2026-09-30']);
+
+        $this->put("/okr/key-results/{$kr->id}", [
+            'title' => 'Dapatkan 20 klien',
+            'source' => 'manual',
+            'target' => 20,
+            'unit' => 'angka',
+            'assigned_to' => $staff->id,
+            'deadline' => '2026-09-15',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('2026-09-15', $card->fresh()->deadline->toDateString());
+        $notif = $staff->notifications()->get()
+            ->first(fn ($n) => ($n->data['title'] ?? null) === 'Deadline OKR berubah');
+        $this->assertNotNull($notif);
+        $this->assertStringContainsString('2026-09-15', $notif->data['message']);
+    }
+
+    /** Koreksi target omzet lewat edit Objective: PIC tetap → kabar angka
+     *  baru; PIC diganti → lama dialihkan, baru menerima penugasan. */
+    public function test_mengubah_target_dan_pic_omzet_memberi_tahu_pic_terkait(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $staff2 = $this->user('staff');
+
+        $this->actingAs($owner)->post('/okr/objectives', [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Omzet bertumbuh',
+            'omset_target' => 125_000_000, 'omset_owner_id' => $staff->id,
+        ])->assertSessionHasNoErrors();
+        $objective = Objective::firstOrFail();
+        $this->assertSame(1, $staff->notifications()->count());   // penugasan awal
+
+        // Target berubah, PIC tetap.
+        $this->put("/okr/objectives/{$objective->id}", [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Omzet bertumbuh',
+            'omset_target' => 150_000_000, 'omset_owner_id' => $staff->id,
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('150000000.00', $objective->fresh()->omset_target);
+        $notif = $staff->notifications()->get()
+            ->first(fn ($n) => ($n->data['title'] ?? null) === 'Target omzet berubah');
+        $this->assertNotNull($notif);
+        $this->assertStringContainsString('Rp 150.000.000', $notif->data['message']);
+
+        // PIC diganti.
+        $this->put("/okr/objectives/{$objective->id}", [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Omzet bertumbuh',
+            'omset_target' => 150_000_000, 'omset_owner_id' => $staff2->id,
+        ])->assertSessionHasNoErrors();
+        $alih = $staff->notifications()->get()
+            ->first(fn ($n) => ($n->data['title'] ?? null) === 'Penugasan omzet berubah');
+        $this->assertNotNull($alih);
+        $this->assertStringContainsString($staff2->name, $alih->data['message']);
+        $this->assertSame('Target omzet baru', $staff2->notifications()->firstOrFail()->data['title']);
+    }
+
+    /** Klien lama yang belum mengirim field omzet tak boleh menghapus target
+     *  yang sudah ada hanya karena mengedit judul Objective. */
+    public function test_edit_objective_tanpa_field_omzet_tak_menghapus_target(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+
+        $this->actingAs($owner)->post('/okr/objectives', [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Omzet bertumbuh',
+            'omset_target' => 125_000_000, 'omset_owner_id' => $staff->id,
+        ])->assertSessionHasNoErrors();
+        $objective = Objective::firstOrFail();
+
+        $this->put("/okr/objectives/{$objective->id}", [
+            'year' => 2026, 'quarter' => 3, 'title' => 'Judul dikoreksi',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('125000000.00', $objective->fresh()->omset_target);
+        $this->assertSame($staff->id, $objective->fresh()->omset_owner_id);
+        $this->assertSame(1, $staff->notifications()->count());   // tak ada kabar baru
+    }
+
+    /** Pengingat deadline kartu OKR dibuat saat PIC membuka halaman — maksimal
+     *  satu per kartu per hari, jadi kunjungan ulang tak menumpuknya. */
+    public function test_reminder_deadline_okr_dibuat_sekali_sehari(): void
+    {
+        $owner = $this->user();
+        $staff = $this->user('staff');
+        $this->actingAs($owner);
+        [, $card] = $this->krDenganCard($staff, ['deadline' => now()->addDays(2)->toDateString()]);
+
+        $this->actingAs($staff)->get('/kpi')->assertOk();
+
+        $reminders = fn () => $staff->notifications()->get()
+            ->filter(fn ($n) => ($n->data['kind'] ?? null) === 'okr_deadline');
+
+        $this->assertCount(1, $reminders());
+        $first = $reminders()->first();
+        $this->assertSame('Pengingat deadline OKR', $first->data['title']);
+        $this->assertStringContainsString('tinggal 2 hari', $first->data['message']);
+        $this->assertSame($card->id, $first->data['pipeline_id']);
+        $this->assertSame(route('pipelines.kanban', [
+            'category' => $card->category,
+            'card' => $card->id,
+        ]), $first->data['url']);
+
+        // Kunjungan ulang di hari yang sama tak menambah pengingat.
+        $this->actingAs($staff)->get('/kpi')->assertOk();
+        $this->assertCount(1, $reminders());
+    }
+
+    /** Kartu yang bukan milik OKR tak menghasilkan pengingat deadline OKR —
+     *  reminder-nya sudah ditangani workReminders yang dihitung langsung. */
+    public function test_kartu_tanpa_kr_tak_dapat_pengingat_deadline_okr(): void
+    {
+        $staff = $this->user('staff');
+        $this->board();
+        $this->kartu(['assigned_to' => $staff->id, 'deadline' => now()->addDay()->toDateString()]);
+
+        $this->actingAs($staff)->get('/kpi')->assertOk();
+
+        $this->assertDatabaseCount('notifications', 0);
     }
 }

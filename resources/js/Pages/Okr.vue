@@ -189,10 +189,11 @@ const bukaObjective = (o = null) => {
     objForm.title = o?.title ?? '';
     objForm.description = o?.description ?? '';
     objForm.priority_name = o?.priority?.name ?? '';
-    // Target omzet hanya dipakai saat membuat Objective baru. Mengosongkannya
-    // saat modal dibuka mencegah nilai dari percobaan sebelumnya ikut terkirim.
-    objForm.omset_target = '';
-    objForm.omset_owner_id = '';
+    // Target omzet bisa dikoreksi lewat edit Objective; server memberi tahu
+    // PIC lama/baru bila nilainya berubah. Saat membuat baru keduanya kosong
+    // agar nilai percobaan sebelumnya tak ikut terkirim.
+    objForm.omset_target = o?.omset_target || '';
+    objForm.omset_owner_id = o?.omset_owner_id ?? '';
     objForm.clearErrors();
 };
 
@@ -213,6 +214,9 @@ const hapusObjective = (o) => {
 const krModal = ref(null);           // { mode: 'baru'|'edit', objective, kr? }
 const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', priority_name: '', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
 const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
+// Card utama KR yang sedang diedit (bila ada) — PIC & deadlinenya boleh
+// dikoreksi dari modal edit; server memberi tahu PIC lama/baru bila berubah.
+const masterCard = computed(() => krModal.value?.kr?.kartu?.find((k) => k.is_master) ?? null);
 
 watch(() => krForm.kanban_board_key, () => {
     if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
@@ -240,8 +244,12 @@ const bukaKr = (objective, kr = null) => {
     krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
     krForm.card_category = '';
     krForm.card_description = '';
-    krForm.assigned_to = '';
-    krForm.deadline = '';
+    // Mode edit: isi PIC & deadline dari card utama yang sudah ada supaya
+    // mengubahnya men-trigger notifikasi perubahan di server. Mode baru
+    // keduanya dimulai kosong.
+    const master = kr?.kartu?.find((k) => k.is_master) ?? null;
+    krForm.assigned_to = master?.assigned_to ?? '';
+    krForm.deadline = master?.deadline ?? '';
     krForm.clearErrors();
 };
 
@@ -640,8 +648,10 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </select>
                     <p v-if="objForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ objForm.errors.priority_name }}</p>
                 </div>
-                <!-- Target omzet menjadi atribut Objective, bukan Key Result. -->
-                <div v-if="objModal === 'baru'" class="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+                <!-- Target omzet menjadi atribut Objective, bukan Key Result.
+                     Ditampilkan juga di mode edit: mengubah target/PIC di sini
+                     memicu notifikasi perubahan ke PIC lama & baru. -->
+                <div class="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Target omzet kuartal <span class="font-normal text-slate-400">(opsional)</span></label>
                     <div class="relative">
                         <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
@@ -791,6 +801,26 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                         <textarea v-model="krForm.card_description" rows="3" placeholder="Jelaskan hasil yang harus dicapai dan batasan pekerjaannya"
                             class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm resize-y"></textarea>
                         <p v-if="krForm.errors.card_description" class="text-xs text-red-600 mt-1">{{ krForm.errors.card_description }}</p>
+                    </div>
+                </div>
+
+                <!-- Mode edit: board/kolom/deskripsi card utama tak diubah dari
+                     sini (itu urusan Kanban), tetapi PIC & deadline-nya boleh
+                     dikoreksi — server memberi tahu PIC lama/baru bila berubah.
+                     Hanya tampil bila KR ini memang punya card utama. -->
+                <div v-if="krModal.mode === 'edit' && masterCard" class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">PIC card utama</label>
+                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— belum ditugaskan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.assigned_to" class="text-xs text-red-600 mt-1">{{ krForm.errors.assigned_to }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deadline eksekusi</label>
+                        <input v-model="krForm.deadline" type="date" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                        <p v-if="krForm.errors.deadline" class="text-xs text-red-600 mt-1">{{ krForm.errors.deadline }}</p>
                     </div>
                 </div>
 

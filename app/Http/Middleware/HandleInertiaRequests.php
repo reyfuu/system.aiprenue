@@ -4,6 +4,8 @@ namespace App\Http\Middleware;
 
 use App\Models\Category;
 use App\Models\Pipeline;
+use App\Models\User;
+use App\Support\OkrNotifications;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -121,21 +123,7 @@ class HandleInertiaRequests extends Middleware
             // Riwayat notifikasi dari database server. Berbeda dari
             // workReminders (hasil hitung deadline), item ini tetap ada sampai
             // dibaca dan muncul untuk semua role di Layout global.
-            'serverNotifications' => fn () => $user
-                ? $user->notifications()
-                    ->latest()
-                    ->limit(20)
-                    ->get()
-                    ->map(fn ($notification) => [
-                        'id' => $notification->id,
-                        'title' => $notification->data['title'] ?? 'Notifikasi',
-                        'message' => $notification->data['message'] ?? '',
-                        'url' => $notification->data['url'] ?? null,
-                        'priority' => $notification->data['priority'] ?? null,
-                        'read_at' => $notification->read_at?->toIso8601String(),
-                        'created_at' => $notification->created_at?->toIso8601String(),
-                    ])
-                : [],
+            'serverNotifications' => fn () => $user ? $this->notifikasiServer($user) : [],
             'unreadNotificationsCount' => fn () => $user
                 ? $user->unreadNotifications()->count()
                 : 0,
@@ -143,5 +131,35 @@ class HandleInertiaRequests extends Middleware
             // True saat owner sedang "masuk sebagai" peran lain → tampilkan bilah "Kembali".
             'impersonating' => $request->session()->has('impersonator_id'),
         ];
+    }
+
+    /**
+     * Riwayat notifikasi database untuk lonceng di Layout global.
+     *
+     *  Pengingat deadline kartu OKR dibuat MALAS tepat sebelum membaca
+     *  (maks. 1/kartu/hari, lihat OkrNotifications::ingatkanDeadline):
+     *  shared hosting produksi tak menjalankan scheduler, jadi kunjungan
+     *  halamanlah pemicunya — dan karena dipicu duluan, pengingat baru
+     *  langsung terlihat pada respons yang sama.
+     *
+     *  @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function notifikasiServer(User $user)
+    {
+        OkrNotifications::ingatkanDeadline($user);
+
+        return $user->notifications()
+            ->latest()
+            ->limit(20)
+            ->get()
+            ->map(fn ($notification) => [
+                'id' => $notification->id,
+                'title' => $notification->data['title'] ?? 'Notifikasi',
+                'message' => $notification->data['message'] ?? '',
+                'url' => $notification->data['url'] ?? null,
+                'priority' => $notification->data['priority'] ?? null,
+                'read_at' => $notification->read_at?->toIso8601String(),
+                'created_at' => $notification->created_at?->toIso8601String(),
+            ]);
     }
 }

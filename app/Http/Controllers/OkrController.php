@@ -12,6 +12,7 @@ use App\Models\Pipeline;
 use App\Models\User;
 use App\Notifications\OkrAssignmentNotification;
 use App\Support\OkrMetrics;
+use App\Support\OkrNotifications;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -68,7 +69,9 @@ class OkrController extends Controller
         $kartuPerKr = Pipeline::whereIn('key_result_id', $krKartuIds)
             ->with('assignee:id,name')
             ->orderBy('position')->orderBy('id')
-            ->get(['id', 'key_result_id', 'category', 'assigned_to', 'endorse', 'progress', 'deadline', 'completed_at'])
+            // is_kr_master WAJIB ikut terpilih: Vue mencari card utama lewat
+            // flag ini; tanpanya semua kartu terbaca bukan master.
+            ->get(['id', 'key_result_id', 'category', 'assigned_to', 'endorse', 'progress', 'deadline', 'completed_at', 'is_kr_master'])
             ->groupBy('key_result_id');
         $boardKeys = $daftar->flatMap->keyResults->where('source', 'kartu')
             ->pluck('board_key')->filter()->unique()->values();
@@ -106,6 +109,9 @@ class OkrController extends Controller
                 'omset_percent' => $omsetTarget > 0
                     ? round($omsetActual / $omsetTarget * 100, 1)
                     : null,
+                // id ikut dikirim (bukan cuma nama) supaya form edit bisa
+                // mengisi pilihan PIC yang tersimpan.
+                'omset_owner_id' => $o->omset_owner_id,
                 'omset_owner_name' => $o->omsetOwner?->name,
                 'progress' => $o->progress($realisasi),
                 'created_by_name' => $o->creator?->name,
@@ -139,6 +145,10 @@ class OkrController extends Controller
                             'board' => $p->category,
                             'is_master' => (bool) $p->is_kr_master,
                             'pic' => $p->assignee?->name,
+                            // id & tanggal mentah untuk mengisi form edit KR;
+                            // 'pic' di atas hanya cukup untuk ditampilkan.
+                            'assigned_to' => $p->assigned_to,
+                            'deadline' => $p->deadline?->toDateString(),
                             'progress' => $p->progress,
                             'selesai' => $p->completed_at !== null,
                             'ketepatan' => $p->ketepatan(),
@@ -370,7 +380,7 @@ class OkrController extends Controller
             ->where('quarter', $data['quarter'])->max('position') + 1;
 
         // Objective dan notifikasinya harus utuh dalam satu transaksi.
-        DB::transaction(function () use ($data, $omsetTarget, $omsetOwnerId): void {
+        DB::transaction(function () use ($data, $omsetTarget, $omsetOwnerId, $request): void {
             $objective = Objective::create($data);
 
             if ($omsetTarget <= 0) {
@@ -381,8 +391,11 @@ class OkrController extends Controller
             // tetapi tetap perlu tahu target yang menjadi tanggung jawabnya.
             // Karena itu detail penting masuk ke notifikasi server tanpa tautan
             // ke /okr yang akan berakhir 403 untuk role staff.
-            if ($recipient = User::find($omsetOwnerId)) {
-                $recipient->notify(new OkrAssignmentNotification(
+            // kirim() melewatkan bila PIC-nya adalah pembuat Objective sendiri.
+            OkrNotifications::kirim(
+                User::find($omsetOwnerId),
+                $request->user()->id,
+                new OkrAssignmentNotification(
                     title: 'Target omzet baru',
                     message: sprintf(
                         'Anda ditetapkan sebagai PIC target omzet Rp %s untuk “%s” (%s).',
@@ -394,8 +407,8 @@ class OkrController extends Controller
                     objectiveId: $objective->id,
                     keyResultId: null,
                     priority: $objective->priority,
-                ));
-            }
+                )
+            );
         });
 
         return back()->with(
@@ -408,9 +421,120 @@ class OkrController extends Controller
 
     public function updateObjective(Request $request, Objective $objective)
     {
-        $objective->update($this->validasiObjective($request));
+        // Field omzet divalidasi HANYA bila ikut dikirim. Klien lama yang belum
+        // mengenalnya tak boleh diam-diam menghapus target yang sudah ada
+        // hanya karena field-nya absen dari request.
+        $denganOmset = $request->has('omset_target') || $request->has('omset_owner_id');
+        $data = $this->validasiObjective($request, $denganOmset);
+
+        if ($denganOmset) {
+            $omsetTarget = (float) ($data['omset_target'] ?? 0);
+            $data['omset_target'] = $omsetTarget > 0 ? $omsetTarget : null;
+            $data['omset_owner_id'] = $omsetTarget > 0
+                ? (isset($data['omset_owner_id'])
+                    ? (int) $data['omset_owner_id']
+                    : User::where('role', 'owner')->orderBy('id')->value('id'))
+                : null;
+        }
+
+        // Nilai lama dicatat SEBELUM update — pembanding untuk memutuskan
+        // notifikasi perubahan apa (bila ada) yang layak dikirim.
+        $lama = [
+            'target' => (float) ($objective->omset_target ?? 0),
+            'pic' => $objective->omset_owner_id,
+        ];
+
+        $objective->update($data);
+
+        if ($denganOmset) {
+            $this->notifikasiPerubahanOmset($objective, $lama, $request->user()->id);
+        }
 
         return back()->with('status', 'Objective diperbarui.');
+    }
+
+    /**
+     * Kabari PIC bila penugasan/target omzet berubah lewat edit Objective.
+     *
+     *  Tiga kejadian yang layak dikabari: PIC diganti (PIC lama diberi tahu
+     *  dialihkan/dicabut, PIC baru menerima penugasan), atau PIC tetap tetapi
+     *  angka targetnya berubah. Tak ada perubahan = tak ada notifikasi.
+     */
+    private function notifikasiPerubahanOmset(Objective $objective, array $lama, int $pelakuId): void
+    {
+        $target = (float) ($objective->omset_target ?? 0);
+        $picBaru = $objective->omset_owner_id;
+
+        if ($target === $lama['target'] && (int) $picBaru === (int) $lama['pic']) {
+            return;
+        }
+
+        if ((int) $picBaru !== (int) $lama['pic']) {
+            // PIC lama: penugasannya dialihkan ke orang lain, atau dicabut
+            // sama sekali bila target omzet ikut dihapus.
+            OkrNotifications::kirim(
+                User::find($lama['pic']),
+                $pelakuId,
+                new OkrAssignmentNotification(
+                    title: 'Penugasan omzet berubah',
+                    message: $picBaru
+                        ? sprintf(
+                            'Penugasan target omzet “%s” dialihkan ke %s.',
+                            $objective->title,
+                            User::find($picBaru)?->name ?? 'orang lain',
+                        )
+                        : sprintf('Penugasan target omzet “%s” dicabut.', $objective->title),
+                    url: null,
+                    objectiveId: $objective->id,
+                    keyResultId: null,
+                    priority: $objective->priority,
+                    kind: 'okr_perubahan',
+                )
+            );
+
+            // PIC baru menerima kabar penugasan dengan isi yang sama seperti
+            // saat Objective dibuat — baginya ini memang penugasan baru.
+            if ($picBaru) {
+                OkrNotifications::kirim(
+                    User::find($picBaru),
+                    $pelakuId,
+                    new OkrAssignmentNotification(
+                        title: 'Target omzet baru',
+                        message: sprintf(
+                            'Anda ditetapkan sebagai PIC target omzet Rp %s untuk “%s” (%s).',
+                            number_format($target, 0, ',', '.'),
+                            $objective->title,
+                            Quarter::label($objective->year, $objective->quarter),
+                        ),
+                        url: null,
+                        objectiveId: $objective->id,
+                        keyResultId: null,
+                        priority: $objective->priority,
+                    )
+                );
+            }
+
+            return;
+        }
+
+        // PIC tetap, angkanya yang berubah.
+        OkrNotifications::kirim(
+            User::find($picBaru),
+            $pelakuId,
+            new OkrAssignmentNotification(
+                title: 'Target omzet berubah',
+                message: sprintf(
+                    'Target omzet “%s” diubah menjadi Rp %s.',
+                    $objective->title,
+                    number_format($target, 0, ',', '.'),
+                ),
+                url: null,
+                objectiveId: $objective->id,
+                keyResultId: null,
+                priority: $objective->priority,
+                kind: 'okr_perubahan',
+            )
+        );
     }
 
     /** Key Result ikut terhapus lewat cascadeOnDelete di skema — tanpa
@@ -491,45 +615,56 @@ class OkrController extends Controller
         // KR, card eksekusi, dan notifikasi adalah satu paket. Bila salah
         // satunya gagal, transaksi membatalkan semuanya agar staff tidak
         // menerima notifikasi untuk pekerjaan yang sebenarnya tidak tersimpan.
-        DB::transaction(function () use ($data, $execution, $column, $label): void {
+        DB::transaction(function () use ($data, $execution, $column, $label, $request): void {
             $keyResult = KeyResult::create($data);
 
-            if (empty($execution['kanban_board_key'])) {
-                return;
+            $card = null;
+            if (! empty($execution['kanban_board_key'])) {
+                $card = Pipeline::create([
+                    'category' => $execution['kanban_board_key'],
+                    'account' => 'fk',
+                    'payment_status' => 'belum',
+                    'progress' => $column->key,
+                    'endorse' => $keyResult->title,
+                    'description' => $execution['card_description'] ?? null,
+                    'labels' => $label ? [['name' => $label->name, 'group' => $label->group, 'color' => $label->color]] : [],
+                    'assigned_to' => $execution['assigned_to'] ?? null,
+                    'deadline' => $execution['deadline'] ?? null,
+                    'key_result_id' => $keyResult->id,
+                    'is_kr_master' => true,
+                    'created_by' => $data['created_by'],
+                ]);
             }
 
-            $card = Pipeline::create([
-                'category' => $execution['kanban_board_key'],
-                'account' => 'fk',
-                'payment_status' => 'belum',
-                'progress' => $column->key,
-                'endorse' => $keyResult->title,
-                'description' => $execution['card_description'] ?? null,
-                'labels' => $label ? [['name' => $label->name, 'group' => $label->group, 'color' => $label->color]] : [],
-                'assigned_to' => $execution['assigned_to'] ?? null,
-                'deadline' => $execution['deadline'] ?? null,
-                'key_result_id' => $keyResult->id,
-                'is_kr_master' => true,
-                'created_by' => $data['created_by'],
-            ]);
-
-            if ($recipient = User::find($execution['assigned_to'] ?? null)) {
-                $recipient->notify(new OkrAssignmentNotification(
-                    title: 'Pekerjaan OKR baru',
-                    message: sprintf(
-                        'Anda ditugaskan pada “%s” untuk Objective “%s”.',
-                        $keyResult->title,
-                        $keyResult->objective()->value('title'),
-                    ),
-                    url: route('pipelines.kanban', [
+            // Penanggung jawab KR diberi tahu ADA atau TIDAK adanya card
+            // eksekusi — tanpa card pun penugasan KR tetap nyata. Tautan ke
+            // Kanban hanya disertakan bila card-nya ada.
+            OkrNotifications::kirim(
+                User::find($execution['assigned_to'] ?? $data['owner_id']),
+                $request->user()->id,
+                new OkrAssignmentNotification(
+                    title: $card ? 'Pekerjaan OKR baru' : 'Penanggung jawab KR baru',
+                    message: $card
+                        ? sprintf(
+                            'Anda ditugaskan pada “%s” untuk Objective “%s”.',
+                            $keyResult->title,
+                            $keyResult->objective()->value('title'),
+                        )
+                        : sprintf(
+                            'Anda menjadi penanggung jawab KR “%s” pada Objective “%s”.',
+                            $keyResult->title,
+                            $keyResult->objective()->value('title'),
+                        ),
+                    url: $card ? route('pipelines.kanban', [
                         'category' => $card->category,
                         'card' => $card->id,
-                    ]),
+                    ]) : null,
                     objectiveId: $keyResult->objective_id,
                     keyResultId: $keyResult->id,
                     priority: $keyResult->priority,
-                ));
-            }
+                    pipelineId: $card?->id,
+                )
+            );
         });
 
         return back()->with('status', 'Key Result ditambahkan.');
@@ -540,9 +675,143 @@ class OkrController extends Controller
         $data = $this->validasiKeyResult($request, $keyResult);
         unset($data['objective_id']);   // KR tak berpindah induk lewat form ini
 
-        $keyResult->update($data);
+        // PIC & deadline card utama ikut bisa dikoreksi dari form edit KR.
+        // Keduanya milik card eksekusi, bukan kolom KR, jadi divalidasi
+        // terpisah dari validasiKeyResult().
+        $execution = $request->validate([
+            'assigned_to' => 'nullable|exists:users,id',
+            'deadline' => 'nullable|date',
+        ]);
+
+        $master = $keyResult->cards()->where('is_kr_master', true)->first();
+        // Nilai lama dicatat SEBELUM update sebagai pembanding notifikasi.
+        $picLama = $master?->assigned_to;
+        $deadlineLama = $master?->deadline?->toDateString();
+
+        // KR dan card utamanya satu paket — keduanya tersimpan atau batal
+        // sama sekali, sama seperti saat pembuatan.
+        DB::transaction(function () use ($keyResult, $data, $master, $execution): void {
+            $keyResult->update($data);
+
+            if (! $master) {
+                return;
+            }
+
+            $master->update([
+                'assigned_to' => $execution['assigned_to'] ?? null,
+                'deadline' => $execution['deadline'] ?? null,
+            ]);
+
+            // Penanggung jawab KR mengikuti PIC card utama — invariant yang
+            // sama dengan saat KR dibuat. Hanya bila PIC diisi: mengosongkan
+            // PIC tak boleh menghapus pemilik KR yang sudah tercatat.
+            if (! empty($execution['assigned_to'])) {
+                $keyResult->update(['owner_id' => $execution['assigned_to']]);
+            }
+        });
+
+        if ($master) {
+            $this->notifikasiPerubahanEksekusi(
+                $keyResult,
+                $master->fresh(),
+                $picLama,
+                $deadlineLama,
+                $request->user()->id,
+            );
+        }
 
         return back()->with('status', 'Key Result diperbarui.');
+    }
+
+    /**
+     * Kabari PIC lama/baru bila penugasan atau deadline card utama berubah.
+     *
+     *  PIC diganti → PIC lama diberi tahu penugasannya dialihkan, PIC baru
+     *  menerima notifikasi penugasan (isinya sama seperti saat KR dibuat).
+     *  PIC tetap tetapi deadline berubah → PIC diberi tahu tanggal barunya.
+     *  Tak ada perubahan = tak ada notifikasi.
+     */
+    private function notifikasiPerubahanEksekusi(
+        KeyResult $keyResult,
+        Pipeline $card,
+        ?int $picLama,
+        ?string $deadlineLama,
+        int $pelakuId,
+    ): void {
+        $picBaru = $card->assigned_to;
+        $deadlineBaru = $card->deadline?->toDateString();
+
+        if ((int) $picBaru === (int) $picLama && $deadlineBaru === $deadlineLama) {
+            return;
+        }
+
+        $url = route('pipelines.kanban', [
+            'category' => $card->category,
+            'card' => $card->id,
+        ]);
+
+        if ((int) $picBaru !== (int) $picLama) {
+            // PIC lama: tanpa tautan — card itu bukan lagi tanggung jawabnya.
+            OkrNotifications::kirim(
+                User::find($picLama),
+                $pelakuId,
+                new OkrAssignmentNotification(
+                    title: 'Penugasan OKR dialihkan',
+                    message: sprintf(
+                        'Penugasan “%s” dialihkan ke %s.',
+                        $keyResult->title,
+                        $card->assignee?->name ?? 'orang lain',
+                    ),
+                    url: null,
+                    objectiveId: $keyResult->objective_id,
+                    keyResultId: $keyResult->id,
+                    priority: $keyResult->priority,
+                    kind: 'okr_perubahan',
+                    pipelineId: $card->id,
+                )
+            );
+
+            // PIC baru: baginya ini penugasan baru, lengkap dgn tautan card.
+            OkrNotifications::kirim(
+                $card->assignee,
+                $pelakuId,
+                new OkrAssignmentNotification(
+                    title: 'Pekerjaan OKR baru',
+                    message: sprintf(
+                        'Anda ditugaskan pada “%s” untuk Objective “%s”.',
+                        $keyResult->title,
+                        $keyResult->objective()->value('title'),
+                    ),
+                    url: $url,
+                    objectiveId: $keyResult->objective_id,
+                    keyResultId: $keyResult->id,
+                    priority: $keyResult->priority,
+                    pipelineId: $card->id,
+                )
+            );
+
+            return;
+        }
+
+        // PIC tetap, deadlinenya yang berubah.
+        OkrNotifications::kirim(
+            $card->assignee,
+            $pelakuId,
+            new OkrAssignmentNotification(
+                title: 'Deadline OKR berubah',
+                message: sprintf(
+                    'Deadline “%s” diubah menjadi %s.',
+                    $keyResult->title,
+                    $deadlineBaru ?? 'tanpa tanggal',
+                ),
+                url: $url,
+                objectiveId: $keyResult->objective_id,
+                keyResultId: $keyResult->id,
+                priority: $keyResult->priority,
+                kind: 'okr_perubahan',
+                pipelineId: $card->id,
+            )
+        );
     }
 
     public function destroyKeyResult(KeyResult $keyResult)

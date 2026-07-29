@@ -10,6 +10,7 @@ use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
+use App\Support\OkrNotifications;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -398,7 +399,8 @@ class PipelineController extends Controller
         $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
 
         // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
-        DB::transaction(function () use ($data, $cards, $keKolomSelesai) {
+        $baruSelesai = [];
+        DB::transaction(function () use ($data, $cards, $keKolomSelesai, &$baruSelesai) {
             foreach ($data['ids'] as $i => $id) {
                 $ubah = ['progress' => $data['progress'], 'position' => $i];
 
@@ -419,11 +421,23 @@ class PipelineController extends Controller
 
                 if ($kartu->progress !== $data['progress']) {
                     $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
+
+                    // Transisi null → terisi = pekerjaan baru saja rampung;
+                    // pemilik OKR-nya dilaporkan setelah transaksi beres.
+                    if ($kartu->completed_at === null && $ubah['completed_at'] !== null && $kartu->key_result_id) {
+                        $baruSelesai[] = $kartu;
+                    }
                 }
 
                 Pipeline::where('id', $id)->update($ubah);
             }
         });
+
+        // Di luar transaksi: notifikasi tak boleh ikut tergulung bila ada
+        // laporan yang gagal, dan isinya hanya sah bila datanya benar tersimpan.
+        foreach ($baruSelesai as $kartu) {
+            OkrNotifications::laporkanKartuSelesai($kartu, $request->user());
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -432,7 +446,14 @@ class PipelineController extends Controller
     public function updateDone(Request $request, Pipeline $pipeline)
     {
         $data = $request->validate(['done' => 'required|boolean']);
+        // Transisi dinilai dari nilai SEBELUM update: null → selesai berarti
+        // pekerjaan baru rampung (bukan sekadar ditekan ulang tombolnya).
+        $baruSelesai = $pipeline->completed_at === null && $data['done'];
         $pipeline->update($data + ['completed_at' => $this->stempelSelesai($pipeline, $data['done'])]);
+
+        if ($baruSelesai && $pipeline->key_result_id) {
+            OkrNotifications::laporkanKartuSelesai($pipeline, $request->user());
+        }
 
         return response()->json(['ok' => true]);
     }
