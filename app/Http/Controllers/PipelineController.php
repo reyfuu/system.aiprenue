@@ -510,8 +510,33 @@ class PipelineController extends Controller
     public function update(Request $request, Pipeline $pipeline)
     {
         $data = $this->validated($request, $pipeline);
+
+        // Bila progress berubah ke kolom terakhir board, stempel completed_at
+        // — konsisten dengan cara kerja drag (reorder). Tanpa ini, mengganti
+        // kolom lewat modal edit memindahkan kartu secara visual tapi tak
+        // mencatat stempel selesai: statistik ketepatan (tepat/terlambat) &
+        // target progress board tak akan berubah. Laporkan ke pemilik OKR
+        // bila kartu ini tertaut ke KR.
+        $baruSelesai = false;
+        if ($data['progress'] !== $pipeline->progress) {
+            $kolom = BoardColumn::forBoard($data['category'] ?? $pipeline->category);
+            $kolomSelesai = $kolom->last()?->key;
+            $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
+            $data['completed_at'] = $this->stempelSelesai($pipeline, $keKolomSelesai);
+
+            if ($pipeline->completed_at === null
+                && $data['completed_at'] !== null
+                && $pipeline->key_result_id) {
+                $baruSelesai = true;
+            }
+        }
+
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
+
+        if ($baruSelesai) {
+            OkrNotifications::laporkanKartuSelesai($pipeline, $request->user());
+        }
 
         return redirect()->back()->with('status', 'Entri diperbarui.');
     }
