@@ -724,7 +724,30 @@ function buildServer() {
         }
     );
 
-    // 2) Board lengkap: seluruh kolom (termasuk kosong) + task per kolom.
+    // 2) Semua board lengkap dalam satu panggilan. Ini jalur utama untuk
+    // manager yang perlu melihat keseluruhan Kanban tanpa menebak board key
+    // atau memanggil get_kanban_board satu per satu.
+    server.registerTool(
+        'list_all_kanban',
+        {
+            title: 'List All Kanban',
+            description: 'Ambil SEMUA board Kanban sekaligus, lengkap dengan seluruh kolom dalam urutan asli (termasuk kolom kosong) dan task aktif pada tiap kolom.',
+            inputSchema: {},
+        },
+        async () => {
+            const [rows] = await db.query(
+                `SELECT \`key\` FROM categories WHERE type='kanban' ORDER BY name, id`
+            );
+            const boards = [];
+            for (const row of rows) {
+                const board = await kanbanBoard(row.key);
+                if (board) boards.push(board);
+            }
+            return jsonText({ board_count: boards.length, boards });
+        }
+    );
+
+    // 3) Board lengkap: seluruh kolom (termasuk kosong) + task per kolom.
     server.registerTool(
         'get_kanban_board',
         {
@@ -738,7 +761,7 @@ function buildServer() {
         }
     );
 
-    // 3) Daftar task dalam satu board. columns ikut dikirim agar klien lama yang
+    // 4) Daftar task dalam satu board. columns ikut dikirim agar klien lama yang
     // masih memakai list_tasks juga tidak kehilangan kolom kosong.
     server.registerTool(
         'list_tasks',
@@ -758,7 +781,7 @@ function buildServer() {
         }
     );
 
-    // 4) Buat task baru di board
+    // 5) Buat task baru di board
     server.registerTool(
         'create_task',
         {
@@ -795,7 +818,7 @@ function buildServer() {
         }
     );
 
-    // 5) Ubah task yang sudah ada (by id): deadline, column, done, atau title
+    // 6) Ubah task yang sudah ada (by id): deadline, column, done, atau title
     server.registerTool(
         'update_task',
         {
