@@ -1360,4 +1360,53 @@ class OkrTest extends TestCase
 
         $this->assertDatabaseCount('notifications', 0);
     }
+
+    /** KR sumber kartu tanpa board: target wajib diisi manual dan realisasi = kartu
+     *  yang tertaut langsung ke KR (bukan seluruh isi board). */
+    public function test_kartu_kr_tanpa_board_mengukur_kartu_tautan_langsung(): void
+    {
+        $owner = $this->user();
+        $objective = $this->objective();
+
+        // Tanpa board & tanpa target → ditolak server.
+        $this->actingAs($owner)->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Selesaikan modul penjualan',
+            'source' => 'kartu',
+            'unit' => 'angka',
+        ])->assertSessionHasErrors('target');
+
+        // Target diisi manual → diterima, board_key null, target tersimpan.
+        $this->post('/okr/key-results', [
+            'objective_id' => $objective->id,
+            'title' => 'Selesaikan modul penjualan',
+            'source' => 'kartu',
+            'unit' => 'angka',
+            'target' => 5,
+        ])->assertSessionHasNoErrors();
+
+        $kr = KeyResult::firstOrFail();
+        $this->assertSame('kartu', $kr->source);
+        $this->assertNull($kr->board_key);
+        $this->assertSame('5.00', $kr->target);
+
+        // Tautkan kartu & selesaikan sebagian — realisasi ikut bergerak.
+        $done = $this->kartu([
+            'category' => 'proyek', 'endorse' => 'Langka 1',
+            'key_result_id' => $kr->id, 'completed_at' => now(),
+        ]);
+        $this->kartu([
+            'category' => 'proyek', 'endorse' => 'Langka 2',
+            'key_result_id' => $kr->id,
+        ]);
+
+        // realisasi = kartu tertaut yang selesai
+        $this->assertSame(1.0, $kr->actual());
+        // 1/5 = 20%
+        $this->assertSame(20.0, $kr->percent());
+
+        $this->actingAs($this->user())->get('/okr')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('objectives.0.key_results.0.actual', 1));
+    }
 }

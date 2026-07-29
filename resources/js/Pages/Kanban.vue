@@ -55,14 +55,20 @@ const igLink = (v) => 'https://instagram.com/' + String(v).trim().replace(/^@/, 
 // PATCH JSON + sinkron ulang bila server menolak.
 // fetch() TIDAK reject pada 4xx/5xx — tanpa cek res.ok, kegagalan (403/422/500)
 // lolos diam-diam & tampilan beda dgn DB sampai halaman di-reload.
-const patchCard = (url, body) =>
-    fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify(body),
-    })
-        .then((res) => { if (!res.ok) router.reload(); })
-        .catch(() => router.reload());   // gagal jaringan
+const patchCard = async (url, body) => {
+    try {
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf() },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) { router.reload(); return false; }
+        return true;
+    } catch {
+        router.reload();
+        return false;
+    }
+};
 const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'); // ukuran file
 const fmtCreated = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -174,13 +180,20 @@ const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compa
 // kolom asal DAN 'added' di kolom tujuan — menanganinya berarti dua kiriman
 // untuk satu perbuatan, dan posisi kolom asal boleh berlubang (0,1,3,…) karena
 // yang dipakai cuma urutan relatifnya.
-const onCardChange = (evt, toKey) => {
+const onCardChange = async (evt, toKey) => {
     if (!evt.added && !evt.moved) return;
 
-    patchCard('/pipelines/reorder', {
+    const ok = await patchCard('/pipelines/reorder', {
         progress: toKey,
         ids: (cols.value[toKey] || []).map((c) => c.id),
     });
+
+    // Drag antar kolom (evt.added) bisa mengubah completed_at kartu —
+    // quarterStats (target progress + ketepatan) adalah prop Inertia server
+    // yg hanya segar saat halaman dimuat ulang. Reload dgn preserveScroll
+    // menjaga posisi board tanpa patah. Geseran dalam satu kolom (evt.moved)
+    // tak memengaruhi stats → tak perlu reload.
+    if (ok && evt.added) router.reload({ preserveScroll: true });
 };
 
 // Urutan kolom sesudah drag. Cuma 'moved' yang mungkin terjadi: daftar kolom

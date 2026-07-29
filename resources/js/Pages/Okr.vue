@@ -737,16 +737,31 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
 
                 <div class="grid grid-cols-2 gap-3">
                     <div v-if="krForm.source === 'kartu'">
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target Kanban</label>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Board Kanban</label>
                         <select v-model="krForm.board_key"
                                 class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
-                            <option value="">— pilih board —</option>
+                            <option value="">— tanpa board (langkah per KR) —</option>
                             <option v-for="board in kanbanBoards" :key="board.key" :value="board.key">{{ board.name }}</option>
                         </select>
                         <p v-if="krForm.errors.board_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.board_key }}</p>
+                        <!-- Tanpa board: target wajib diisi manual (jumlah kartu yang
+                             harus diselesaikan — realisasi = kartu tertaut yang selesai). -->
+                        <p v-if="!krForm.board_key" class="text-[11px] text-slate-400 mt-1">
+                            Realisasi = kartu yang ditautkan dan sudah selesai. Tanpa board hitungannya per-KR, bukan seluruh board.
+                        </p>
+                        <p v-else class="text-[11px] text-slate-400 mt-1">
+                            Target dan realisasi dihitung dari seluruh kartu di board ini dalam kuartal. Target diatur di /kpi.
+                        </p>
                     </div>
                     <div v-else>
                         <label class="block text-xs font-semibold text-slate-500 mb-1">Target</label>
+                        <input v-model="krForm.target" type="number" min="0" step="any"
+                               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                        <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
+                    </div>
+                    <!-- Kartu tanpa board: target diisi manual di kolom kanan. -->
+                    <div v-if="krForm.source === 'kartu' && !krForm.board_key">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target (kartu selesai)</label>
                         <input v-model="krForm.target" type="number" min="0" step="any"
                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                         <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
