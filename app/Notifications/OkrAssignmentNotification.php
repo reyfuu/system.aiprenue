@@ -20,7 +20,7 @@ class OkrAssignmentNotification extends Notification
         private readonly string $message,
         private readonly ?string $url,
         private readonly int $objectiveId,
-        private readonly int $keyResultId,
+        private readonly ?int $keyResultId,
         private readonly ?array $priority = null,
     ) {}
 

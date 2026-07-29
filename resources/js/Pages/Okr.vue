@@ -213,11 +213,6 @@ const hapusObjective = (o) => {
 const krModal = ref(null);           // { mode: 'baru'|'edit', objective, kr? }
 const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', priority_name: '', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
 const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
-// Omzet baru hanya dibuat bersama Objective. Saat mengedit KR omzet yang sudah
-// ada, opsinya tetap disertakan agar form tidak kehilangan nilai tersimpan.
-const krMetrics = computed(() => Object.fromEntries(
-    Object.entries(props.metrics).filter(([key]) => key !== 'omset' || krModal.value?.mode === 'edit'),
-));
 
 watch(() => krForm.kanban_board_key, () => {
     if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
@@ -225,9 +220,9 @@ watch(() => krForm.kanban_board_key, () => {
     }
 });
 
-watch(() => krForm.metric, (metric) => {
+watch(() => krForm.metric, () => {
     if (krForm.source === 'auto') {
-        krForm.unit = metric === 'omset' ? 'rupiah' : 'angka';
+        krForm.unit = 'angka';
     }
 });
 
@@ -371,14 +366,24 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                 </span>
                             </div>
                             <p v-if="o.description" class="text-xs text-slate-500 mt-1 max-w-prose">{{ o.description }}</p>
+                            <!-- Omzet adalah target Objective. KR di bawahnya
+                                 tetap berisi pekerjaan/hasil pendukung. -->
+                            <div v-if="o.omset_target > 0" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                <span class="font-semibold text-slate-600">Target omzet</span>
+                                <span class="font-bold text-brand-700" :title="fmtFull(o.omset_actual, 'rupiah') + ' / ' + fmtFull(o.omset_target, 'rupiah')">
+                                    {{ fmt(o.omset_actual, 'rupiah') }} / {{ fmt(o.omset_target, 'rupiah') }}
+                                </span>
+                                <span :class="['font-bold', textColor(o.omset_percent)]">{{ o.omset_percent }}%</span>
+                                <span v-if="o.omset_owner_name" class="text-slate-400">PIC: {{ o.omset_owner_name }}</span>
+                            </div>
                             <div v-if="canManage" class="flex items-center gap-3 mt-2">
                                 <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
                                 <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
                                 <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
                             </div>
                         </div>
-                        <!-- Progress = rata-rata KR, tiap KR dibatasi 100% dulu.
-                             Lihat Objective::progress() untuk alasannya. -->
+                        <!-- Progress = rata-rata target omzet (bila ada) + KR;
+                             tiap kontribusi dibatasi 100% dulu. -->
                         <div class="text-right min-w-[132px]">
                             <b class="text-2xl font-bold text-brand-700">{{ o.progress === null ? '—' : o.progress + '%' }}</b>
                             <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
@@ -508,7 +513,14 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                         <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
                                         <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
                                     </td>
-                                    <td class="py-2.5 px-4"></td>
+                                    <td class="py-2.5 px-4 text-right tabular-nums text-xs">
+                                        <template v-if="o.omset_target > 0">
+                                            <p class="font-semibold text-brand-700" :title="fmtFull(o.omset_actual, 'rupiah') + ' / ' + fmtFull(o.omset_target, 'rupiah')">
+                                                {{ fmt(o.omset_actual, 'rupiah') }} / {{ fmt(o.omset_target, 'rupiah') }}
+                                            </p>
+                                            <p v-if="o.omset_owner_name" class="text-[10px] text-slate-400">PIC: {{ o.omset_owner_name }}</p>
+                                        </template>
+                                    </td>
                                     <td class="py-2.5 px-4">
                                         <div class="flex items-center gap-2">
                                             <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -605,7 +617,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
         <!-- ================= Modal Objective ================= -->
         <ModalWrap v-if="objModal" @close="objModal = null">
             <h3 class="text-lg font-bold text-slate-700">{{ objModal === 'baru' ? 'Objective baru' : 'Ubah Objective' }} — {{ quarter.label }}</h3>
-            <p class="text-xs text-slate-400 mt-1">Kalimat tujuan; yang terukur adalah Key Result di bawahnya.</p>
+            <p class="text-xs text-slate-400 mt-1">Tujuan utama; target omzet disimpan langsung pada Objective ini.</p>
 
             <form class="mt-4 space-y-3" @submit.prevent="simpanObjective">
                 <div>
@@ -628,9 +640,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </select>
                     <p v-if="objForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ objForm.errors.priority_name }}</p>
                 </div>
-                <!-- Target omzet dibuat bersama Objective agar pengguna tidak
-                     perlu membuka modal Key Result kedua kali. Saat edit, target
-                     tetap dikelola lewat KR omzet yang sudah terbentuk. -->
+                <!-- Target omzet menjadi atribut Objective, bukan Key Result. -->
                 <div v-if="objModal === 'baru'" class="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
                     <label class="block text-xs font-semibold text-slate-600 mb-1">Target omzet kuartal <span class="font-normal text-slate-400">(opsional)</span></label>
                     <div class="relative">
@@ -639,7 +649,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                placeholder="250000000"
                                class="w-full border border-slate-200 rounded-xl pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                     </div>
-                    <p class="mt-1 text-[11px] text-slate-500">Jika diisi, sistem otomatis membuat Key Result “Omzet kuartal” dengan realisasi dari Pembukuan.</p>
+                    <p class="mt-1 text-[11px] text-slate-500">Jika diisi, target tersimpan pada Objective dan realisasinya dihitung otomatis dari Pembukuan.</p>
                     <p v-if="objForm.errors.omset_target" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_target }}</p>
 
                     <!-- PIC dipilih dari user aktif yang sama dengan pilihan PIC
@@ -669,12 +679,12 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
         <!-- ================= Modal Key Result ================= -->
         <ModalWrap v-if="krModal" @close="krModal = null">
             <h3 class="text-lg font-bold text-slate-700">{{ krModal.mode === 'baru' ? 'Key Result baru' : 'Ubah Key Result' }}</h3>
-            <p class="text-xs text-slate-400 mt-1">Untuk Objective: {{ krModal.objective.title }}</p>
+            <p class="text-xs text-slate-400 mt-1">Pekerjaan/hasil pendukung untuk Objective: {{ krModal.objective.title }}</p>
 
             <form class="mt-4 space-y-3" @submit.prevent="simpanKr">
                 <div>
-                    <label class="block text-xs font-semibold text-slate-500 mb-1">Key Result</label>
-                    <input v-model="krForm.title" type="text" placeholder="Total view seluruh konten"
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Pekerjaan / hasil</label>
+                    <input v-model="krForm.title" type="text" placeholder="Publikasikan kampanye dan capai total view"
                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
                     <p v-if="krForm.errors.title" class="text-xs text-red-600 mt-1">{{ krForm.errors.title }}</p>
                 </div>
@@ -695,9 +705,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </select>
                     <p class="text-[11px] text-slate-400 mt-1">
                         {{ krForm.source === 'auto'
-                            ? krForm.metric === 'omset'
-                                ? 'Realisasi mengambil total pemasukan pada Pembukuan di kuartal ini.'
-                                : krForm.metric === 'view'
+                            ? krForm.metric === 'view'
                                 ? 'Realisasi mengambil total views konten Insight yang terbit di kuartal ini.'
                                 : 'Realisasi dihitung otomatis dari data yang tersedia.'
                             : krForm.source === 'kartu'
@@ -712,7 +720,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     <label class="block text-xs font-semibold text-slate-500 mb-1">Metrik</label>
                     <select v-model="krForm.metric" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
                         <option value="">— pilih —</option>
-                        <option v-for="(label, key) in krMetrics" :key="key" :value="key">{{ label }}</option>
+                        <option v-for="(label, key) in metrics" :key="key" :value="key">{{ label }}</option>
                     </select>
                     <p v-if="krForm.errors.metric" class="text-xs text-red-600 mt-1">{{ krForm.errors.metric }}</p>
                 </div>

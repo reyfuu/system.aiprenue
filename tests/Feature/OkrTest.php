@@ -160,9 +160,8 @@ class OkrTest extends TestCase
         $this->assertSame($owner->id, KeyResult::first()->owner_id);
     }
 
-    /** Target omzet dapat ditulis sekali saat membuat Objective; server
-     *  membentuk KR auto yang mengambil realisasi dari Pembukuan. */
-    public function test_buat_objective_sekaligus_membuat_key_result_omzet(): void
+    /** Target omzet menjadi bagian Objective, bukan KR tambahan. */
+    public function test_buat_objective_menyimpan_target_omzet_pada_objective(): void
     {
         $owner = $this->user();
 
@@ -176,19 +175,14 @@ class OkrTest extends TestCase
             ->assertSessionHas('status', 'Objective dan target omzet ditambahkan.');
 
         $objective = Objective::firstOrFail();
-        $kr = KeyResult::firstOrFail();
 
-        $this->assertSame($objective->id, $kr->objective_id);
-        $this->assertSame('Omzet kuartal', $kr->title);
-        $this->assertSame('auto', $kr->source);
-        $this->assertSame('omset', $kr->metric);
-        $this->assertSame('250000000.00', $kr->target);
-        $this->assertSame('rupiah', $kr->unit);
-        $this->assertSame($objective->priority, $kr->priority);
-        $this->assertSame($owner->id, $kr->created_by);
+        $this->assertSame('250000000.00', $objective->omset_target);
+        $this->assertSame($owner->id, $objective->omset_owner_id);
+        $this->assertSame('Urgent', $objective->priority['name']);
+        $this->assertDatabaseCount('key_results', 0);
     }
 
-    /** PIC omzet boleh berupa staff. Penugasannya harus tersimpan pada KR dan
+    /** PIC omzet boleh berupa staff. Penugasannya harus tersimpan pada Objective dan
      *  notifikasi database harus terlihat dari halaman yang memang boleh dibuka
      *  staff—bukan mengarahkan staff ke /okr yang akan 403. */
     public function test_pic_staff_menerima_notifikasi_target_omzet_dari_server(): void
@@ -205,14 +199,17 @@ class OkrTest extends TestCase
             'omset_owner_id' => $staff->id,
         ])->assertSessionHasNoErrors();
 
-        $keyResult = KeyResult::firstOrFail();
-        $this->assertSame($staff->id, $keyResult->owner_id);
+        $objective = Objective::firstOrFail();
+        $this->assertSame($staff->id, $objective->omset_owner_id);
+        $this->assertDatabaseCount('key_results', 0);
 
         $notification = $staff->notifications()->firstOrFail();
         $this->assertSame('Target omzet baru', $notification->data['title']);
         $this->assertStringContainsString('Rp 125.000.000', $notification->data['message']);
         $this->assertNull($notification->data['url']);
-        $this->assertSame($keyResult->id, $notification->data['key_result_id']);
+        $this->assertSame($objective->id, $notification->data['objective_id']);
+        $this->assertNull($notification->data['key_result_id']);
+        $this->assertSame('Urgent', $notification->data['priority']['name']);
 
         // Shared prop berasal dari database server dan tersedia di Layout global.
         $this->actingAs($staff)->get('/kpi')
@@ -260,8 +257,7 @@ class OkrTest extends TestCase
         $this->assertSame(0, $staff->unreadNotifications()->count());
     }
 
-    /** Nilai omzet tidak sah harus menolak seluruh request sebelum Objective
-     *  tersimpan, bukan meninggalkan goal tanpa KR. */
+    /** Nilai omzet tidak sah harus menolak seluruh request sebelum Objective tersimpan. */
     public function test_target_omzet_objective_tidak_boleh_negatif(): void
     {
         $this->actingAs($this->user())->post('/okr/objectives', [
@@ -275,9 +271,8 @@ class OkrTest extends TestCase
         $this->assertDatabaseCount('key_results', 0);
     }
 
-    /** Omzet baru hanya lewat pembuatan Objective agar satu langkah membentuk
-     *  goal dan KR-nya; endpoint KR biasa tidak boleh membuat duplikat. */
-    public function test_key_result_omzet_baru_harus_dibuat_bersama_objective(): void
+    /** Omzet bukan jenis Key Result lagi; targetnya hanya hidup di Objective. */
+    public function test_key_result_omzet_baru_ditolak_karena_milik_objective(): void
     {
         $objective = $this->objective();
 
@@ -401,6 +396,18 @@ class OkrTest extends TestCase
 
         // (min(100,300) + 0) / 2 = 50, bukan (300 + 0) / 2 = 150.
         $this->assertSame(50.0, $o->fresh()->progress([]));
+    }
+
+    public function test_target_omzet_menjadi_progress_objective_tanpa_key_result(): void
+    {
+        $o = Objective::create([
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Bisnis sehat',
+            'omset_target' => 200_000_000,
+        ]);
+
+        $this->assertSame(50.0, $o->progress(['omset' => 100_000_000]));
     }
 
     /** KR tanpa target diabaikan dari rata-rata, bukan dihitung 0:
@@ -676,17 +683,58 @@ class OkrTest extends TestCase
 
     public function test_salin_kuartal_lalu_membawa_target_tapi_bukan_realisasi(): void
     {
-        $lalu = Objective::create(['year' => 2026, 'quarter' => 2, 'title' => 'Tujuan lama']);
+        $owner = $this->user();
+        $lalu = Objective::create([
+            'year' => 2026,
+            'quarter' => 2,
+            'title' => 'Tujuan lama',
+            'omset_target' => 50_000_000,
+            'omset_owner_id' => $owner->id,
+        ]);
         KeyResult::create(['objective_id' => $lalu->id, 'title' => 'Klien baru', 'source' => 'manual', 'target' => 10, 'actual_manual' => 7, 'unit' => 'angka']);
 
-        $this->actingAs($this->user())->post('/okr/salin', ['year' => 2026, 'quarter' => 3])
+        $this->actingAs($owner)->post('/okr/salin', ['year' => 2026, 'quarter' => 3])
             ->assertSessionHasNoErrors();
 
         $baru = Objective::where('year', 2026)->where('quarter', 3)->first();
         $this->assertNotNull($baru);
         $kr = $baru->keyResults->first();
+        $this->assertSame('50000000.00', $baru->omset_target);
+        $this->assertSame($owner->id, $baru->omset_owner_id);
         $this->assertSame('10.00', $kr->target);        // target ikut
         $this->assertNull($kr->actual_manual);          // realisasi TIDAK ikut
+    }
+
+    public function test_halaman_dan_tren_membaca_target_omzet_dari_objective(): void
+    {
+        $owner = $this->user();
+        Objective::create([
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Pertumbuhan omzet',
+            'omset_target' => 200_000_000,
+            'omset_owner_id' => $owner->id,
+        ]);
+        Transaction::create([
+            'type' => 'pemasukan',
+            'category' => 'jasa',
+            'amount_idr' => 100_000_000,
+            'date' => '2026-08-01',
+        ]);
+
+        $this->actingAs($owner)->get('/okr?q=2026-Q3')
+            ->assertInertia(fn ($page) => $page
+                ->where('objectives.0.omset_target', 200_000_000)
+                ->where('objectives.0.omset_actual', 100_000_000)
+                ->where('objectives.0.omset_percent', 50)
+                ->where('objectives.0.omset_owner_name', $owner->name)
+                ->where('objectives.0.progress', 50)
+                ->where('objectives.0.key_results', [])
+                ->where('tren.2.metric', 'omset')
+                ->where('tren.2.points.5.target', 200_000_000)
+                ->where('tren.2.points.5.actual', 100_000_000)
+                ->where('tren.2.points.5.percent', 50)
+            );
     }
 
     /** Menyalin ke kuartal yang sudah berisi menghasilkan Objective kembar

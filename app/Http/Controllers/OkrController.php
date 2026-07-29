@@ -90,50 +90,63 @@ class OkrController extends Controller
             }
         }
 
-        $objectives = $daftar->map(fn (Objective $o) => [
-            'id' => $o->id,
-            'title' => $o->title,
-            'description' => $o->description,
-            'priority' => $o->priority,
-            'progress' => $o->progress($realisasi),
-            'created_by_name' => $o->creator?->name,
-            'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr, $namaBoard) {
-                $kartu = $kartuPerKr->get($kr->id, collect());
-                if ($kr->source === 'kartu' && ! $kr->board_key) {
-                    $kr->setAttribute('kartu_selesai', $kartu->whereNotNull('completed_at')->count());
-                }
+        $objectives = $daftar->map(function (Objective $o) use ($realisasi, $kartuPerKr, $namaBoard) {
+            $omsetTarget = (float) ($o->omset_target ?? 0);
+            $omsetActual = (float) ($realisasi['omset'] ?? 0);
 
-                return [
-                    'id' => $kr->id,
-                    'title' => $kr->title,
-                    'source' => $kr->source,
-                    'source_label' => $kr->source === 'auto'
-                        ? (OkrMetrics::METRICS[$kr->metric] ?? 'Otomatis')
-                        : (KeyResult::SOURCES[$kr->source] ?? $kr->source),
-                    'board_key' => $kr->board_key,
-                    'board_name' => $kr->board_key ? ($namaBoard[$kr->board_key] ?? $kr->board_key) : null,
-                    'metric' => $kr->metric,
-                    'unit' => $kr->unit,
-                    'priority' => $kr->priority,
-                    'target' => (float) $kr->target,
-                    'actual' => $kr->actual($realisasi),
-                    'percent' => $kr->percent($realisasi),
-                    'owner_name' => $kr->owner?->name,
-                    // Tugas eksekusi dapat ditautkan ke semua jenis KR; sumber
-                    // angka dan daftar pekerjaan adalah dua hal berbeda.
-                    'kartu' => $kartu->map(fn (Pipeline $p) => [
-                        'id' => $p->id,
-                        'judul' => $p->endorse,
-                        'board' => $p->category,
-                        'is_master' => (bool) $p->is_kr_master,
-                        'pic' => $p->assignee?->name,
-                        'progress' => $p->progress,
-                        'selesai' => $p->completed_at !== null,
-                        'ketepatan' => $p->ketepatan(),
-                    ])->values(),
-                ];
-            })->values(),
-        ])->values();
+            return [
+                'id' => $o->id,
+                'title' => $o->title,
+                'description' => $o->description,
+                'priority' => $o->priority,
+                // Target omzet hidup di Objective, bukan lagi menjadi satu KR
+                // semu. Realisasi tetap dihitung dari Pembukuan kuartal aktif.
+                'omset_target' => $omsetTarget,
+                'omset_actual' => $omsetActual,
+                'omset_percent' => $omsetTarget > 0
+                    ? round($omsetActual / $omsetTarget * 100, 1)
+                    : null,
+                'omset_owner_name' => $o->omsetOwner?->name,
+                'progress' => $o->progress($realisasi),
+                'created_by_name' => $o->creator?->name,
+                'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr, $namaBoard) {
+                    $kartu = $kartuPerKr->get($kr->id, collect());
+                    if ($kr->source === 'kartu' && ! $kr->board_key) {
+                        $kr->setAttribute('kartu_selesai', $kartu->whereNotNull('completed_at')->count());
+                    }
+
+                    return [
+                        'id' => $kr->id,
+                        'title' => $kr->title,
+                        'source' => $kr->source,
+                        'source_label' => $kr->source === 'auto'
+                            ? (OkrMetrics::METRICS[$kr->metric] ?? 'Otomatis')
+                            : (KeyResult::SOURCES[$kr->source] ?? $kr->source),
+                        'board_key' => $kr->board_key,
+                        'board_name' => $kr->board_key ? ($namaBoard[$kr->board_key] ?? $kr->board_key) : null,
+                        'metric' => $kr->metric,
+                        'unit' => $kr->unit,
+                        'priority' => $kr->priority,
+                        'target' => (float) $kr->target,
+                        'actual' => $kr->actual($realisasi),
+                        'percent' => $kr->percent($realisasi),
+                        'owner_name' => $kr->owner?->name,
+                        // Tugas eksekusi dapat ditautkan ke semua jenis KR; sumber
+                        // angka dan daftar pekerjaan adalah dua hal berbeda.
+                        'kartu' => $kartu->map(fn (Pipeline $p) => [
+                            'id' => $p->id,
+                            'judul' => $p->endorse,
+                            'board' => $p->category,
+                            'is_master' => (bool) $p->is_kr_master,
+                            'pic' => $p->assignee?->name,
+                            'progress' => $p->progress,
+                            'selesai' => $p->completed_at !== null,
+                            'ketepatan' => $p->ketepatan(),
+                        ])->values(),
+                    ];
+                })->values(),
+            ];
+        })->values();
 
         $kanbanBoards = Category::where('type', 'kanban')->orderBy('name')->get(['key', 'name']);
         $kanbanColumns = BoardColumn::whereIn('board_key', $kanbanBoards->pluck('key'))
@@ -150,7 +163,9 @@ class OkrController extends Controller
             'objectives' => $objectives,
             'ringkasan' => $this->ringkasan($objectives),
             'tren' => $this->tren($year, $quarter),
-            'metrics' => OkrMetrics::METRICS,
+            // Omzet sekarang target Objective. Pilihan KR otomatis hanya untuk
+            // metrik yang memang tetap menjadi hasil pendukung.
+            'metrics' => collect(OkrMetrics::METRICS)->except('omset')->all(),
             'sources' => KeyResult::SOURCES,
             'priorities' => Label::where('group', 2)
                 ->whereIn('name', self::PRIORITY_NAMES)
@@ -234,6 +249,9 @@ class OkrController extends Controller
                     'quarter' => $quarter,
                     'title' => $o->title,
                     'description' => $o->description,
+                    'priority' => $o->priority,
+                    'omset_target' => $o->omset_target,
+                    'omset_owner_id' => $o->omset_owner_id,
                     'position' => $o->position,
                     'created_by' => $request->user()->id,
                 ]);
@@ -278,11 +296,9 @@ class OkrController extends Controller
     /**
      * Tren tiap metrik otomatis selama beberapa kuartal terakhir.
      *
-     *  Target diambil dari KR `auto` bermetrik sama di kuartal itu. Bila satu
-     *  kuartal punya lebih dari satu KR untuk metrik yang sama (dibolehkan —
-     *  dua Objective berbeda boleh mengejar metrik yang sama), targetnya
-     *  DIJUMLAH. Mengambil yang pertama saja akan diam-diam menyembunyikan
-     *  target yang lain.
+     * Target view/subscriber berasal dari KR otomatis. Target omzet berasal dari
+     * Objective dan dijumlahkan bila satu kuartal memiliki beberapa Objective
+     * bertarget omzet.
      */
     private function tren(int $year, int $quarter): array
     {
@@ -299,17 +315,28 @@ class OkrController extends Controller
 
         $target = KeyResult::query()
             ->join('objectives', 'objectives.id', '=', 'key_results.objective_id')
-            ->where('key_results.source', 'auto')->whereNotNull('key_results.metric')
+            ->where('key_results.source', 'auto')
+            ->whereNotNull('key_results.metric')
+            ->where('key_results.metric', '!=', 'omset')
             ->selectRaw('objectives.year, objectives.quarter, key_results.metric, SUM(key_results.target) as total')
             ->groupBy('objectives.year', 'objectives.quarter', 'key_results.metric')
             ->get()
             ->keyBy(fn ($r) => $r->year.'-'.$r->quarter.'-'.$r->metric);
+        $targetOmset = Objective::query()
+            ->whereNotNull('omset_target')
+            ->selectRaw('year, quarter, SUM(omset_target) as total')
+            ->groupBy('year', 'quarter')
+            ->get()
+            ->keyBy(fn ($r) => $r->year.'-'.$r->quarter);
 
         $out = [];
         foreach (OkrMetrics::METRICS as $metric => $label) {
             $titik = [];
             foreach ($periode as $p) {
-                $t = (float) ($target[$p['year'].'-'.$p['quarter'].'-'.$metric]->total ?? 0);
+                $key = $p['year'].'-'.$p['quarter'];
+                $t = $metric === 'omset'
+                    ? (float) ($targetOmset[$key]->total ?? 0)
+                    : (float) ($target[$key.'-'.$metric]->total ?? 0);
                 $a = (float) (OkrMetrics::realisasi($p['year'], $p['quarter'])[$metric] ?? 0);
                 $titik[] = [
                     'label' => Quarter::label($p['year'], $p['quarter']),
@@ -333,7 +360,8 @@ class OkrController extends Controller
         $omsetOwnerId = isset($data['omset_owner_id'])
             ? (int) $data['omset_owner_id']
             : User::where('role', 'owner')->orderBy('id')->value('id');
-        unset($data['omset_target'], $data['omset_owner_id']);
+        $data['omset_target'] = $omsetTarget > 0 ? $omsetTarget : null;
+        $data['omset_owner_id'] = $omsetTarget > 0 ? $omsetOwnerId : null;
 
         $data['created_by'] = $request->user()->id;
         // Objective baru masuk paling bawah, bukan paling atas: urutan yang
@@ -341,30 +369,13 @@ class OkrController extends Controller
         $data['position'] = (int) Objective::where('year', $data['year'])
             ->where('quarter', $data['quarter'])->max('position') + 1;
 
-        // Objective + KR omset harus utuh: jangan sampai Objective tersimpan
-        // sendirian bila pembuatan KR gagal di tengah jalan.
-        DB::transaction(function () use ($data, $omsetTarget, $omsetOwnerId, $request): void {
+        // Objective dan notifikasinya harus utuh dalam satu transaksi.
+        DB::transaction(function () use ($data, $omsetTarget, $omsetOwnerId): void {
             $objective = Objective::create($data);
 
             if ($omsetTarget <= 0) {
                 return;
             }
-
-            $keyResult = KeyResult::create([
-                'objective_id' => $objective->id,
-                'title' => 'Omzet kuartal',
-                'source' => 'auto',
-                'metric' => 'omset',
-                'target' => $omsetTarget,
-                'actual_manual' => null,
-                'unit' => OkrMetrics::UNITS['omset'],
-                // Penanda Objective diwariskan supaya target omzet yang dibuat
-                // bersamaan langsung punya tingkat prioritas yang sama.
-                'priority' => $objective->priority,
-                'position' => 1,
-                'owner_id' => $omsetOwnerId,
-                'created_by' => $request->user()->id,
-            ]);
 
             // Staff tidak dapat membuka halaman OKR yang memuat angka perusahaan,
             // tetapi tetap perlu tahu target yang menjadi tanggung jawabnya.
@@ -381,8 +392,8 @@ class OkrController extends Controller
                     ),
                     url: null,
                     objectiveId: $objective->id,
-                    keyResultId: $keyResult->id,
-                    priority: $keyResult->priority,
+                    keyResultId: null,
+                    priority: $objective->priority,
                 ));
             }
         });
@@ -421,8 +432,8 @@ class OkrController extends Controller
             'priority_name' => 'nullable|string|max:50',
         ];
         if ($denganOmset) {
-            // Nol/kosong berarti hanya membuat Objective. Nilai positif membuat
-            // KR otomatis "Omzet kuartal" di transaksi yang sama.
+            // Nol/kosong berarti Objective tanpa target omzet. Nilai positif
+            // disimpan langsung pada Objective.
             $rules['omset_target'] = 'nullable|numeric|min:0';
             $rules['omset_owner_id'] = 'nullable|exists:users,id';
         }
@@ -467,7 +478,7 @@ class OkrController extends Controller
         $data = $this->validasiKeyResult($request);
         if ($data['source'] === 'auto' && $data['metric'] === 'omset') {
             throw ValidationException::withMessages([
-                'metric' => 'Target omzet dibuat saat membuat Objective.',
+                'metric' => 'Target omzet disimpan pada Objective.',
             ]);
         }
         $data['created_by'] = $request->user()->id;

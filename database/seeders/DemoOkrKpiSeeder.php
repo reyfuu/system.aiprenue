@@ -102,24 +102,21 @@ class DemoOkrKpiSeeder extends Seeder
     {
         $owner = User::where('role', 'owner')->orderBy('id')->value('id');
 
-        // [judul objective, keterangan, [ [judul KR, source, metric, target, unit], ... ] ]
+        // [periode, judul Objective, keterangan, target omzet?, [daftar KR]]
         $rencana = [
-            [$lalu, 'Bangun fondasi kanal', 'Kuartal pertama yang diukur — angkanya jadi baseline.', [
+            [$lalu, 'Bangun fondasi kanal', 'Kuartal pertama yang diukur — angkanya jadi baseline.', null, [
                 ['Total view seluruh konten', 'auto', 'view', 400000, 'angka'],
                 ['Total subscriber semua kanal', 'auto', 'subscriber', 12000, 'angka'],
             ]],
-            [$lalu, 'Buka aliran pendapatan coaching', null, [
-                ['Omset kuartal', 'auto', 'omset', 180000000, 'rupiah'],
-            ]],
-            [$now, 'Jadi rujukan utama konten AI di Indonesia', 'Diukur dari jangkauan kanal & pertumbuhan audiens, bukan jumlah unggahan.', [
+            [$lalu, 'Buka aliran pendapatan coaching', null, 180000000, []],
+            [$now, 'Jadi rujukan utama konten AI di Indonesia', 'Diukur dari jangkauan kanal & pertumbuhan audiens, bukan jumlah unggahan.', null, [
                 ['Total view seluruh konten', 'auto', 'view', 750000, 'angka'],
                 ['Total subscriber semua kanal', 'auto', 'subscriber', 20000, 'angka'],
                 // Sumber 'kartu': realisasinya dari kartu todolist tertaut yang
                 // selesai. Diisi oleh kartuGoal() di bawah.
                 ['Kolaborasi dengan kreator lain', 'kartu', null, 5, 'angka'],
             ]],
-            [$now, 'Bisnis coaching tumbuh sehat', 'Omset dari transaksi yang benar-benar masuk, bukan nilai deal di kartu Sales.', [
-                ['Omset kuartal', 'auto', 'omset', 250000000, 'rupiah'],
+            [$now, 'Bisnis coaching tumbuh sehat', 'Omset dari transaksi yang benar-benar masuk, bukan nilai deal di kartu Sales.', 250000000, [
                 ['Klien coaching baru', 'manual', null, 10, 'angka'],
             ]],
         ];
@@ -128,10 +125,16 @@ class DemoOkrKpiSeeder extends Seeder
         // mengambil angkanya sendiri dan kolom ini WAJIB null di sana.
         $realisasiManual = ['Klien coaching baru' => 7];
 
-        foreach ($rencana as $i => [$q, $judul, $ket, $krs]) {
+        foreach ($rencana as $i => [$q, $judul, $ket, $targetOmzet, $krs]) {
             $objective = Objective::updateOrCreate(
                 ['year' => $q['year'], 'quarter' => $q['quarter'], 'title' => $judul],
-                ['description' => $ket, 'position' => $i, 'created_by' => $owner],
+                [
+                    'description' => $ket,
+                    'omset_target' => $targetOmzet,
+                    'omset_owner_id' => $targetOmzet ? $owner : null,
+                    'position' => $i,
+                    'created_by' => $owner,
+                ],
             );
 
             foreach ($krs as $j => [$krJudul, $source, $metric, $target, $unit]) {
