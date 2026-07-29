@@ -921,13 +921,15 @@ class OkrController extends Controller
             'source' => ['required', Rule::in(array_keys(KeyResult::SOURCES))],
             'board_key' => [
                 'nullable',
-                'required_if:source,kartu',
+                // Board kini opsional: KR kartu tanpa board menghitung kartu
+                // yang ditautkan langsung lewat key_result_id, bukan seluruh
+                // kartu di suatu board. Tanpa board target wajib diisi manual.
                 Rule::exists('categories', 'key')->where('type', 'kanban'),
             ],
             // Metrik WAJIB saat source=auto: tanpanya KR itu tak punya sumber
             // angka sama sekali & akan selamanya menampilkan 0.
             'metric' => ['nullable', 'required_if:source,auto', Rule::in(array_keys(OkrMetrics::METRICS))],
-            'target' => 'nullable|required_unless:source,kartu|numeric|min:0',
+            'target' => 'nullable|numeric|min:0',
             'unit' => ['required', Rule::in(array_keys(KeyResult::UNITS))],
             'priority_name' => 'nullable|string|max:50',
         ]);
@@ -942,20 +944,42 @@ class OkrController extends Controller
             $data['board_key'] = null;
             $data['actual_manual'] = null;
             $data['unit'] = OkrMetrics::UNITS[$data['metric']];
+            if (($data['target'] ?? null) === null) {
+                throw ValidationException::withMessages([
+                    'target' => 'Target wajib diisi untuk KR otomatis.',
+                ]);
+            }
         } elseif ($data['source'] === 'kartu') {
             $data['metric'] = null;
             $data['actual_manual'] = null;
             $data['unit'] = 'angka';
-            $objective = $existing?->objective
-                ?? Objective::findOrFail($data['objective_id']);
-            $data['target'] = BoardQuarterTarget::for(
-                $data['board_key'],
-                $objective->year,
-                $objective->quarter
-            )?->target_done ?? 0;
+            if (! empty($data['board_key'])) {
+                // Board dipilih → target & realisasi dihitung dari seluruh
+                // kartu di board tersebut dalam kuartal, via target kuartal
+                // board yang ditetapkan di /kpi.
+                $objective = $existing?->objective
+                    ?? Objective::findOrFail($data['objective_id']);
+                $data['target'] = BoardQuarterTarget::for(
+                    $data['board_key'],
+                    $objective->year,
+                    $objective->quarter
+                )?->target_done ?? 0;
+            } elseif (($data['target'] ?? null) === null) {
+                // Tanpa board → KR ini mengukur kartu yang ditautkan langsung
+                // lewat key_result_id (langkah per KR). Target = jumlah kartu
+                // yang harus diselesaikan — diisi manual di form.
+                throw ValidationException::withMessages([
+                    'target' => 'Tanpa board Kanban, target jumlah kartu wajib diisi.',
+                ]);
+            }
         } else {
             $data['board_key'] = null;
             $data['metric'] = null;
+            if (($data['target'] ?? null) === null) {
+                throw ValidationException::withMessages([
+                    'target' => 'Target wajib diisi.',
+                ]);
+            }
         }
 
         return $this->denganPrioritas($data);
