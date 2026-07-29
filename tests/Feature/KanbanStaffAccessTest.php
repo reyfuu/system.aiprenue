@@ -161,6 +161,74 @@ class KanbanStaffAccessTest extends TestCase
             ->assertInertia(fn ($page) => $page->where('board.todo.0.ketepatan', 'terlambat'));
     }
 
+    public function test_user_menerima_reminder_kerjaan_yang_mendekati_deadline(): void
+    {
+        $staff = $this->staff();
+        $reminder = Pipeline::create($this->cardPayload([
+            'endorse' => 'Harus segera selesai',
+            'assigned_to' => $staff->id,
+            'deadline' => today()->addDays(2),
+        ]));
+        Pipeline::create($this->cardPayload([
+            'endorse' => 'Masih lama',
+            'assigned_to' => $staff->id,
+            'deadline' => today()->addDays(4),
+        ]));
+
+        $this->actingAs($staff)
+            ->get('/pipelines/kanban?category=todolist')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->has('workReminders', 1)
+                ->where('workReminders.0.title', 'Harus segera selesai')
+                ->where('workReminders.0.days_left', 2)
+                ->where('workReminders.0.url', route('pipelines.kanban', [
+                    'category' => 'todolist',
+                    'card' => $reminder->id,
+                ]))
+            );
+    }
+
+    public function test_owner_boleh_memberi_score_di_atas_target_minimum_seratus_per_bulan(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        $anggota = $this->staff();
+        Pipeline::create($this->cardPayload([
+            'endorse' => 'Bobot pertama',
+            'assigned_to' => $anggota->id,
+            'deadline' => '2026-08-10',
+            'score' => 80,
+        ]));
+
+        $this->actingAs($owner)
+            ->post('/pipelines', $this->cardPayload([
+                'endorse' => 'Melebihi target',
+                'assigned_to' => $anggota->id,
+                'deadline' => '2026-08-20',
+                'score' => 30,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(110, (int) Pipeline::where('assigned_to', $anggota->id)
+            ->whereBetween('deadline', ['2026-08-01', '2026-08-31'])
+            ->sum('score'));
+    }
+
+    public function test_selain_owner_tidak_boleh_mengisi_score(): void
+    {
+        $card = $this->kanbanCard();
+
+        $this->actingAs($this->staff())
+            ->put('/pipelines/'.$card->id, $this->cardPayload([
+                'assigned_to' => $this->staff()->id,
+                'deadline' => '2026-08-20',
+                'score' => 25,
+            ]))
+            ->assertForbidden();
+
+        $this->assertNull($card->fresh()->score);
+    }
+
     /** Peran pengelola tetap menerimanya — gerbangnya jangan sampai menutup
      *  semua orang. */
     public function test_peran_pengelola_menerima_capaian_kuartal(): void

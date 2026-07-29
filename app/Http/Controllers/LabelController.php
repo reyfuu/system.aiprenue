@@ -43,6 +43,7 @@ class LabelController extends Controller
     {
         return $request->validate([
             'name'  => 'required|string|max:50',
+            'group' => 'required|integer|in:1,2',
             'color' => ['required', Rule::in(Label::COLORS)],
         ]);
     }

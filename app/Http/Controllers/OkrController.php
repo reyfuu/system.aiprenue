@@ -147,7 +147,7 @@ class OkrController extends Controller
             'sources' => KeyResult::SOURCES,
             'kanbanBoards' => $kanbanBoards,
             'kanbanColumns' => $kanbanColumns,
-            'cardCategories' => Label::orderBy('id')->get(['name', 'color']),
+            'cardCategories' => Label::orderBy('group')->orderBy('id')->get(['name', 'group', 'color']),
             'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
             'units' => KeyResult::UNITS,
             // Kartu todolist yang BELUM tertaut ke KR mana pun — pilihan untuk
@@ -403,7 +403,7 @@ class OkrController extends Controller
                 'progress' => $column->key,
                 'endorse' => $keyResult->title,
                 'description' => $execution['card_description'] ?? null,
-                'labels' => $label ? [['name' => $label->name, 'color' => $label->color]] : [],
+                'labels' => $label ? [['name' => $label->name, 'group' => $label->group, 'color' => $label->color]] : [],
                 'assigned_to' => $execution['assigned_to'] ?? null,
                 'deadline' => $execution['deadline'] ?? null,
                 'key_result_id' => $keyResult->id,

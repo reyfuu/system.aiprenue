@@ -13,6 +13,7 @@ use App\Support\ExchangeRate;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -199,6 +200,7 @@ class PipelineController extends Controller
                 'revisi' => (int) $p->revisi,                        // 0=tanpa revisi, 1-3
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline' => $p->deadline?->toDateString(),
+                'score' => $p->score,
                 'description' => $p->description,
                 'archived' => (bool) $p->archived_at,
                 // komentar (terbaru dulu) + lampiran
@@ -277,6 +279,24 @@ class PipelineController extends Controller
             ];
         }
 
+        $staff = User::orderBy('name')->get(['id', 'name', 'role']);
+        $scoreBulan = [];
+        if ($showGallery) {
+            $totalScore = Pipeline::query()
+                ->whereIn('category', Category::where('type', 'kanban')->select('key'))
+                ->whereBetween('deadline', [today()->startOfMonth(), today()->endOfMonth()])
+                ->whereNotNull('assigned_to')
+                ->selectRaw('assigned_to, COALESCE(SUM(score), 0) as total')
+                ->groupBy('assigned_to')
+                ->pluck('total', 'assigned_to');
+            $scoreBulan = $staff->map(fn (User $anggota) => [
+                'id' => $anggota->id,
+                'name' => $anggota->name,
+                'score' => (int) ($totalScore[$anggota->id] ?? 0),
+                'shortage' => max(0, 100 - (int) ($totalScore[$anggota->id] ?? 0)),
+            ])->values();
+        }
+
         return Inertia::render('Kanban', [
             // Kuartal yang sedang dipakai panel + status apakah kartunya ikut disaring.
             'quarter' => [
@@ -308,7 +328,9 @@ class PipelineController extends Controller
             'jenisCounts' => $jenisCounts,                                // angka di tiap chip
             'showArchived' => $showArchived,                               // sedang lihat arsip?
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
-            'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
+            'staff' => $staff,
+            'monthlyScores' => $scoreBulan,
+            'scoreMonth' => today()->translatedFormat('F Y'),
             'outputs' => Output::orderBy('name')->get(),
             'canManage' => auth()->user()->canManageBoard($category),      // KARTU: staff boleh di board kanban, bukan Sales
             'canManageStructure' => auth()->user()->canManage(),           // KOLOM/BOARD/LAMPIRAN: owner/manager/it/admin saja
@@ -318,9 +340,9 @@ class PipelineController extends Controller
             // Process khusus board Kanban; Sales tetap memakai kategori deal lama.
             // $showGallery membedakan pemanggil Kanban dari Sales pada renderer bersama ini.
             'labels' => Label::query()
-                ->when(! $showGallery, fn ($query) => $query->where('name', '!=', 'Process'))
+                ->when(! $showGallery, fn ($query) => $query->where('group', 2))
                 ->orderBy('id')
-                ->get(['id', 'name', 'color']),
+                ->get(['id', 'name', 'group', 'color']),
             // Referensi untuk form tambah/edit kartu
             'accounts' => Pipeline::ACCOUNTS,
             'jenisList' => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
@@ -466,7 +488,7 @@ class PipelineController extends Controller
 
     public function update(Request $request, Pipeline $pipeline)
     {
-        $data = $this->validated($request);
+        $data = $this->validated($request, $pipeline);
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
@@ -489,8 +511,12 @@ class PipelineController extends Controller
         return redirect()->back()->with('status', $archiving ? 'Kartu diarsipkan.' : 'Kartu dikembalikan.');
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, ?Pipeline $pipeline = null): array
     {
+        // UI hanya mengirim score untuk owner; pagar server ini mencegah role
+        // lain menyisipkannya lewat request manual.
+        abort_if($request->has('score') && $request->user()?->role !== 'owner', 403, 'Hanya owner yang boleh mengisi score.');
+
         $validProgress = BoardColumn::where('board_key', $request->category)->pluck('key')->all();
 
         $data = $request->validate([
@@ -504,13 +530,10 @@ class PipelineController extends Controller
             'kontak_wa' => 'nullable|string|max:40',
             'kontak_gmail' => 'nullable|string|max:255',
             'kontak_ig' => 'nullable|string|max:100',
-            // Satu label per kartu (pilih-satu, ala radio). max:1 ditegakkan di
-            // sini juga, bukan cuma di pemilih Vue: request langsung tetap
-            // tembus kalau gerbangnya hanya di frontend. Kartu lama yang
-            // terlanjur berlabel banyak tak tersentuh — validasi ini hanya
-            // berlaku untuk kiriman baru.
-            'labels' => 'nullable|array|max:1',
+            // Maksimal satu pilihan dari masing-masing kelompok kategori.
+            'labels' => 'nullable|array|max:2',
             'labels.*.name' => 'required_with:labels|string|max:50',
+            'labels.*.group' => 'required_with:labels|integer|in:1,2',
             'labels.*.color' => 'required_with:labels|string|max:40',
             'coaching' => 'nullable|string|max:255',
             'speaker' => 'nullable|string|max:255',
@@ -521,6 +544,7 @@ class PipelineController extends Controller
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
             'deadline' => 'nullable|date',
+            'score' => 'nullable|integer|min:0|max:100',
             'payment_status' => 'required|in:belum,dp,lunas',
             'amount_idr' => 'nullable|numeric|min:0',
             'amount_usd' => 'nullable|numeric|min:0',
@@ -531,6 +555,27 @@ class PipelineController extends Controller
             'outputs' => 'array',
             'outputs.*' => 'exists:outputs,id',
         ]);
+
+        $labelGroups = collect($data['labels'] ?? [])->pluck('group');
+        if ($labelGroups->duplicates()->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'labels' => 'Pilih maksimal satu label dari setiap kategori.',
+            ]);
+        }
+
+        $score = (int) ($data['score'] ?? 0);
+        if ($score > 0 && (empty($data['assigned_to']) || empty($data['deadline']))) {
+            throw ValidationException::withMessages([
+                'score' => 'Score memerlukan penanggung jawab dan deadline.',
+            ]);
+        }
+
+        if ($score > 0) {
+            if (! Category::where('key', $data['category'])->where('type', 'kanban')->exists()) {
+                throw ValidationException::withMessages(['score' => 'Score hanya berlaku untuk kartu Kanban.']);
+            }
+
+        }
 
         return $data;
     }

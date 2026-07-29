@@ -33,6 +33,7 @@ const call = async (client, name, args = {}) => {
     }
 
     console.log('\n— list_boards —\n' + (await call(client, 'list_boards')));
+    console.log('\n— get_kanban_board (board=kerja) —\n' + (await call(client, 'get_kanban_board', { board: 'kerja' })));
     console.log('\n— create_task (board=kerja) —\n' + (await call(client, 'create_task', { board: 'kerja', title: 'Task dari MCP test' })));
     console.log('\n— list_tasks (board=kerja) —\n' + (await call(client, 'list_tasks', { board: 'kerja' })));
 
