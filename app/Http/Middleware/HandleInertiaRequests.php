@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Category;
+use App\Models\Pipeline;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -88,6 +90,33 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'status' => fn () => $request->session()->get('status'),
             ],
+
+            // Reminder kerja personal: hanya kartu Kanban aktif yang ditugaskan
+            // ke user login, belum selesai, dan deadline-nya <= tiga hari lagi.
+            // Dibagikan global agar lonceng/notifikasi tetap hidup di semua halaman.
+            'workReminders' => fn () => $user
+                ? Pipeline::query()
+                    ->where('assigned_to', $user->id)
+                    ->whereIn('category', Category::where('type', 'kanban')->select('key'))
+                    ->whereNull('archived_at')
+                    ->whereNull('completed_at')
+                    ->where('done', false)
+                    ->whereNotNull('deadline')
+                    ->whereDate('deadline', '<=', today()->addDays(3))
+                    ->orderBy('deadline')
+                    ->limit(20)
+                    ->get(['id', 'category', 'endorse', 'deadline'])
+                    ->map(fn (Pipeline $card) => [
+                        'id' => $card->id,
+                        'title' => $card->endorse,
+                        'deadline' => $card->deadline->toDateString(),
+                        'days_left' => today()->diffInDays($card->deadline, false),
+                        'url' => route('pipelines.kanban', [
+                            'category' => $card->category,
+                            'card' => $card->id,
+                        ]),
+                    ])
+                : [],
 
             // True saat owner sedang "masuk sebagai" peran lain → tampilkan bilah "Kembali".
             'impersonating' => $request->session()->has('impersonator_id'),

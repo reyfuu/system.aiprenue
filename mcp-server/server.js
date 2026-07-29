@@ -144,6 +144,46 @@ const OKR_METRICS = ['view', 'subscriber', 'omset'];
 const OKR_UNITS = ['angka', 'rupiah', 'persen'];
 const LIMIT = z.number().int().min(1).max(200).default(50);
 
+// Bentuk Kanban lengkap untuk MCP. Definisi kolom wajib diambil dari
+// board_columns, bukan disimpulkan dari task: kolom kosong tetap harus terlihat.
+async function kanbanBoard(board) {
+    const [[category]] = await db.query(
+        `SELECT \`key\`, name, section FROM categories WHERE \`key\`=? AND type='kanban'`,
+        [board]
+    );
+    if (!category) return null;
+
+    const [columns] = await db.query(
+        `SELECT id, \`key\`, name, position
+         FROM board_columns WHERE board_key=? ORDER BY position, id`,
+        [board]
+    );
+    const [tasks] = await db.query(
+        `SELECT p.id, p.endorse AS title, p.progress AS column_key, p.done,
+                p.deadline, p.score, p.labels, p.assigned_to, u.name AS assignee
+         FROM pipelines p
+         LEFT JOIN users u ON u.id=p.assigned_to
+         WHERE p.category=? AND p.archived_at IS NULL
+         ORDER BY p.position, p.id`,
+        [board]
+    );
+
+    const grouped = new Map(columns.map((column) => [column.key, { ...column, tasks: [] }]));
+    for (const task of tasks) {
+        const column = grouped.get(task.column_key);
+        if (column) column.tasks.push(task);
+    }
+
+    return {
+        board: category,
+        columns: [...grouped.values()].map((column) => ({
+            ...column,
+            task_count: column.tasks.length,
+        })),
+        task_count: tasks.length,
+    };
+}
+
 // Modul non-board diberikan sebagai tool eksplisit agar model dapat menemukan
 // kapabilitasnya tanpa mendapat akses SQL generik. Semua nilai dinamis tetap
 // masuk sebagai parameter query, bukan interpolasi.
@@ -684,7 +724,22 @@ function buildServer() {
         }
     );
 
-    // 2) Daftar task dalam satu board
+    // 2) Board lengkap: seluruh kolom (termasuk kosong) + task per kolom.
+    server.registerTool(
+        'get_kanban_board',
+        {
+            title: 'Get Kanban Board',
+            description: 'Ambil satu board Kanban lengkap: seluruh kolom dalam urutan asli, termasuk kolom kosong, beserta task pada tiap kolom. Gunakan ini saat perlu melihat struktur board.',
+            inputSchema: { board: z.string().describe('board key dari list_boards') },
+        },
+        async ({ board }) => {
+            const result = await kanbanBoard(board);
+            return result ? jsonText(result) : errText(`Board kanban "${board}" tidak ditemukan.`);
+        }
+    );
+
+    // 3) Daftar task dalam satu board. columns ikut dikirim agar klien lama yang
+    // masih memakai list_tasks juga tidak kehilangan kolom kosong.
     server.registerTool(
         'list_tasks',
         {
@@ -693,16 +748,17 @@ function buildServer() {
             inputSchema: { board: z.string().describe('board key, mis. "hrd"') },
         },
         async ({ board }) => {
-            const [rows] = await db.query(
-                `SELECT id, endorse AS title, progress AS column_key, done, deadline
-                 FROM pipelines WHERE category=? AND archived_at IS NULL ORDER BY id`,
-                [board]
-            );
-            return jsonText({ board, tasks: rows });
+            const result = await kanbanBoard(board);
+            if (!result) return errText(`Board kanban "${board}" tidak ditemukan.`);
+            return jsonText({
+                board,
+                columns: result.columns.map(({ tasks, ...column }) => column),
+                tasks: result.columns.flatMap((column) => column.tasks),
+            });
         }
     );
 
-    // 3) Buat task baru di board
+    // 4) Buat task baru di board
     server.registerTool(
         'create_task',
         {
@@ -739,7 +795,7 @@ function buildServer() {
         }
     );
 
-    // 4) Ubah task yang sudah ada (by id): deadline, column, done, atau title
+    // 5) Ubah task yang sudah ada (by id): deadline, column, done, atau title
     server.registerTool(
         'update_task',
         {

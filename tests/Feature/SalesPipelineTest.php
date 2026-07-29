@@ -137,7 +137,7 @@ class SalesPipelineTest extends TestCase
             'assigned_to' => $pj->id, 'amount_idr' => 5_000_000, 'amount_usd' => 250,
             'link' => 'https://example.com/video', 'notes' => 'Catatan',
             'outputs' => [$output->id],
-            'labels' => [['name' => 'Prioritas', 'color' => 'bg-red-500']],
+            'labels' => [['name' => 'Prioritas', 'group' => 2, 'color' => 'bg-red-500']],
         ])->assertSessionHasNoErrors();
 
         $kartu = Pipeline::firstWhere('endorse', 'Deal lengkap');
@@ -151,24 +151,37 @@ class SalesPipelineTest extends TestCase
         $this->assertEquals(250, $kartu->amount_usd);
         $this->assertSame('2026-09-01', $kartu->deadline?->toDateString());
         $this->assertSame('Catatan', $kartu->notes);
-        $this->assertSame([['name' => 'Prioritas', 'color' => 'bg-red-500']], $kartu->labels);
+        $this->assertSame([['name' => 'Prioritas', 'group' => 2, 'color' => 'bg-red-500']], $kartu->labels);
         $this->assertSame([$output->id], $kartu->outputs->pluck('id')->all());
     }
 
-    /** Label = pilih SATU. Batasnya ditegakkan di server, bukan cuma di pemilih
-     *  Vue — request langsung tetap tembus kalau gerbangnya hanya di frontend. */
-    public function test_kartu_hanya_boleh_punya_satu_label(): void
+    /** Setiap kategori hanya boleh punya satu pilihan. */
+    public function test_kartu_menolak_dua_label_dari_kategori_yang_sama(): void
     {
         $this->actingAs($this->user('owner'))->post('/pipelines', [
             'category' => 'sales', 'account' => 'fk', 'endorse' => 'Dua label',
             'progress' => 'lead', 'jenis' => 'coaching_1on1', 'payment_status' => 'belum',
             'labels' => [
-                ['name' => 'Urgent', 'color' => 'bg-red-500'],
-                ['name' => 'Review', 'color' => 'bg-purple-500'],
+                ['name' => 'Urgent', 'group' => 2, 'color' => 'bg-red-500'],
+                ['name' => 'Review', 'group' => 2, 'color' => 'bg-purple-500'],
             ],
         ])->assertSessionHasErrors('labels');
 
         $this->assertNull(Pipeline::firstWhere('endorse', 'Dua label'));
+    }
+
+    public function test_kartu_boleh_memiliki_satu_label_dari_masing_masing_kategori(): void
+    {
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales', 'account' => 'fk', 'endorse' => 'Dua kategori',
+            'progress' => 'lead', 'jenis' => 'coaching_1on1', 'payment_status' => 'belum',
+            'labels' => [
+                ['name' => 'Process', 'group' => 1, 'color' => 'bg-brand-600'],
+                ['name' => 'Urgent', 'group' => 2, 'color' => 'bg-red-500'],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertCount(2, Pipeline::firstWhere('endorse', 'Dua kategori')->labels);
     }
 
     /** Tanpa label sama sekali tetap sah — pilih-satu bukan berarti wajib isi. */

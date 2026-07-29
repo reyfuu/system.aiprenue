@@ -25,7 +25,8 @@ eksplisit per fitur; tidak ada tool SQL generik.
 | Tool | Fungsi |
 |------|--------|
 | `list_boards` | Daftar board kanban + jumlah task |
-| `list_tasks` | Task aktif dalam satu board (`board` = key) |
+| `get_kanban_board` | Board lengkap: seluruh kolom termasuk yang kosong + task per kolom |
+| `list_tasks` | Task aktif dan metadata seluruh kolom dalam satu board (`board` = key) |
 | `create_task` | Buat task baru (`board`, `title`, `column?`) |
 | `update_task` | Ubah task by id (`deadline`/`column`/`done`/`title`) |
 
