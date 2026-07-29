@@ -1,25 +1,6 @@
 {
-  "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/index.js": {
-    "file": "assets/simple-mind-map-CGRZIv8X.js",
-    "name": "simple-mind-map",
-    "src": "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/index.js",
-    "isDynamicEntry": true,
-    "imports": [
-      "resources/js/app.js",
-      "_Base-DFnS23C-.js"
-    ]
-  },
-  "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/src/plugins/Drag.js": {
-    "file": "assets/Drag-CC_-JY0B.js",
-    "name": "Drag",
-    "src": "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/src/plugins/Drag.js",
-    "isDynamicEntry": true,
-    "imports": [
-      "_Base-DFnS23C-.js"
-    ]
-  },
-  "_Base-DFnS23C-.js": {
-    "file": "assets/Base-DFnS23C-.js",
+  "_Base-yQQo86jQ.js": {
+    "file": "assets/Base-yQQo86jQ.js",
     "name": "Base",
     "imports": [
       "resources/js/app.js"
@@ -77,8 +58,27 @@
     "file": "assets/instrument-sans-600-normal-DMks36a2.woff",
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
+  "node_modules/simple-mind-map/index.js": {
+    "file": "assets/simple-mind-map-DRYTX1jG.js",
+    "name": "simple-mind-map",
+    "src": "node_modules/simple-mind-map/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.js",
+      "_Base-yQQo86jQ.js"
+    ]
+  },
+  "node_modules/simple-mind-map/src/plugins/Drag.js": {
+    "file": "assets/Drag-DT3bN0uY.js",
+    "name": "Drag",
+    "src": "node_modules/simple-mind-map/src/plugins/Drag.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_Base-yQQo86jQ.js"
+    ]
+  },
   "resources/css/app.css": {
-    "file": "assets/app-DI-wVGPM.css",
+    "file": "assets/app-DW-TAv9r.css",
     "name": "app",
     "names": [
       "app.css"
@@ -87,17 +87,17 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-TwzUUT5E.js",
+    "file": "assets/app-DF1ys635.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "dynamicImports": [
-      "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/index.js",
-      "../../../Users/wrapxbake/pipeline/node_modules/simple-mind-map/src/plugins/Drag.js"
+      "node_modules/simple-mind-map/index.js",
+      "node_modules/simple-mind-map/src/plugins/Drag.js"
     ],
     "css": [
       "assets/app-CEdYO2l2.css",
-      "assets/app-DI-wVGPM.css"
+      "assets/app-DW-TAv9r.css"
     ]
   }
 }

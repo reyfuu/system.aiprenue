@@ -11,11 +11,12 @@ use Illuminate\Support\Collection;
  *  yang terukur adalah Key Result di bawahnya. */
 class Objective extends Model
 {
-    protected $fillable = ['year', 'quarter', 'title', 'description', 'position', 'created_by'];
+    protected $fillable = ['year', 'quarter', 'title', 'description', 'priority', 'position', 'created_by'];
 
     protected $casts = [
         'year' => 'integer',
         'quarter' => 'integer',
+        'priority' => 'array',
         'position' => 'integer',
     ];
 

@@ -11,13 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class KeyResult extends Model
 {
     protected $fillable = [
-        'objective_id', 'title', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'position',
+        'objective_id', 'title', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
         'owner_id', 'created_by',
     ];
 
     protected $casts = [
         'target' => 'decimal:2',
         'actual_manual' => 'decimal:2',
+        'priority' => 'array',
         'position' => 'integer',
     ];
 

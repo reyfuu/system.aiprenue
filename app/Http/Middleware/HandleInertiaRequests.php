@@ -118,6 +118,28 @@ class HandleInertiaRequests extends Middleware
                     ])
                 : [],
 
+            // Riwayat notifikasi dari database server. Berbeda dari
+            // workReminders (hasil hitung deadline), item ini tetap ada sampai
+            // dibaca dan muncul untuk semua role di Layout global.
+            'serverNotifications' => fn () => $user
+                ? $user->notifications()
+                    ->latest()
+                    ->limit(20)
+                    ->get()
+                    ->map(fn ($notification) => [
+                        'id' => $notification->id,
+                        'title' => $notification->data['title'] ?? 'Notifikasi',
+                        'message' => $notification->data['message'] ?? '',
+                        'url' => $notification->data['url'] ?? null,
+                        'priority' => $notification->data['priority'] ?? null,
+                        'read_at' => $notification->read_at?->toIso8601String(),
+                        'created_at' => $notification->created_at?->toIso8601String(),
+                    ])
+                : [],
+            'unreadNotificationsCount' => fn () => $user
+                ? $user->unreadNotifications()->count()
+                : 0,
+
             // True saat owner sedang "masuk sebagai" peran lain → tampilkan bilah "Kembali".
             'impersonating' => $request->session()->has('impersonator_id'),
         ];

@@ -10,6 +10,7 @@ use App\Models\Label;
 use App\Models\Objective;
 use App\Models\Pipeline;
 use App\Models\User;
+use App\Notifications\OkrAssignmentNotification;
 use App\Support\OkrMetrics;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
@@ -37,6 +38,10 @@ class OkrController extends Controller
 {
     /** Berapa kuartal ke belakang yang ditarik untuk grafik tren. */
     private const TREN_KUARTAL = 6;
+
+    /** Penanda kerja yang diminta untuk OKR. Definisinya tetap berasal dari
+     *  tabel labels supaya nama dan warna sama dengan kartu Kanban. */
+    private const PRIORITY_NAMES = ['Urgent', 'Penting'];
 
     public function index(Request $request)
     {
@@ -89,9 +94,10 @@ class OkrController extends Controller
             'id' => $o->id,
             'title' => $o->title,
             'description' => $o->description,
+            'priority' => $o->priority,
             'progress' => $o->progress($realisasi),
             'created_by_name' => $o->creator?->name,
-            'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr, $selesaiPerBoard, $targetPerBoard, $namaBoard) {
+            'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr, $namaBoard) {
                 $kartu = $kartuPerKr->get($kr->id, collect());
                 if ($kr->source === 'kartu' && ! $kr->board_key) {
                     $kr->setAttribute('kartu_selesai', $kartu->whereNotNull('completed_at')->count());
@@ -108,6 +114,7 @@ class OkrController extends Controller
                     'board_name' => $kr->board_key ? ($namaBoard[$kr->board_key] ?? $kr->board_key) : null,
                     'metric' => $kr->metric,
                     'unit' => $kr->unit,
+                    'priority' => $kr->priority,
                     'target' => (float) $kr->target,
                     'actual' => $kr->actual($realisasi),
                     'percent' => $kr->percent($realisasi),
@@ -145,6 +152,11 @@ class OkrController extends Controller
             'tren' => $this->tren($year, $quarter),
             'metrics' => OkrMetrics::METRICS,
             'sources' => KeyResult::SOURCES,
+            'priorities' => Label::where('group', 2)
+                ->whereIn('name', self::PRIORITY_NAMES)
+                ->get(['name', 'color'])
+                ->sortBy(fn (Label $label) => array_search($label->name, self::PRIORITY_NAMES, true))
+                ->values(),
             'kanbanBoards' => $kanbanBoards,
             'kanbanColumns' => $kanbanColumns,
             'cardCategories' => Label::orderBy('group')->orderBy('id')->get(['name', 'group', 'color']),
@@ -316,16 +328,71 @@ class OkrController extends Controller
 
     public function storeObjective(Request $request)
     {
-        $data = $this->validasiObjective($request);
+        $data = $this->validasiObjective($request, true);
+        $omsetTarget = (float) ($data['omset_target'] ?? 0);
+        $omsetOwnerId = isset($data['omset_owner_id'])
+            ? (int) $data['omset_owner_id']
+            : User::where('role', 'owner')->orderBy('id')->value('id');
+        unset($data['omset_target'], $data['omset_owner_id']);
+
         $data['created_by'] = $request->user()->id;
         // Objective baru masuk paling bawah, bukan paling atas: urutan yang
         // sudah disusun pemakai tak boleh bergeser tiap kali ia menambah satu.
         $data['position'] = (int) Objective::where('year', $data['year'])
             ->where('quarter', $data['quarter'])->max('position') + 1;
 
-        Objective::create($data);
+        // Objective + KR omset harus utuh: jangan sampai Objective tersimpan
+        // sendirian bila pembuatan KR gagal di tengah jalan.
+        DB::transaction(function () use ($data, $omsetTarget, $omsetOwnerId, $request): void {
+            $objective = Objective::create($data);
 
-        return back()->with('status', 'Objective ditambahkan.');
+            if ($omsetTarget <= 0) {
+                return;
+            }
+
+            $keyResult = KeyResult::create([
+                'objective_id' => $objective->id,
+                'title' => 'Omzet kuartal',
+                'source' => 'auto',
+                'metric' => 'omset',
+                'target' => $omsetTarget,
+                'actual_manual' => null,
+                'unit' => OkrMetrics::UNITS['omset'],
+                // Penanda Objective diwariskan supaya target omzet yang dibuat
+                // bersamaan langsung punya tingkat prioritas yang sama.
+                'priority' => $objective->priority,
+                'position' => 1,
+                'owner_id' => $omsetOwnerId,
+                'created_by' => $request->user()->id,
+            ]);
+
+            // Staff tidak dapat membuka halaman OKR yang memuat angka perusahaan,
+            // tetapi tetap perlu tahu target yang menjadi tanggung jawabnya.
+            // Karena itu detail penting masuk ke notifikasi server tanpa tautan
+            // ke /okr yang akan berakhir 403 untuk role staff.
+            if ($recipient = User::find($omsetOwnerId)) {
+                $recipient->notify(new OkrAssignmentNotification(
+                    title: 'Target omzet baru',
+                    message: sprintf(
+                        'Anda ditetapkan sebagai PIC target omzet Rp %s untuk “%s” (%s).',
+                        number_format($omsetTarget, 0, ',', '.'),
+                        $objective->title,
+                        Quarter::label($objective->year, $objective->quarter),
+                    ),
+                    url: null,
+                    objectiveId: $objective->id,
+                    keyResultId: $keyResult->id,
+                    priority: $keyResult->priority,
+                ));
+            }
+        });
+
+        return back()->with(
+            'status',
+            $omsetTarget > 0
+                ? 'Objective dan target omzet ditambahkan.'
+                : 'Objective ditambahkan.'
+        );
     }
 
     public function updateObjective(Request $request, Objective $objective)
@@ -344,14 +411,25 @@ class OkrController extends Controller
         return back()->with('status', 'Objective dihapus.');
     }
 
-    private function validasiObjective(Request $request): array
+    private function validasiObjective(Request $request, bool $denganOmset = false): array
     {
-        return $request->validate([
+        $rules = [
             'year' => 'required|integer|min:2000|max:2100',
             'quarter' => 'required|integer|min:1|max:4',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:2000',
-        ]);
+            'priority_name' => 'nullable|string|max:50',
+        ];
+        if ($denganOmset) {
+            // Nol/kosong berarti hanya membuat Objective. Nilai positif membuat
+            // KR otomatis "Omzet kuartal" di transaksi yang sama.
+            $rules['omset_target'] = 'nullable|numeric|min:0';
+            $rules['omset_owner_id'] = 'nullable|exists:users,id';
+        }
+
+        $data = $request->validate($rules);
+
+        return $this->denganPrioritas($data);
     }
 
     // --------------------------------------------------------- Key Result
@@ -387,16 +465,29 @@ class OkrController extends Controller
             }
         }
         $data = $this->validasiKeyResult($request);
+        if ($data['source'] === 'auto' && $data['metric'] === 'omset') {
+            throw ValidationException::withMessages([
+                'metric' => 'Target omzet dibuat saat membuat Objective.',
+            ]);
+        }
         $data['created_by'] = $request->user()->id;
-        // PJ belum bisa dipilih di form — untuk sekarang selalu owner, sesuai
-        // keputusan "sementara penanggung jawabnya owner dulu". Kolomnya sudah
-        // FK ke users, jadi pemilih PJ nanti tinggal dipasang tanpa migrasi.
-        $data['owner_id'] = User::where('role', 'owner')->orderBy('id')->value('id');
+        // Bila ada card eksekusi, PIC card juga menjadi penanggung jawab KR.
+        // Tanpa card/PIC, perilaku lama tetap dipertahankan: owner pertama.
+        $data['owner_id'] = $execution['assigned_to']
+            ?? User::where('role', 'owner')->orderBy('id')->value('id');
         $data['position'] = (int) KeyResult::where('objective_id', $data['objective_id'])->max('position') + 1;
 
-        $keyResult = KeyResult::create($data);
-        if (! empty($execution['kanban_board_key'])) {
-            Pipeline::create([
+        // KR, card eksekusi, dan notifikasi adalah satu paket. Bila salah
+        // satunya gagal, transaksi membatalkan semuanya agar staff tidak
+        // menerima notifikasi untuk pekerjaan yang sebenarnya tidak tersimpan.
+        DB::transaction(function () use ($data, $execution, $column, $label): void {
+            $keyResult = KeyResult::create($data);
+
+            if (empty($execution['kanban_board_key'])) {
+                return;
+            }
+
+            $card = Pipeline::create([
                 'category' => $execution['kanban_board_key'],
                 'account' => 'fk',
                 'payment_status' => 'belum',
@@ -408,9 +499,27 @@ class OkrController extends Controller
                 'deadline' => $execution['deadline'] ?? null,
                 'key_result_id' => $keyResult->id,
                 'is_kr_master' => true,
-                'created_by' => $request->user()->id,
+                'created_by' => $data['created_by'],
             ]);
-        }
+
+            if ($recipient = User::find($execution['assigned_to'] ?? null)) {
+                $recipient->notify(new OkrAssignmentNotification(
+                    title: 'Pekerjaan OKR baru',
+                    message: sprintf(
+                        'Anda ditugaskan pada “%s” untuk Objective “%s”.',
+                        $keyResult->title,
+                        $keyResult->objective()->value('title'),
+                    ),
+                    url: route('pipelines.kanban', [
+                        'category' => $card->category,
+                        'card' => $card->id,
+                    ]),
+                    objectiveId: $keyResult->objective_id,
+                    keyResultId: $keyResult->id,
+                    priority: $keyResult->priority,
+                ));
+            }
+        });
 
         return back()->with('status', 'Key Result ditambahkan.');
     }
@@ -540,6 +649,7 @@ class OkrController extends Controller
             'metric' => ['nullable', 'required_if:source,auto', Rule::in(array_keys(OkrMetrics::METRICS))],
             'target' => 'nullable|required_unless:source,kartu|numeric|min:0',
             'unit' => ['required', Rule::in(array_keys(KeyResult::UNITS))],
+            'priority_name' => 'nullable|string|max:50',
         ]);
 
         // Bersihkan kolom yang tak dipakai tiap sumber, supaya nilai lama tak
@@ -567,6 +677,39 @@ class OkrController extends Controller
             $data['board_key'] = null;
             $data['metric'] = null;
         }
+
+        return $this->denganPrioritas($data);
+    }
+
+    /**
+     * Ubah nama pilihan menjadi snapshot badge {name,color}.
+     *
+     * Warna tidak dipercaya dari browser. Server selalu mengambilnya dari
+     * tabel labels dan hanya menerima Urgent/Penting pada grup penanda kerja.
+     */
+    private function denganPrioritas(array $data): array
+    {
+        $name = $data['priority_name'] ?? null;
+        unset($data['priority_name']);
+
+        if (blank($name)) {
+            $data['priority'] = null;
+
+            return $data;
+        }
+
+        $label = Label::where('group', 2)
+            ->whereIn('name', self::PRIORITY_NAMES)
+            ->where('name', $name)
+            ->first(['name', 'color']);
+
+        if (! $label) {
+            throw ValidationException::withMessages([
+                'priority_name' => 'Status harus Urgent atau Penting.',
+            ]);
+        }
+
+        $data['priority'] = ['name' => $label->name, 'color' => $label->color];
 
         return $data;
     }
