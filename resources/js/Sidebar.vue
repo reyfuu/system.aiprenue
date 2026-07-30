@@ -130,7 +130,32 @@ const submitPw = () => {
 <template>
     <!-- Render hanya bila ada user login -->
 
-    <aside v-if="user" class="hidden md:flex flex-col fixed left-0 top-0 h-screen w-56 bg-brand-800 text-brand-100 z-40">
+    <!-- Hamburger tombol — hanya tampil di mobile -->
+    <button
+        v-if="user"
+        class="md:hidden fixed top-3 left-3 z-50 w-10 h-10 rounded-xl bg-brand-800 text-white flex items-center justify-center shadow-lg"
+        @click="open = !open"
+    >
+        <svg v-if="!open" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>
+
+    <!-- Overlay backdrop — mobile only -->
+    <div v-if="user && open" class="md:hidden fixed inset-0 bg-black/40 z-40" @click="open = false" />
+
+    <!-- Sidebar desktop: tetap di kiri. Mobile: overlay dari kiri saat terbuka. -->
+    <aside
+        v-if="user"
+        :class="[
+            'fixed left-0 top-0 h-screen w-56 bg-brand-800 text-brand-100 z-40 flex-col transition-transform duration-200',
+            open ? 'flex' : 'hidden',
+            'md:flex',
+        ]"
+    >
         <!-- Header brand. shrink-0: tanpa ini header ikut memampat saat daftar
              menu panjang, dan judulnya terpotong sebelum menunya sempat scroll. -->
         <div class="shrink-0 px-5 py-5 border-b border-white/10">
