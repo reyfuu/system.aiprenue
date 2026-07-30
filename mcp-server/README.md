@@ -46,7 +46,7 @@ eksplisit per fitur; tidak ada tool SQL generik.
 |------|--------|
 | `list_okr` | Objective + Key Result satu kuartal + realisasi & capaian (default kuartal berjalan). **Baca ini dulu** sebelum menyusun strategi. |
 | `create_objective` | Buat Objective (goal kualitatif) untuk satu kuartal |
-| `create_key_result` | Tambah KR terukur — `source`: `auto` (view/subscriber/omset dari data) · `manual` · `kartu` (dari card board yang selesai) |
+| `create_key_result` | Tambah KR terukur — `source`: `auto` (view/subscriber dari data) · `manual` · `kartu` (dari card selesai). `board_key` opsional untuk `kartu`. |
 | `link_task_to_kr` | Tautkan card dari board KR ke KR bersumber `kartu` |
 
 **Alur menyusun strategi lewat AI (Claude/ChatGPT):**
@@ -54,14 +54,44 @@ eksplisit per fitur; tidak ada tool SQL generik.
 2. `create_objective` → `create_key_result` — susun goal & KR terukur.
 3. Untuk KR `kartu`: `create_task` pada board KR → `link_task_to_kr` — pecah goal jadi langkah. Menyelesaikan task menggerakkan angka KR otomatis.
 
-> Realisasi metrik `auto` (view/subscriber/omset) memakai rumus **sama persis** dengan app Laravel (`OkrMetrics`): view = tayangan konten terbit di kuartal · subscriber = snapshot follower terakhir per akun · omset = pemasukan Pembukuan di kuartal. Angka MCP = angka halaman `/okr`.
+> Realisasi metrik `auto` (view/subscriber) memakai rumus **sama persis** dengan app Laravel (`OkrMetrics`): view = tayangan konten terbit di kuartal · subscriber = snapshot follower terakhir per akun. Angka MCP = angka halaman `/okr`.
+
+> **Target omzet tinggal di Objective** (`omset_target`/`omset_owner_id`), bukan
+> lagi KR bermetrik `omset` — karena itu `metric: 'omset'` tidak lagi diterima
+> `create_key_result`. Realisasinya tetap dihitung dari pemasukan Pembukuan
+> kuartal berjalan.
+
+> **KR `kartu` punya dua mode**, sama seperti halaman OKR:
+> - **dengan `board_key`** — angkanya milik seluruh board pada kuartal itu
+>   (card selesai yang deadline-nya di dalam kuartal), dan `target` diambil dari
+>   target kuartal board yang ditetapkan di `/kpi`; argumen `target` diabaikan.
+> - **tanpa `board_key`** — KR hanya menghitung card yang ditautkan langsung
+>   lewat `link_task_to_kr`, dan `target` wajib diisi.
+
+> **Card eksekusi & penugasan.** `create_key_result` dengan `kanban_board_key` +
+> `kanban_column_key` juga membuat card utama KR (`is_kr_master`) di board itu —
+> lengkap dengan `card_category`, `card_description`, `assigned_to`, dan
+> `deadline` — lalu mengirim notifikasi database ke PIC, persis form Tambah KR
+> di `/okr`. PIC card otomatis jadi penanggung jawab KR. `update_key_result`
+> menerima `assigned_to`/`deadline` untuk memindahkan penugasan: PIC lama dapat
+> kabar "Penugasan OKR dialihkan", PIC baru dapat "Pekerjaan OKR baru", dan bila
+> hanya tanggalnya berubah PIC dapat "Deadline OKR berubah". KR, card, dan
+> notifikasi ditulis dalam satu transaksi — gagal salah satu berarti batal
+> semua. Isi `APP_URL` di `.env` agar notifikasi memuat tautan ke card; tanpa
+> itu notifikasi tetap terkirim, hanya tanpa tautan.
 
 > Tulisan langsung ke DB (bypass validasi Laravel), tetapi `create_key_result`
 > dan `link_task_to_kr` menegakkan aturan inti yang sama: KR `auto` wajib punya
-> metric, KR Kanban wajib memilih board, dan card yang ditautkan harus berasal
-> dari board KR tersebut.
+> metric, target wajib ada kecuali diturunkan dari board, kolom card harus milik
+> board yang dipilih, dan card yang ditautkan harus berasal dari board KR
+> tersebut.
 
-> Kanban terverifikasi lokal via `test-client.js`; OKR terverifikasi via `tools/list` + `list_okr` live (angka realisasi cocok dengan `/okr`).
+> Kanban terverifikasi lokal via `test-client.js`. OKR terverifikasi lokal
+> terhadap MariaDB dev: `list_okr` dibandingkan field-per-field dengan props
+> halaman `/okr` (62 field, 0 selisih), uji tulis create/update KR untuk kedua
+> mode `kartu`, dan uji end-to-end — KR dibuat lewat MCP muncul sebagai card
+> utama di `/okr` dan notifikasinya terbaca di lonceng PIC (`unreadNotificationsCount`
+> 0 → 1).
 
 **Modul lain**
 

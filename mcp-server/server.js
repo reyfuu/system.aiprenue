@@ -11,6 +11,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 const PORT = process.env.MCP_PORT || 8765;
 const TOKEN = process.env.MCP_TOKEN || ''; // kosong = tanpa auth (khusus dev lokal)
+// URL publik app Laravel, dipakai membangun tautan di notifikasi penugasan.
+// Kosong = notifikasi tetap terkirim tetapi tanpa tautan; itu lebih baik
+// daripada menebak host dan mengirim tautan yang menuju halaman salah.
+const APP_URL = (process.env.APP_URL || '').replace(/\/+$/, '');
 
 // ── OAuth 2.1 owner-tunggal, tanpa dependency (crypto bawaan Node) ────────────
 // ChatGPT & Claude hp/web butuh OAuth (UI mereka tak bisa kirim bearer statis).
@@ -146,8 +150,56 @@ async function prioritySnapshot(name) {
     return label || { name, color: name === 'Urgent' ? '#dc2626' : '#2563eb' };
 }
 
+// Tautan card Kanban di app Laravel. route('pipelines.kanban', [...]) tidak
+// punya parameter path, jadi category & card jatuh ke query string.
+const kanbanCardUrl = (board, cardId) =>
+    (APP_URL ? `${APP_URL}/pipelines/kanban?category=${encodeURIComponent(board)}&card=${cardId}` : null);
+
+/**
+ * Tulis satu notifikasi database persis seperti `$user->notify()` Laravel:
+ * baris `notifications` berisi uuid, nama kelas penuh notifikasi, dan payload
+ * hasil OkrAssignmentNotification::toArray().
+ *
+ * Dua aturan OkrNotifications::kirim() ikut ditegakkan di sini: penerima harus
+ * benar-benar ada, dan pelaku tidak menotifikasi dirinya sendiri.
+ *
+ * @returns {Promise<boolean>} true bila notifikasi benar-benar ditulis.
+ */
+async function kirimNotifikasiOkr(conn, {
+    penerimaId, pelakuId, kind = 'okr_assignment', title, message, url = null,
+    objectiveId, keyResultId = null, pipelineId = null, priority = null,
+}) {
+    if (!penerimaId) return false;
+    if (pelakuId !== null && pelakuId !== undefined && Number(penerimaId) === Number(pelakuId)) return false;
+    const [[penerima]] = await conn.query(`SELECT id FROM users WHERE id=?`, [penerimaId]);
+    if (!penerima) return false;
+    await conn.query(
+        `INSERT INTO notifications (id, type, notifiable_type, notifiable_id, data, read_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, NOW(), NOW())`,
+        [
+            crypto.randomUUID(),
+            // Nama kelas dikirim sebagai parameter, bukan ditulis inline di SQL:
+            // backslash di literal string MySQL punya arti escape sendiri.
+            'App\\Notifications\\OkrAssignmentNotification',
+            'App\\Models\\User',
+            penerimaId,
+            JSON.stringify({
+                kind, title, message, url,
+                objective_id: objectiveId,
+                key_result_id: keyResultId,
+                pipeline_id: pipelineId,
+                priority,
+            }),
+        ]);
+    return true;
+}
+
 const OKR_SOURCES = ['auto', 'manual', 'kartu'];
-const OKR_METRICS = ['view', 'subscriber', 'omset'];
+// Metrik yang boleh dipakai sebuah Key Result. 'omset' SENGAJA tidak ada:
+// target omzet kini tinggal di Objective (kolom omset_target), bukan lagi KR
+// semu — OkrController::storeKeyResult() menolaknya dengan pesan
+// "Target omzet disimpan pada Objective.".
+const OKR_KR_METRICS = ['view', 'subscriber'];
 const OKR_UNITS = ['angka', 'rupiah', 'persen'];
 const LIMIT = z.number().int().min(1).max(200).default(50);
 
@@ -391,7 +443,7 @@ function registerSystemReadTools(server) {
                 [...quarterRange(year, quarter), year, quarter]);
             for (const objective of objectives) {
                 const [krs] = await db.query(
-                    `SELECT kr.id, kr.title, kr.source, kr.metric, kr.target, kr.actual_manual,
+                    `SELECT kr.id, kr.title, kr.description, kr.source, kr.metric, kr.target, kr.actual_manual,
                             kr.unit, kr.board_key, kr.priority, kr.owner_id, u.name AS owner_name
                      FROM key_results kr
                      LEFT JOIN users u ON u.id=kr.owner_id
@@ -399,15 +451,43 @@ function registerSystemReadTools(server) {
                 for (const kr of krs) {
                     let actual = Number(kr.actual_manual || 0);
                     if (kr.source === 'auto') actual = Number(metrics[kr.metric] || 0);
-                    if (kr.source === 'kartu') {
-                        const [[done]] = await db.query(`SELECT COUNT(*) n FROM pipelines WHERE key_result_id=? AND completed_at IS NOT NULL`, [kr.id]);
+                    if (kr.source === 'kartu' && kr.board_key) {
+                        // KR berbasis board: angkanya milik SELURUH board pada kuartal
+                        // ini (disaring lewat deadline kartu), dan targetnya diambil
+                        // dari target kuartal board yang ditetapkan di /kpi — kolom
+                        // key_results.target diabaikan. Persis OkrController::index().
+                        const [[done]] = await db.query(
+                            `SELECT COUNT(*) n FROM pipelines
+                             WHERE category=? AND deadline BETWEEN ? AND ? AND completed_at IS NOT NULL`,
+                            [kr.board_key, ...quarterRange(year, quarter)]);
+                        actual = Number(done.n);
+                        const [[boardTarget]] = await db.query(
+                            `SELECT target_done FROM board_quarter_targets
+                             WHERE board_key=? AND year=? AND quarter=?`,
+                            [kr.board_key, year, quarter]);
+                        kr.target = Number(boardTarget?.target_done ?? 0);
+                    } else if (kr.source === 'kartu') {
+                        // Tanpa board: KR mengukur kartu yang ditautkan langsung ke
+                        // dirinya lewat pipelines.key_result_id, target diisi manual.
+                        const [[done]] = await db.query(
+                            `SELECT COUNT(*) n FROM pipelines WHERE key_result_id=? AND completed_at IS NOT NULL`, [kr.id]);
                         actual = Number(done.n);
                     }
+                    // Kolom DECIMAL keluar sebagai string dari driver MySQL; angka
+                    // dikirim sebagai number supaya identik dengan props /okr dan
+                    // tidak dibaca sebagai teks oleh model AI.
+                    kr.target = Number(kr.target ?? 0);
+                    kr.actual_manual = kr.actual_manual === null ? null : Number(kr.actual_manual);
                     kr.actual = actual;
                     kr.percent = pct(actual, kr.target);
                 }
                 objective.key_results = krs;
-                objective.omset_percent = pct(Number(objective.omset_actual), Number(objective.omset_target));
+                // Objective tanpa target omzet dikirim 0, sama seperti
+                // OkrController::index() — bukan null, agar tak terbaca
+                // "target belum ada" oleh pemanggil.
+                objective.omset_target = Number(objective.omset_target ?? 0);
+                objective.omset_actual = Number(objective.omset_actual ?? 0);
+                objective.omset_percent = pct(objective.omset_actual, objective.omset_target);
                 const scored = krs.map((kr) => kr.percent).filter((v) => v !== null).map((v) => Math.min(100, v));
                 if (objective.omset_percent !== null) scored.push(Math.min(100, objective.omset_percent));
                 objective.progress = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length * 10) / 10 : null;
@@ -619,43 +699,146 @@ function registerSystemWriteTools(server) {
         'create_key_result',
         {
             title: 'Create Key Result',
-            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber; manual memakai actual_manual; kartu dihitung dari card selesai.',
+            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber; manual memakai actual_manual; kartu dihitung dari card selesai. Untuk kartu, board_key opsional: dengan board angkanya diambil dari seluruh board (target = target kuartal board di /kpi), tanpa board KR hanya menghitung card yang ditautkan lewat link_task_to_kr dan target wajib diisi.',
             inputSchema: {
                 objective_id: z.number().int().positive(),
                 title: z.string().min(1).max(255),
+                description: z.string().max(2000).optional().describe('Penjelasan KR yang tampil di halaman OKR'),
                 source: z.enum(OKR_SOURCES),
-                metric: z.enum(OKR_METRICS).nullable().optional(),
-                board_key: z.string().nullable().optional(),
-                target: z.number().nonnegative(),
-                unit: z.enum(OKR_UNITS),
-                owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR'),
+                metric: z.enum(OKR_KR_METRICS).nullable().optional().describe('Wajib bila source=auto. omset tidak berlaku — target omzet ada di Objective.'),
+                board_key: z.string().nullable().optional().describe('Board Kanban, hanya untuk source=kartu dan bersifat opsional'),
+                target: z.number().nonnegative().optional().describe('Wajib untuk auto & manual, dan untuk kartu TANPA board. Untuk kartu DENGAN board nilainya diabaikan (diambil dari target kuartal board).'),
+                unit: z.enum(OKR_UNITS).optional().describe('Hanya dipakai source=manual; auto & kartu ditentukan otomatis'),
+                owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR; kalah dari assigned_to bila keduanya diisi'),
                 priority_name: z.string().max(50).optional().describe('Nama prioritas: Urgent atau Penting'),
+                // Card eksekusi — bagian "Pekerjaan" pada form Tambah KR di /okr.
+                kanban_board_key: z.string().optional().describe('Board Kanban tempat card eksekusi KR dibuat. Tanpa ini KR tidak punya card.'),
+                kanban_column_key: z.string().optional().describe('Kolom awal card eksekusi; wajib bila kanban_board_key diisi'),
+                card_category: z.string().optional().describe('Nama label kategori card, harus ada di daftar label'),
+                card_description: z.string().max(5000).optional().describe('Isi/deskripsi card eksekusi'),
+                assigned_to: z.number().int().positive().optional().describe('User ID PIC card eksekusi. Otomatis jadi penanggung jawab KR dan menerima notifikasi penugasan.'),
+                deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Deadline card eksekusi, format YYYY-MM-DD'),
             },
         },
         async (a) => {
-            const [[objective]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [a.objective_id]);
+            const [[objective]] = await db.query(`SELECT id, year, quarter, title FROM objectives WHERE id=?`, [a.objective_id]);
             if (!objective) return errText(`Objective id ${a.objective_id} tidak ditemukan.`);
             if (a.source === 'auto' && !a.metric) return errText('KR otomatis wajib memiliki metric.');
-            if (a.source === 'kartu' && !a.board_key) return errText('KR Kanban wajib memiliki board_key.');
             if (a.board_key) {
                 const [[board]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
                 if (!board) return errText(`Board Kanban "${a.board_key}" tidak ditemukan.`);
             }
+            const boardKey = a.source === 'kartu' ? (a.board_key || null) : null;
+            // Aturan target disamakan dengan OkrController::validasiKeyResult().
+            let target = a.target ?? null;
+            if (boardKey) {
+                const [[boardTarget]] = await db.query(
+                    `SELECT target_done FROM board_quarter_targets WHERE board_key=? AND year=? AND quarter=?`,
+                    [boardKey, objective.year, objective.quarter]);
+                target = Number(boardTarget?.target_done ?? 0);
+            } else if (target === null) {
+                return errText(a.source === 'kartu'
+                    ? 'Tanpa board Kanban, target jumlah kartu wajib diisi.'
+                    : 'Target wajib diisi.');
+            }
+            // --- Card eksekusi: validasi board/kolom/label/PIC lebih dulu, sama
+            //     seperti OkrController::storeKeyResult() yang memvalidasi semua
+            //     sebelum menyentuh database.
+            let column = null;
+            let label = null;
+            if (a.kanban_board_key) {
+                const [[papan]] = await db.query(
+                    `SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.kanban_board_key]);
+                if (!papan) return errText(`Board Kanban "${a.kanban_board_key}" tidak ditemukan.`);
+                if (!a.kanban_column_key) return errText('kanban_column_key wajib diisi bila kanban_board_key diisi.');
+                const [[kolom]] = await db.query(
+                    `SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`,
+                    [a.kanban_board_key, a.kanban_column_key]);
+                if (!kolom) return errText('Kolom tidak tersedia pada board yang dipilih.');
+                column = kolom.key;
+            } else if (a.kanban_column_key) {
+                return errText('kanban_column_key tidak berarti tanpa kanban_board_key.');
+            }
+            if (a.card_category) {
+                const [[l]] = await db.query(
+                    `SELECT name, \`group\`, color FROM labels WHERE name=? LIMIT 1`, [a.card_category]);
+                if (!l) return errText('Kategori card tidak tersedia.');
+                label = l;
+            }
+            if (a.assigned_to) {
+                const [[u]] = await db.query(`SELECT id FROM users WHERE id=?`, [a.assigned_to]);
+                if (!u) return errText(`User id ${a.assigned_to} tidak ditemukan.`);
+            }
+
             const creator = await ownerId();
             const [[position]] = await db.query(
                 `SELECT COALESCE(MAX(position),0)+1 n FROM key_results WHERE objective_id=?`, [a.objective_id]);
             const metric = a.source === 'auto' ? a.metric : null;
-            const boardKey = a.source === 'kartu' ? a.board_key : null;
-            const unit = a.source === 'auto' ? (a.metric === 'omset' ? 'rupiah' : 'angka') : (a.source === 'kartu' ? 'angka' : a.unit);
+            // auto → satuan mengikuti metrik; kartu → selalu menghitung kartu.
+            const unit = a.source === 'auto' ? 'angka' : (a.source === 'kartu' ? 'angka' : (a.unit || 'angka'));
             const priority = a.priority_name ? await prioritySnapshot(a.priority_name) : null;
-            const owner = a.owner_id || creator;
-            const [result] = await db.query(
-                `INSERT INTO key_results
-                    (objective_id, title, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit,
-                 priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
-            return jsonText({ ok: true, key_result: { id: result.insertId, ...a, metric, board_key: boardKey, unit } });
+            // PIC card eksekusi sekaligus penanggung jawab KR — invariant yang
+            // sama dengan halaman OKR.
+            const owner = a.assigned_to || a.owner_id || creator;
+
+            // KR, card eksekusi, dan notifikasi satu paket: bila salah satu
+            // gagal, semuanya dibatalkan agar PIC tak menerima kabar untuk
+            // pekerjaan yang sebenarnya tidak tersimpan.
+            const conn = await db.getConnection();
+            let krId = null;
+            let cardId = null;
+            let notifikasiTerkirim = false;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO key_results
+                        (objective_id, title, description, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                    [a.objective_id, a.title, a.description || null, a.source, boardKey, metric, target, unit,
+                     priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
+                krId = result.insertId;
+
+                if (column) {
+                    const [card] = await conn.query(
+                        `INSERT INTO pipelines
+                            (category, account, payment_status, progress, endorse, description, labels,
+                             assigned_to, deadline, key_result_id, is_kr_master, created_by, created_at, updated_at)
+                         VALUES (?, 'fk', 'belum', ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW())`,
+                        [a.kanban_board_key, column, a.title, a.card_description || null,
+                         JSON.stringify(label ? [{ name: label.name, group: label.group, color: label.color }] : []),
+                         a.assigned_to || null, a.deadline || null, krId, creator]);
+                    cardId = card.insertId;
+                }
+
+                // Penanggung jawab dikabari ADA atau TIDAK adanya card eksekusi;
+                // tautan hanya disertakan bila card-nya benar-benar dibuat.
+                notifikasiTerkirim = await kirimNotifikasiOkr(conn, {
+                    penerimaId: a.assigned_to || owner,
+                    pelakuId: creator,
+                    title: cardId ? 'Pekerjaan OKR baru' : 'Penanggung jawab KR baru',
+                    message: cardId
+                        ? `Anda ditugaskan pada “${a.title}” untuk Objective “${objective.title}”.`
+                        : `Anda menjadi penanggung jawab KR “${a.title}” pada Objective “${objective.title}”.`,
+                    url: cardId ? kanbanCardUrl(a.kanban_board_key, cardId) : null,
+                    objectiveId: a.objective_id,
+                    keyResultId: krId,
+                    pipelineId: cardId,
+                    priority,
+                });
+                await conn.commit();
+            } catch (e) {
+                await conn.rollback();
+                return errText(`Gagal menyimpan Key Result: ${e.message}`);
+            } finally {
+                conn.release();
+            }
+
+            return jsonText({
+                ok: true,
+                key_result: { id: krId, ...a, metric, board_key: boardKey, target, unit, owner_id: owner },
+                card_eksekusi: cardId ? { id: cardId, board: a.kanban_board_key, column, assigned_to: a.assigned_to ?? null, deadline: a.deadline ?? null } : null,
+                notifikasi_terkirim: notifikasiTerkirim,
+            });
         }
     );
 
@@ -663,40 +846,143 @@ function registerSystemWriteTools(server) {
         'update_key_result',
         {
             title: 'Update Key Result',
-            description: 'Ubah Key Result. Isi minimal satu field selain id.',
+            description: 'Ubah Key Result. Isi minimal satu field selain id. assigned_to & deadline mengubah card eksekusi (card utama KR) dan mengirim notifikasi ke PIC lama/baru, sama seperti form edit KR di /okr.',
             inputSchema: {
                 id: z.number().int().positive(),
                 title: z.string().min(1).max(255).optional(),
-                target: z.number().nonnegative().optional(),
+                description: z.string().max(2000).nullable().optional().describe('Penjelasan KR; kirim null untuk mengosongkan'),
+                target: z.number().nonnegative().optional().describe('Diabaikan bila KR memakai board Kanban — target board diambil dari /kpi'),
                 unit: z.enum(OKR_UNITS).optional(),
                 owner_id: z.number().int().positive().optional(),
                 priority_name: z.string().max(50).optional(),
-                board_key: z.string().nullable().optional(),
+                board_key: z.string().nullable().optional().describe('Ganti/kosongkan board Kanban. Diisi board → target ikut disetel dari target kuartal board.'),
+                assigned_to: z.number().int().positive().nullable().optional().describe('PIC card eksekusi; null mengosongkan. Hanya berlaku bila KR punya card utama.'),
+                deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('Deadline card eksekusi (YYYY-MM-DD); null mengosongkan'),
             },
         },
         async (a) => {
-            const [[kr]] = await db.query(`SELECT id FROM key_results WHERE id=?`, [a.id]);
+            const [[kr]] = await db.query(
+                `SELECT kr.id, kr.title, kr.objective_id, kr.priority, o.year, o.quarter, o.title AS objective_title
+                 FROM key_results kr JOIN objectives o ON o.id=kr.objective_id WHERE kr.id=?`, [a.id]);
             if (!kr) return errText(`Key Result id ${a.id} tidak ditemukan.`);
+            if (a.assigned_to) {
+                const [[u]] = await db.query(`SELECT id FROM users WHERE id=?`, [a.assigned_to]);
+                if (!u) return errText(`User id ${a.assigned_to} tidak ditemukan.`);
+            }
             const sets = [], vals = [];
             if (a.title !== undefined) { sets.push('title=?'); vals.push(a.title); }
-            if (a.target !== undefined) { sets.push('target=?'); vals.push(a.target); }
+            if (a.description !== undefined) { sets.push('description=?'); vals.push(a.description || null); }
             if (a.unit !== undefined) { sets.push('unit=?'); vals.push(a.unit); }
             if (a.owner_id !== undefined) { sets.push('owner_id=?'); vals.push(a.owner_id); }
+            // Target ditentukan sekali di sini supaya kolom `target` tak pernah
+            // muncul dua kali di klausa SET. Board menang atas target manual:
+            // KR berbasis board angkanya milik target kuartal board (/kpi).
+            let target = a.target;
             if (a.board_key !== undefined) {
                 if (a.board_key) {
                     const [[b]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
                     if (!b) return errText(`Board "${a.board_key}" tidak ditemukan.`);
+                    const [[boardTarget]] = await db.query(
+                        `SELECT target_done FROM board_quarter_targets WHERE board_key=? AND year=? AND quarter=?`,
+                        [a.board_key, kr.year, kr.quarter]);
+                    target = Number(boardTarget?.target_done ?? 0);
                 }
                 sets.push('board_key=?'); vals.push(a.board_key);
             }
+            if (target !== undefined) { sets.push('target=?'); vals.push(target); }
             if (a.priority_name !== undefined) {
                 const p = await prioritySnapshot(a.priority_name);
                 sets.push('priority=?'); vals.push(p ? JSON.stringify(p) : null);
             }
-            if (!sets.length) return errText('Tidak ada field yang diubah.');
-            sets.push('updated_at=NOW()');
-            await db.query(`UPDATE key_results SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
-            return jsonText({ ok: true, key_result_id: a.id });
+            const ubahEksekusi = a.assigned_to !== undefined || a.deadline !== undefined;
+            if (!sets.length && !ubahEksekusi) return errText('Tidak ada field yang diubah.');
+
+            // Card utama dibaca SEBELUM update sebagai pembanding notifikasi.
+            // deadline diambil sebagai TEKS lewat DATE_FORMAT, bukan objek Date:
+            // driver mengembalikan DATE sebagai Date tengah malam waktu lokal,
+            // dan toISOString() menggesernya mundur sebesar offset zona waktu
+            // (WIB +7) sehingga pembandingan tanggal meleset satu hari dan
+            // memicu notifikasi "deadline berubah" palsu.
+            const [[master]] = await db.query(
+                `SELECT id, category, assigned_to, DATE_FORMAT(deadline, '%Y-%m-%d') AS deadline
+                 FROM pipelines WHERE key_result_id=? AND is_kr_master=1 LIMIT 1`, [a.id]);
+            const picLama = master?.assigned_to ?? null;
+            const deadlineLama = master?.deadline ?? null;
+            const picBaru = a.assigned_to !== undefined ? (a.assigned_to ?? null) : picLama;
+            const deadlineBaru = a.deadline !== undefined ? (a.deadline ?? null) : deadlineLama;
+
+            const conn = await db.getConnection();
+            const notifikasi = [];
+            try {
+                await conn.beginTransaction();
+                if (sets.length) {
+                    sets.push('updated_at=NOW()');
+                    await conn.query(`UPDATE key_results SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+                }
+
+                if (master && ubahEksekusi) {
+                    await conn.query(
+                        `UPDATE pipelines SET assigned_to=?, deadline=?, updated_at=NOW() WHERE id=?`,
+                        [picBaru, deadlineBaru, master.id]);
+                    // Penanggung jawab KR mengikuti PIC card — hanya bila PIC
+                    // diisi; mengosongkan PIC tak menghapus pemilik KR.
+                    if (picBaru) {
+                        await conn.query(`UPDATE key_results SET owner_id=?, updated_at=NOW() WHERE id=?`, [picBaru, a.id]);
+                    }
+                }
+
+                // Aturan notifikasi disalin dari OkrController::notifikasiPerubahanEksekusi().
+                const priorityKr = typeof kr.priority === 'string' ? JSON.parse(kr.priority || 'null') : (kr.priority ?? null);
+                const url = master ? kanbanCardUrl(master.category, master.id) : null;
+                if (master && Number(picBaru) !== Number(picLama)) {
+                    const [[penerimaBaru]] = picBaru
+                        ? await conn.query(`SELECT name FROM users WHERE id=?`, [picBaru])
+                        : [[null]];
+                    // PIC lama: tanpa tautan — card itu bukan lagi tanggung jawabnya.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picLama, pelakuId: null, kind: 'okr_perubahan',
+                        title: 'Penugasan OKR dialihkan',
+                        message: `Penugasan “${kr.title}” dialihkan ke ${penerimaBaru?.name ?? 'orang lain'}.`,
+                        url: null, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picLama, jenis: 'penugasan_dialihkan' });
+                    // PIC baru: baginya ini penugasan baru, lengkap dengan tautan.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picBaru, pelakuId: null,
+                        title: 'Pekerjaan OKR baru',
+                        message: `Anda ditugaskan pada “${kr.title}” untuk Objective “${kr.objective_title}”.`,
+                        url, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picBaru, jenis: 'penugasan_baru' });
+                } else if (master && deadlineBaru !== deadlineLama) {
+                    // PIC tetap, deadlinenya yang berubah.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picBaru, pelakuId: null, kind: 'okr_perubahan',
+                        title: 'Deadline OKR berubah',
+                        message: `Deadline “${kr.title}” diubah menjadi ${deadlineBaru ?? 'tanpa tanggal'}.`,
+                        url, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picBaru, jenis: 'deadline_berubah' });
+                }
+                await conn.commit();
+            } catch (e) {
+                await conn.rollback();
+                return errText(`Gagal memperbarui Key Result: ${e.message}`);
+            } finally {
+                conn.release();
+            }
+
+            return jsonText({
+                ok: true,
+                key_result_id: a.id,
+                card_eksekusi: master ? { id: master.id, assigned_to: picBaru, deadline: deadlineBaru } : null,
+                // ubahEksekusi tanpa card utama = permintaan diabaikan diam-diam
+                // kalau tidak diberitahukan; ini penjelasannya.
+                catatan: (!master && ubahEksekusi)
+                    ? 'KR ini belum punya card eksekusi, jadi assigned_to/deadline diabaikan. Buat KR dengan kanban_board_key, atau tautkan card lewat link_task_to_kr.'
+                    : undefined,
+                notifikasi,
+            });
         }
     );
 
@@ -872,7 +1158,7 @@ function registerSystemWriteTools(server) {
 
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
-    const server = new McpServer({ name: 'system-aipreneur', version: '0.3.0' });
+    const server = new McpServer({ name: 'system-aipreneur', version: '0.4.0' });
     registerSystemReadTools(server);
     registerSystemWriteTools(server);
 
