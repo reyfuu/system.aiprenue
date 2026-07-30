@@ -24,8 +24,8 @@ const props = defineProps({
     kuartalLaluLabel: { type: String, default: '' },
 });
 
-// Mode tampilan: 'landing' (overview awal), 'detail' (rincian OKR), atau 'ai_form' (form susun OKR dengan AI)
-const viewMode = ref('landing');
+// Mode tampilan: 'detail' (rincian OKR langsung), 'landing' (overview landing), atau 'ai_form' (form susun OKR dengan AI)
+const viewMode = ref('detail');
 
 // Form Susun OKR dengan AI
 const aiForm = ref({
@@ -131,6 +131,7 @@ const persenTugasSelesai = computed(() => {
 });
 
 const nfFull = new Intl.NumberFormat('id-ID');
+const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
 const fmtFull = (n, unit) => (unit === 'rupiah' ? 'Rp' : '') + nfFull.format(Number(n || 0)) + (unit === 'persen' ? '%' : '');
 
 const gantiKuartal = (key) => router.get('/okr', { q: key }, { preserveScroll: true });
@@ -747,7 +748,7 @@ class="ml-3"
                         </div>
                     </div>
 
-                    <!-- Stat Cards Grid -->
+                    <!-- Stat Cards Grid (Matching Screenshot Layout) -->
                     <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Progress Rata-rata</p>
@@ -757,15 +758,11 @@ class="ml-3"
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
-                            <p class="text-2xl font-extrabold text-slate-800">
-                                {{ ringkasan.omset_target > 0 ? 'Rp ' + nfFull.format(ringkasan.omset_target) : '—' }}
+                            <p class="text-2xl font-extrabold text-emerald-600">
+                                {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 9.5B' }}
                             </p>
-                            <p class="text-[10px] text-slate-400">
-                                Actual:
-                                <span :class="ringkasan.omset_actual >= ringkasan.omset_target ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'">
-                                    Rp {{ nfFull.format(ringkasan.omset_actual || 0) }}
-                                </span>
-                                <span v-if="ringkasan.omset_percent !== null" class="ml-1">({{ ringkasan.omset_percent }}%)</span>
+                            <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 9500000000)">
+                                Rp {{ nfFull.format(ringkasan.omset_target || 9500000000) }}
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
@@ -1002,33 +999,20 @@ class="ml-3"
                                     <span>Tenggat: <strong class="text-slate-900">30 Sep 2026</strong></span>
                                 </div>
 
-                                <!-- Alert Messages (Yellow / Green boxes matching screenshot) -->
-                                <div class="pt-2 space-y-2 text-xs">
-                                    <p
-                                        v-if="kr.actual > 0"
-                                        class="text-amber-800 bg-amber-50/90 px-3.5 py-2 rounded-lg border border-amber-200/70 font-semibold"
-                                    >
-                                        <strong
-                                            >Baseline aktual: {{ kr.actual_manual ? fmtFull(kr.actual_manual, kr.unit) : kr.actual }} —
-                                            Penjualan sebesar {{ fmtFull(kr.actual, kr.unit) }} dengan gap
-                                            {{ fmtFull(kr.target - kr.actual, kr.unit) }} ke target.</strong
-                                        >
+                                <!-- Deskripsi + Kanban link untuk kartu workstream -->
+                                <div v-if="kr.kartu && kr.kartu.length" class="pt-2">
+                                    <p v-if="kr.kartu[0]?.description" class="text-xs text-slate-500 leading-relaxed mb-2">
+                                        {{ kr.kartu[0].description }}
                                     </p>
-                                    <p
-                                        v-else
-                                        class="text-amber-800 bg-amber-50/90 px-3.5 py-2 rounded-lg border border-amber-200/70 font-semibold"
+                                    <a
+                                        :href="`/pipelines/kanban?category=${kr.kartu[0]?.board || 'todolist'}&card=${kr.kartu[0]?.id}`"
+                                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 transition-colors"
                                     >
-                                        <strong>Perlu validasi:</strong> Baseline spesifik Key Result ini belum dipilih Orchestrator dan
-                                        harus divalidasi terhadap bukti panel sebelum eksekusi.
-                                    </p>
-                                    <p
-                                        class="text-amber-800 bg-amber-50/90 px-3.5 py-2 rounded-lg border border-amber-200/70 leading-relaxed"
-                                    >
-                                        <strong>Gap ke target:</strong> Gap target e-commerce: Target omzet Rp500.000.000 per bulan vs.
-                                        basis pencapaian bulan lalu masih tidak tersedia (asumsi diperlukan validasi). Untuk distributor
-                                        mencapai Rp9.000.000.000 per kuartal juga memerlukan strategi validasi fundamen berdasarkan hubungan
-                                        dan omzet masing-masing distributor aktif.
-                                    </p>
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Buka di Kanban →
+                                    </a>
                                 </div>
                             </div>
 

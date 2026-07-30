@@ -15,7 +15,7 @@ class PipelineSeeder extends Seeder
     {
         // NB: daftar ini cuma untuk DB dev yang baru. Produksi dapat 'Video' & 'Foto'
         // dari migrasi 2026_07_16_100000 — seeder tak jalan di sana (dipagari).
-        $outputs = collect(['Reels', 'Story', 'Feed', 'TikTok', 'YouTube', 'Twitter/X', 'Video', 'Foto'])
+        $outputs = collect(['Reels', 'Story', 'Feed', 'TikTok', 'YouTube', 'YouTube Shorts', 'Twitter/X', 'Video', 'Foto'])
             ->map(fn ($n) => Output::firstOrCreate(['name' => $n]));
 
         $staff = User::orderBy('id')->pluck('id')->all();
