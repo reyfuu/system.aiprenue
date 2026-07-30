@@ -18,6 +18,18 @@ return [
         'key' => env('POSTMARK_API_KEY'),
     ],
 
+    // Agen Daily Script Rave (repo privat, GitHub Actions) → POST /api/scripts.
+    // Kosong = endpointnya menolak semua permintaan; jangan taruh nilainya di sini.
+    'script_agent' => [
+        'token' => env('SCRIPT_AGENT_TOKEN'),
+    ],
+
+    // Agen Insight (cron di VPS) → POST /api/insights.
+    // Kosong = endpointnya menolak semua permintaan; jangan taruh nilainya di sini.
+    'insight_agent' => [
+        'token' => env('INSIGHT_AGENT_TOKEN'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

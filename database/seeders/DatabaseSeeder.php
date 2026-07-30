@@ -16,7 +16,16 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // PAGAR PRODUKSI. Seeder ini fixture dev: bikin akun ber-password `password123`
+        // yang tertulis terbuka di repo publik, dan menimpa data dummy pipeline/order.
+        // Laravel memang menuntut --force di produksi, tapi skrip deploy yang menulis
+        // `migrate:fresh --seed --force` akan melewatinya tanpa suara.
+        // Akun produksi dibuat manual (tinker), bukan dari sini.
+        if (app()->isProduction()) {
+            $this->command?->warn('Seeder dilewati: environment produksi. Buat akun lewat tinker.');
+
+            return;
+        }
 
         // Data pipeline diimpor via file SQL (mis. di Hostinger), bukan seeder.
         // Akun admin tetap dibuat agar bisa login setelah fresh install lokal.
@@ -25,15 +34,15 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Admin',
                 'password' => Hash::make('password123'),
-                'role' => 'super_admin',
+                'role' => 'owner',
             ]
         );
 
-        // Beberapa staff/editor untuk penanggung jawab kanban
+        // Contoh anggota tim: manager & it (penanggung jawab kanban)
         foreach ([
-            ['name' => 'Rani Staff', 'email' => 'rani@example.com', 'role' => 'staff'],
-            ['name' => 'Dimas Editor', 'email' => 'dimas@example.com', 'role' => 'editor'],
-            ['name' => 'Putri Staff', 'email' => 'putri@example.com', 'role' => 'staff'],
+            ['name' => 'Rani Manager', 'email' => 'rani@example.com', 'role' => 'manager'],
+            ['name' => 'Dimas Manager', 'email' => 'dimas@example.com', 'role' => 'manager'],
+            ['name' => 'Audi IT', 'email' => 'audi@example.com', 'role' => 'it'],
         ] as $u) {
             User::updateOrCreate(['email' => $u['email']], [
                 'name' => $u['name'],
@@ -45,6 +54,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             PipelineSeeder::class,
             PembukuanSeeder::class,
+            OrderSeeder::class,
         ]);
     }
 }

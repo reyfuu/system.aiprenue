@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable(['name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
@@ -17,43 +18,208 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['super_admin' => 'Super Admin', 'admin' => 'Admin', 'it' => 'IT', 'staff' => 'Staff', 'editor' => 'Editor'];
+    public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'admin' => 'Admin', 'staff' => 'Staff'];
 
     /**
      * Menu yang boleh diakses tiap role. '*' = semua.
-     * Menu: dashboard, pipeline, kanban, script, pembukuan, user.
+     * Menu: dashboard, pipeline, kanban, order, mindmap, script, pembukuan, user, prodpilot.
+     * - prodpilot = tautan EKSTERNAL (bukan route app), jadi tak ada di EnsureMenuAccess —
+     *   gerbangnya cuma tampil/tidaknya menu di Sidebar. owner/it ('*') + manager saja.
+     * - owner & it = akses penuh (termasuk manajemen user).
+     * - manager = kelola board+task+operasional, TAPI tak boleh menu 'user'.
+     * - admin = kelola (CRUD, lihat canManage()) TAPI cuma di sales/kanban/mindmap.
+     * - staff = VIEW-ONLY (lihat canManage()): tanpa menu 'user' & 'pembukuan' (keuangan).
      */
     public const MENU_ACCESS = [
-        'super_admin' => ['*'],
-        'it'          => ['*'],           // IT setara super admin
-        'admin'       => ['script', 'kanban'],
-        'editor'      => ['kanban'],
-        'staff'       => ['kanban'],      // default (tidak disebut eksplisit)
+        'owner' => ['*'],
+        'it' => ['*'],           // IT = akses penuh teknis
+        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'okr', 'kpi', 'prodpilot', 'akses'],
+        'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight', 'kpi'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
+        'staff' => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
-    /** Apakah role user boleh melihat menu tertentu. */
+    /** Semua menu yang bisa diatur di halaman Manajemen Akses (key => label).
+     *  Menambah menu baru di aplikasi? Daftarkan di sini juga, kalau tidak menu
+     *  itu tak akan pernah muncul di halaman pengaturan. */
+    public const MENUS = [
+        'dashboard' => 'Dashboard',
+        'pipeline' => 'Sales',
+        'kanban' => 'Kanban',
+        'order' => 'Order',
+        'mindmap' => 'Mindmap',
+        'script' => 'Script',
+        'content' => 'Content',
+        'tracking' => 'Tracking',
+        'okr' => 'OKR',
+        'kpi' => 'KPI Board',
+        'pembukuan' => 'Pembukuan',
+        'user' => 'User',
+        'insight' => 'Insight',
+        'upload' => 'Upload',
+        'prodpilot' => 'ProdPilot',
+        'akses' => 'Manajemen Akses',
+    ];
+
+    /** Cache per-instance: `menus` dibangun dgn ~10 kali canSee() pada user yang
+     *  sama, jadi satu query per request sudah cukup. Sengaja BUKAN static —
+     *  cache static bocor antar-tes (DB di-refresh, cache tidak). */
+    private ?array $izinCache = null;
+
+    /** Daftar menu yang boleh dilihat peran ini, dari DB. null = tabelnya belum
+     *  ada / peran ini tak punya baris sama sekali → pemanggil pakai aturan kode. */
+    private function izinDariDb(): ?array
+    {
+        if ($this->izinCache !== null) {
+            return $this->izinCache ?: null;
+        }
+        try {
+            $rows = DB::table('role_menu_access')
+                ->where('role', $this->role)->pluck('menu')->all();
+        } catch (\Throwable) {
+            return $this->izinCache = null;   // migrasi belum jalan → jangan pecah
+        }
+
+        $this->izinCache = $rows;
+
+        return $rows ?: null;
+    }
+
+    /** Apakah role user boleh melihat menu tertentu.
+     *
+     *  Owner SELALU true & tak bisa dicabut lewat halaman Manajemen Akses.
+     *  Itu pagar anti-kekunci: tanpa ini, satu centang yang salah bisa membuat
+     *  TAK ADA seorang pun yang masih bisa membuka halaman pengaturannya, dan
+     *  satu-satunya jalan keluar adalah mengedit database langsung.
+     *
+     *  Sumber kebenaran = tabel `role_menu_access`. Kalau tabelnya belum ada
+     *  (migrasi belum jalan) atau peran itu belum punya baris, jatuh ke
+     *  MENU_ACCESS di kode supaya perilaku lama tetap berlaku.
+     */
     public function canSee(string $menu): bool
     {
+        // Absensi terbuka untuk SEMUA peran (pengajuan cuti/sakit/izin) — sengaja
+        // di luar role_menu_access supaya tak bisa tak sengaja dicabut.
+        if ($menu === 'absensi') {
+            return true;
+        }
+
+        // owner & it = super admin: SELALU lihat semua menu (termasuk okr/pembukuan/
+        // tracking), tak bisa dicabut lewat Manajemen Akses. it perlu akses penuh
+        // untuk melakukan perbaikan teknis di semua halaman.
+        if (in_array($this->role, ['owner', 'it'], true)) {
+            return true;
+        }
+
+        // Pembukuan mengandung data keuangan dan sengaja bukan izin dinamis:
+        // hanya Owner/Manager, walaupun DB pernah menyimpan centang role lain.
+        // 'okr' ikut di sini: isinya target & realisasi omset serta pertumbuhan
+        // audiens — angka tingkat perusahaan. KPI board sengaja TIDAK dikunci
+        // di sini; ia menu terpisah ('kpi') berisi data operasional papan saja.
+        if (in_array($menu, ['pembukuan', 'tracking', 'okr'], true)) {
+            return in_array($this->role, ['owner', 'manager'], true);
+        }
+
+        if (($izin = $this->izinDariDb()) !== null) {
+            return in_array($menu, $izin, true);
+        }
+
         $allowed = self::MENU_ACCESS[$this->role] ?? [];
 
         return in_array('*', $allowed, true) || in_array($menu, $allowed, true);
     }
 
-    /** Boleh CRUD / kelola (kanban board, tasks). Hanya super admin & IT. */
+    /** Boleh CRUD / kelola (board, task, order, pembukuan) = tim manajemen.
+     *  'staff' sengaja TIDAK di sini: view-only, tapi tetap boleh berkomentar
+     *  (route comments.* memang tak dicek canManage di EnsureMenuAccess). */
     public function canManage(): bool
     {
-        return in_array($this->role, ['super_admin', 'it'], true);
+        return in_array($this->role, ['owner', 'manager', 'it', 'admin'], true);
     }
 
-    /** Route landing pertama yang boleh diakses user. */
+    /** Boleh kelola board TERTENTU. Kunci keamanannya: route kartu/kolom/board
+     *  DIPAKAI BERSAMA oleh Sales (board tipe `pipeline`) dan Kanban (tipe
+     *  `kanban`). Staff cuma boleh papan kanban — JANGAN sampai bisa mengutak-atik
+     *  deal Sales lewat route yang sama. owner/manager/it/admin: semua board. */
+    public function canManageBoard(?string $boardKey): bool
+    {
+        if ($this->canManage()) {
+            return true;
+        }
+        if ($this->role !== 'staff' || $boardKey === null) {
+            return false;
+        }
+
+        return Category::where('key', $boardKey)->where('type', 'kanban')->exists();
+    }
+
+    /** Izin CRUD khusus per menu. Owner selalu penuh; Content memakai level
+     *  dari Manajemen Akses, menu lama tetap mengikuti aturan canManage(). */
+    public function canManageMenu(string $menu): bool
+    {
+        if ($this->role === 'owner') {
+            return true;
+        }
+
+        if ($menu !== 'content') {
+            return $this->canManage();
+        }
+
+        try {
+            return DB::table('role_menu_access')
+                ->where('role', $this->role)
+                ->where('menu', $menu)
+                ->where('can_manage', true)
+                ->exists();
+        } catch (\Throwable) {
+            return $this->canManage() && $this->canSee($menu);
+        }
+    }
+
+    /** Pengajuan absensi (cuti/sakit/izin) milik user ini. */
+    public function absences()
+    {
+        return $this->hasMany(Absence::class);
+    }
+
+    /** Route landing pertama yang boleh diakses user.
+     *
+ https://github.com/reyfuu/system.aiprenue/pull/39/conflict?name=public%252Fbuild%252Fmanifest.json&ancestor_oid=9187962467d5529f6d89e322d36546398d87ab2f&base_oid=d000806ec7810a451ce5869319592319845cca5d&head_oid=bf2d895306134d6767e6de965a1fb9afe55c35f5    *  Wajib mengembalikan route yang benar-benar DIBOLEHKAN: kalau bukan,
+     *  EnsureMenuAccess langsung menolak (403) begitu user mendarat. Ini
+     *  menggigit peran yang aksesnya dipangkas dari Manajemen Akses — dan
+     *  paling kentara saat owner "masuk sebagai" peran itu. Jadi telusuri
+     *  menu berurut prioritas, ambil yang PERTAMA lolos canSee(); jangan
+     *  pernah jatuh ke default keras yang bisa 403. (prodpilot dilewati:
+     *  itu tautan eksternal, bukan halaman internal.) */
     public function homeRoute(): string
     {
-        return match (true) {
-            $this->canSee('dashboard') => 'dashboard',
-            $this->canSee('script')    => 'script.index',
-            $this->canSee('kanban')    => 'pipelines.kanban',
-            default                    => 'pipelines.kanban',
-        };
+        $kandidat = [
+            'dashboard' => 'dashboard',
+            'kanban'    => 'pipelines.kanban',
+            'pipeline'  => 'pipelines.index',
+            'order'     => 'orders.index',
+            'script'    => 'script.index',
+            'insight'   => 'insight.index',
+            'content'   => 'content.index',
+            'tracking'  => 'tracking.index',
+            'okr'       => 'okr.index',
+            'pembukuan' => 'pembukuan.index',
+            'upload'    => 'upload.index',
+            'mindmap'   => 'mindmaps.index',
+            'user'      => 'users.index',
+            'akses'     => 'akses.index',
+        ];
+
+        foreach ($kandidat as $menu => $route) {
+            if ($this->canSee($menu)) {
+                return $route;
+            }
+        }
+
+        // Tak ada satu menu pun yang boleh dilihat (peran salah konfigurasi).
+        // Balikkan 'dashboard' saja: berujung 403 yang bersih. JANGAN 'login' —
+        // showLogin memantulkan user terautentikasi kembali ke homeRoute(), jadi
+        // 'login' di sini malah bikin loop redirect tak berujung.
+        return 'dashboard';
     }
 
     /**

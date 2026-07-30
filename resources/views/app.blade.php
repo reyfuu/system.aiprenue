@@ -9,10 +9,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {{-- <title inertia> agar judul bisa diganti per halaman via <Head> --}}
     <title inertia>System AI Preneur</title>
-    {{-- Preamble React Refresh (wajib sebelum @vite di mode dev) --}}
-    @viteReactRefresh
-    {{-- Bundel CSS + entry React Inertia --}}
-    @vite(['resources/css/app.css', 'resources/js/app.jsx'])
+    {{-- Bundel CSS + entry Vue Inertia --}}
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     {{-- Inertia sisipkan <title>/<meta> dari <Head> tiap halaman --}}
     @inertiaHead
 </head>

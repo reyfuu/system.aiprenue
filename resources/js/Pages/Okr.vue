@@ -1,0 +1,869 @@
+<script setup>
+
+// Halaman OKR perusahaan per kuartal: Objective berisi Key Result.
+//
+// Realisasi KR bertipe `auto` DIHITUNG server dari modul Insight & Pembukuan —
+// tak ada angka realisasi otomatis yang diketik manusia, jadi tak bisa basi
+// saat data sumbernya dikoreksi. KR `manual` ada untuk target yang memang tak
+// punya sumber data ("10 klien coaching baru").
+//
+// KPI board & rapor per orang ada di halaman terpisah (/kpi). Pemisahannya soal
+// hak akses, bukan kerapian: halaman ini memuat omset & pertumbuhan audiens dan
+// terkunci untuk owner + manager.
+//
+// Kuartal dipilih lewat querystring ?q=YYYY-Qn supaya tautannya bisa dibagikan
+// dan tombol back browser tetap masuk akal — bukan state lokal Vue.
+import { ref, computed, watch } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
+import Layout from '../Layout.vue';
+import ModalWrap from '../ModalWrap.vue';
+import '../scripts/lib/charts';                // registrasi elemen Chart.js (dipakai bareng Dashboard & Pembukuan)
+import { Line } from 'vue-chartjs';
+
+const props = defineProps({
+    quarter: Object,          // { year, quarter, key, label }
+    quarterOptions: { type: Array, default: () => [] },
+    range: Object,            // { start, end } — rentang tanggal kuartal
+    objectives: { type: Array, default: () => [] },
+    ringkasan: { type: Object, default: () => ({}) },
+    tren: { type: Array, default: () => [] },
+    metrics: { type: Object, default: () => ({}) },   // key metrik otomatis → label
+    sources: { type: Object, default: () => ({}) },   // auto | manual | kartu → label
+    units: { type: Object, default: () => ({}) },
+    priorities: { type: Array, default: () => [] },   // penanda Urgent/Penting dari tabel labels
+    kartuTersedia: { type: Array, default: () => [] }, // kartu todolist belum tertaut (untuk "tautkan yang ada")
+    kanbanBoards: { type: Array, default: () => [] },
+    kanbanColumns: { type: Object, default: () => ({}) },
+    cardCategories: { type: Array, default: () => [] },
+    staff: { type: Array, default: () => [] },
+    canManage: Boolean,
+    bisaSalin: Boolean,                               // kuartal ini kosong & kuartal lalu ada isinya
+    kuartalLaluLabel: { type: String, default: '' },
+});
+
+// Salin Objective + target kuartal lalu ke kuartal ini. Dikonfirmasi dulu:
+// ini menulis banyak baris sekaligus, dan targetnya perlu ditinjau ulang —
+// bukan hal yang pantas terjadi karena satu klik tak sengaja.
+const salinKuartalLalu = () => {
+    if (!confirm(`Salin semua Objective & target dari ${props.kuartalLaluLabel} ke ${props.quarter.label}? Realisasinya tidak ikut disalin.`)) return;
+    router.post('/okr/salin', { year: props.quarter.year, quarter: props.quarter.quarter }, { preserveScroll: true });
+};
+
+// ---- Kelola kartu (langkah) KR bersumber 'kartu' ----
+// Penautan dikelola DARI halaman ini, bukan dari Kanban — Kanban murni delegasi.
+// `kartuPanel` = id KR yang panel kelolanya sedang terbuka (satu per satu).
+const kartuPanel = ref(null);
+const bukaKartu = (krId) => { kartuPanel.value = kartuPanel.value === krId ? null : krId; kartuBaru.reset(); attachId.value = ''; };
+
+// Form buat langkah baru (kartu todolist baru langsung tertaut).
+const kartuBaru = useForm({ endorse: '', deadline: '' });
+const simpanKartuBaru = (krId) => kartuBaru.post(`/okr/key-results/${krId}/kartu`, {
+    preserveScroll: true,
+    onSuccess: () => kartuBaru.reset(),
+});
+
+// Tautkan kartu todolist yang sudah ada.
+const attachId = ref('');
+const tautkanKartu = (krId) => {
+    if (!attachId.value) return;
+    router.post(`/okr/key-results/${krId}/attach`, { pipeline_id: attachId.value },
+        { preserveScroll: true, onSuccess: () => { attachId.value = ''; } });
+};
+
+// Lepas tautan sebuah kartu (kartu tetap hidup di papannya).
+const lepasKartu = (krId, kartuId) =>
+    router.delete(`/okr/key-results/${krId}/kartu/${kartuId}`, { preserveScroll: true });
+
+// ---- Format angka ----
+// Notasi ringkas (1,2 jt) dipakai karena view & omset lazimnya jutaan — angka
+// penuh memaksa kolom melebar dan justru lebih sulit dibaca sekilas. Angka
+// penuhnya tetap tersedia lewat atribut title.
+const nfShort = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 });
+const nfFull = new Intl.NumberFormat('id-ID');
+const fmt = (n, unit) => (unit === 'rupiah' ? 'Rp ' : '') + nfShort.format(Number(n || 0)) + (unit === 'persen' ? '%' : '');
+const fmtFull = (n, unit) => (unit === 'rupiah' ? 'Rp ' : '') + nfFull.format(Number(n || 0)) + (unit === 'persen' ? '%' : '');
+
+// Lebar bar dibatasi 100% supaya capaian 300% tak menyeruak keluar kartu;
+// angka persennya sendiri tetap ditampilkan apa adanya di sebelahnya.
+const barWidth = (p) => Math.min(100, Math.max(0, Number(p || 0))) + '%';
+
+// Warna mengikuti capaian. null (target belum ditetapkan) sengaja abu-abu,
+// BUKAN merah — "belum ada target" bukan kegagalan.
+const barColor = (p) => {
+    if (p === null || p === undefined) return 'bg-slate-300';
+    if (p >= 100) return 'bg-emerald-500';
+    if (p >= 60) return 'bg-amber-500';
+    return 'bg-red-500';
+};
+const textColor = (p) => {
+    if (p === null || p === undefined) return 'text-slate-400';
+    if (p >= 100) return 'text-emerald-600';
+    if (p >= 60) return 'text-amber-600';
+    return 'text-red-600';
+};
+
+// ---- Pilihan tampilan (List/Kartu) ----
+// Cuma gaya render Objective+KR; datanya sama persis. Disimpan di localStorage
+// supaya pilihan pengguna nempel antar-kunjungan. Modal & tren dipakai bersama.
+const TAMPILAN = [
+    { id: 1, label: 'Versi 1 · List' },
+    { id: 2, label: 'Versi 2 · Kartu' },
+];
+const tampilanTersimpan = Number(localStorage.getItem('okr_tampilan'));
+const tampilan = ref(TAMPILAN.some((item) => item.id === tampilanTersimpan) ? tampilanTersimpan : 2);
+const gantiTampilan = (v) => { tampilan.value = Number(v); localStorage.setItem('okr_tampilan', tampilan.value); };
+
+// Badge status gaya ClickUp/Jira dari persen capaian — dipakai di semua versi.
+// null (target belum ditetapkan) bukan kegagalan, jadi abu-abu bukan merah.
+const statusKr = (p) => {
+    if (p === null || p === undefined) return { label: 'Tanpa target', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+    if (p >= 100) return { label: 'On Track', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (p >= 60) return { label: 'At Risk', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { label: 'Off Track', cls: 'bg-red-50 text-red-700 border-red-200' };
+};
+
+const gantiKuartal = (key) => router.get('/okr', { q: key }, { preserveScroll: true });
+
+// ---- Grafik tren ----
+// Satu metrik ditampilkan sekali waktu; menumpuk view (ratusan ribu) dan omset
+// (ratusan juta) di satu sumbu akan membuat salah satunya jadi garis datar.
+const trenAktif = ref(0);
+const trenPilih = computed(() => props.tren[trenAktif.value] ?? { points: [], label: '', unit: 'angka' });
+
+const lineData = computed(() => ({
+    labels: trenPilih.value.points.map((p) => p.label),
+    datasets: [
+        {
+            label: 'Target',
+            data: trenPilih.value.points.map((p) => p.target),
+            borderColor: '#cbd5e1',
+            borderDash: [5, 4],
+            pointRadius: 3,
+            tension: 0.25,
+        },
+        {
+            label: 'Realisasi',
+            data: trenPilih.value.points.map((p) => p.actual),
+            borderColor: '#2c4bff',
+            backgroundColor: 'rgba(44,75,255,.08)',
+            fill: true,
+            pointRadius: 3,
+            tension: 0.25,
+        },
+    ],
+}));
+
+const lineOpts = computed(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: { display: true, labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+            callbacks: {
+                label: (c) => c.dataset.label + ': ' + fmtFull(c.parsed.y, trenPilih.value.unit),
+            },
+        },
+    },
+    scales: {
+        y: { beginAtZero: true, ticks: { callback: (v) => nfShort.format(v) } },
+    },
+}));
+
+// ---- Form Objective ----
+const objModal = ref(null);          // 'baru' | objek objective yang diedit
+const objForm = useForm({
+    year: 0,
+    quarter: 0,
+    title: '',
+    description: '',
+    priority_name: '',
+    omset_target: '',
+    omset_owner_id: '',
+});
+
+const bukaObjective = (o = null) => {
+    objModal.value = o ?? 'baru';
+    // Field top-level (bukan form.data.x) — konvensi useForm di repo ini.
+    objForm.year = props.quarter.year;
+    objForm.quarter = props.quarter.quarter;
+    objForm.title = o?.title ?? '';
+    objForm.description = o?.description ?? '';
+    objForm.priority_name = o?.priority?.name ?? '';
+    // Target omzet bisa dikoreksi lewat edit Objective; server memberi tahu
+    // PIC lama/baru bila nilainya berubah. Saat membuat baru keduanya kosong
+    // agar nilai percobaan sebelumnya tak ikut terkirim.
+    objForm.omset_target = o?.omset_target || '';
+    objForm.omset_owner_id = o?.omset_owner_id ?? '';
+    objForm.clearErrors();
+};
+
+const simpanObjective = () => {
+    const tutup = { preserveScroll: true, onSuccess: () => { objModal.value = null; } };
+    objModal.value === 'baru'
+        ? objForm.post('/okr/objectives', tutup)
+        : objForm.put('/okr/objectives/' + objModal.value.id, tutup);
+};
+
+const hapusObjective = (o) => {
+    if (confirm(`Hapus Objective "${o.title}"? Semua Key Result di dalamnya ikut terhapus.`)) {
+        router.delete('/okr/objectives/' + o.id, { preserveScroll: true });
+    }
+};
+
+// ---- Form Key Result ----
+const krModal = ref(null);           // { mode: 'baru'|'edit', objective, kr? }
+const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', priority_name: '', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
+const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
+// Card utama KR yang sedang diedit (bila ada) — PIC & deadlinenya boleh
+// dikoreksi dari modal edit; server memberi tahu PIC lama/baru bila berubah.
+const masterCard = computed(() => krModal.value?.kr?.kartu?.find((k) => k.is_master) ?? null);
+
+watch(() => krForm.kanban_board_key, () => {
+    if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
+        krForm.kanban_column_key = executionColumns.value[0]?.key ?? '';
+    }
+});
+
+watch(() => krForm.metric, () => {
+    if (krForm.source === 'auto') {
+        krForm.unit = 'angka';
+    }
+});
+
+const bukaKr = (objective, kr = null) => {
+    krModal.value = { mode: kr ? 'edit' : 'baru', objective, kr };
+    krForm.objective_id = objective.id;
+    krForm.title = kr?.title ?? '';
+    krForm.source = kr?.source ?? 'manual';
+    krForm.board_key = kr?.board_key ?? '';
+    krForm.metric = kr?.metric ?? '';
+    krForm.target = kr?.target ?? 0;
+    krForm.unit = kr?.unit ?? 'angka';
+    krForm.priority_name = kr?.priority?.name ?? '';
+    krForm.kanban_board_key = kr?.kartu?.find((k) => k.is_master)?.board ?? props.kanbanBoards[0]?.key ?? '';
+    krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
+    krForm.card_category = '';
+    krForm.card_description = '';
+    // Mode edit: isi PIC & deadline dari card utama yang sudah ada supaya
+    // mengubahnya men-trigger notifikasi perubahan di server. Mode baru
+    // keduanya dimulai kosong.
+    const master = kr?.kartu?.find((k) => k.is_master) ?? null;
+    krForm.assigned_to = master?.assigned_to ?? '';
+    krForm.deadline = master?.deadline ?? '';
+    krForm.clearErrors();
+};
+
+const simpanKr = () => {
+    const tutup = { preserveScroll: true, onSuccess: () => { krModal.value = null; } };
+    krModal.value.mode === 'baru'
+        ? krForm.post('/okr/key-results', tutup)
+        : krForm.put('/okr/key-results/' + krModal.value.kr.id, tutup);
+};
+
+const hapusKr = (kr) => {
+    if (confirm(`Hapus Key Result "${kr.title}"?`)) {
+        router.delete('/okr/key-results/' + kr.id, { preserveScroll: true });
+    }
+};
+
+// ---- Perbarui realisasi KR manual ----
+const aktualModal = ref(null);
+const aktualForm = useForm({ actual_manual: 0 });
+
+const bukaAktual = (kr) => {
+    aktualModal.value = kr;
+    aktualForm.actual_manual = kr.actual;
+    aktualForm.clearErrors();
+};
+
+const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.value.id + '/actual', {
+    preserveScroll: true,
+    onSuccess: () => { aktualModal.value = null; },
+});
+
+</script>
+
+<template>
+    <Layout title="OKR">
+
+        <!-- Header: judul + pemilih kuartal. Rentang tanggalnya ditulis eksplisit
+             supaya tak ada tebak-tebakan soal batas kuartal. -->
+        <header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg">
+            <div class="px-6 py-5 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">OKR PERUSAHAAN</h1>
+                    <p class="text-brand-100 text-sm">{{ quarter.label }} · {{ range.start }} s/d {{ range.end }}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <select
+                        :value="quarter.key"
+                        class="bg-white/15 border border-white/30 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-white/50"
+                        @change="gantiKuartal($event.target.value)"
+                    >
+                        <option v-for="o in quarterOptions" :key="o.key" :value="o.key" class="text-slate-700">{{ o.label }}</option>
+                    </select>
+                    <!-- Pemilih tampilan List/Kartu. Sekadar gaya render; pilihan disimpan lokal. -->
+                    <select
+                        :value="tampilan"
+                        class="bg-white/15 border border-white/30 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-white/50"
+                        title="Tampilan OKR"
+                        @change="gantiTampilan($event.target.value)"
+                    >
+                        <option v-for="t in TAMPILAN" :key="t.id" :value="t.id" class="text-slate-700">{{ t.label }}</option>
+                    </select>
+                    <button v-if="canManage" class="bg-white text-brand-700 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-brand-50" @click="bukaObjective()">
+                        + Objective
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-6 space-y-8">
+            <!-- Ringkasan: jawaban sekilas sebelum masuk ke rinciannya. -->
+            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm">
+                    <p class="text-xs text-slate-400">Progress keseluruhan</p>
+                    <p class="text-2xl font-bold text-brand-700 mt-1">{{ ringkasan.progress === null ? '—' : ringkasan.progress + '%' }}</p>
+                </div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Objective</p><p class="text-2xl font-bold text-slate-700 mt-1">{{ ringkasan.objectives }}</p></div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Key Result</p><p class="text-2xl font-bold text-slate-700 mt-1">{{ ringkasan.key_results }}</p></div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Tercapai</p><p class="text-2xl font-bold text-emerald-600 mt-1">{{ ringkasan.tercapai }}</p></div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Tertinggal</p><p class="text-2xl font-bold text-red-600 mt-1">{{ ringkasan.tertinggal }}</p></div>
+            </div>
+
+            <!-- ================= Objective & Key Results ================= -->
+            <section class="space-y-4">
+                <div class="flex items-baseline justify-between">
+                    <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold">Objective &amp; Key Results</h2>
+                    <p class="text-xs text-slate-400">Realisasi otomatis dari Insight &amp; Pembukuan</p>
+                </div>
+
+                <!-- Kuartal kosong: empty-state jelas + jalan CRUD, BUKAN data contoh.
+                     Data contoh dulu bikin bingung: tampil seperti objective asli tapi
+                     tak punya tombol Ubah/Hapus, jadi CRUD terlihat rusak padahal jalan. -->
+                <div v-if="!objectives.length" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-dashed border-brand-200 bg-brand-50/50 px-5 py-8">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700">Belum ada Objective untuk {{ quarter.label }}</p>
+                        <p class="mt-1 text-xs text-slate-500">Mulai dengan menambah Objective, lalu isi Key Result-nya.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button v-if="canManage"
+                                class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl"
+                                @click="bukaObjective()">
+                            + Buat Objective
+                        </button>
+                        <button v-if="canManage && bisaSalin"
+                                class="px-4 py-2 text-sm font-semibold text-brand-700 border border-brand-200 bg-white hover:bg-brand-50 rounded-xl"
+                                @click="salinKuartalLalu">
+                            Salin dari {{ kuartalLaluLabel }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ============ VERSI 2 · Kartu (bawaan) ============ -->
+                <template v-if="tampilan === 2">
+                <article v-for="o in objectives" :key="o.id" class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-hidden">
+                    <!-- Kepala Objective: judul + progress roll-up -->
+                    <div class="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="font-bold text-slate-700">{{ o.title }}</h3>
+                                <span v-if="o.priority"
+                                      :class="['text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', o.priority.color]">
+                                    {{ o.priority.name }}
+                                </span>
+                            </div>
+                            <p v-if="o.description" class="text-xs text-slate-500 mt-1 max-w-prose">{{ o.description }}</p>
+                            <!-- Omzet adalah target Objective. KR di bawahnya
+                                 tetap berisi pekerjaan/hasil pendukung. -->
+                            <div v-if="o.omset_target > 0" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                <span class="font-semibold text-slate-600">Target omzet</span>
+                                <span class="font-bold text-brand-700" :title="fmtFull(o.omset_actual, 'rupiah') + ' / ' + fmtFull(o.omset_target, 'rupiah')">
+                                    {{ fmt(o.omset_actual, 'rupiah') }} / {{ fmt(o.omset_target, 'rupiah') }}
+                                </span>
+                                <span :class="['font-bold', textColor(o.omset_percent)]">{{ o.omset_percent }}%</span>
+                                <span v-if="o.omset_owner_name" class="text-slate-400">PIC: {{ o.omset_owner_name }}</span>
+                            </div>
+                            <div v-if="canManage" class="flex items-center gap-3 mt-2">
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ Key Result</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
+                            </div>
+                        </div>
+                        <!-- Progress = rata-rata target omzet (bila ada) + KR;
+                             tiap kontribusi dibatasi 100% dulu. -->
+                        <div class="text-right min-w-[132px]">
+                            <b class="text-2xl font-bold text-brand-700">{{ o.progress === null ? '—' : o.progress + '%' }}</b>
+                            <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                                <div :class="['h-full rounded-full transition-all', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p v-if="!o.key_results.length" class="px-5 py-6 text-sm text-slate-400">Belum ada Key Result.</p>
+
+                    <!-- Baris Key Result -->
+                    <div v-for="kr in o.key_results" :key="kr.id"
+                         class="px-5 py-3 border-b border-slate-50 last:border-b-0 grid gap-3 md:grid-cols-[minmax(0,1fr)_200px_140px] md:items-center">
+                        <div class="min-w-0">
+                            <span class="text-sm font-semibold text-slate-700">{{ kr.title }}</span>
+                            <span v-if="kr.priority"
+                                  :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', kr.priority.color]">
+                                {{ kr.priority.name }}
+                            </span>
+                            <span :class="['ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border',
+                                           kr.source === 'auto' ? 'bg-brand-50 text-brand-700 border-brand-100'
+                                           : kr.source === 'kartu' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                           : 'bg-amber-50 text-amber-700 border-amber-200']">
+                                {{ kr.source_label }}
+                            </span>
+                            <!-- Penanggung jawab: yang mengejar angka ini. Untuk
+                                 sekarang selalu owner & belum bisa dipilih di form. -->
+                            <p v-if="kr.owner_name" class="text-[11px] text-slate-400 mt-0.5">PJ: {{ kr.owner_name }}</p>
+
+                            <!-- Card eksekusi KR: card utama dibuat otomatis pada
+                                 board pilihan saat KR dibuat. KR bersumber Kanban
+                                 juga dapat memiliki langkah tambahan dari todolist.
+                                 Seluruh card tetap dikerjakan di board asalnya. -->
+                            <p v-if="kr.source === 'kartu' && kr.board_key" class="mt-1.5 text-[11px] font-medium text-emerald-700">
+                                Board: {{ kr.board_name }}
+                            </p>
+                            <ul v-if="kr.kartu.length" class="mt-2 space-y-1">
+                                    <li v-for="k in kr.kartu" :key="k.id" class="group flex items-center gap-2 text-[11px]">
+                                        <svg v-if="k.selesai" class="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                        <span v-else class="w-3.5 h-3.5 rounded-full border border-slate-300 flex-shrink-0"></span>
+                                        <span :class="k.selesai ? 'text-slate-500 line-through' : 'text-slate-600'">{{ k.judul }}</span>
+                                        <span class="text-slate-400">{{ k.board }}</span>
+                                        <span v-if="k.pic" class="text-slate-400">· {{ k.pic }}</span>
+                                        <span v-if="k.ketepatan === 'terlambat'" class="text-red-600 font-semibold">telat</span>
+                                        <button v-if="canManage" type="button" class="ml-auto text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition" title="Lepas dari goal ini" @click="lepasKartu(kr.id, k.id)">lepas</button>
+                                    </li>
+                            </ul>
+                            <p v-else class="text-[11px] text-slate-400 mt-1.5 italic">Belum ada tugas Kanban yang terhubung.</p>
+
+                            <template v-if="kr.source === 'kartu' && !kr.board_key">
+                                <!-- Kelola langkah (owner/manager). Toggle supaya kartu KR
+                                     tak penuh kontrol saat cuma dibaca. -->
+                                <button v-if="canManage" type="button" class="mt-1.5 text-[11px] font-semibold text-brand-700 hover:underline" @click="bukaKartu(kr.id)">
+                                    {{ kartuPanel === kr.id ? 'Tutup' : '+ Kelola langkah' }}
+                                </button>
+                                <div v-if="canManage && kartuPanel === kr.id" class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+                                    <!-- Buat kartu todolist BARU langsung tertaut -->
+                                    <form class="flex flex-wrap items-center gap-1.5" @submit.prevent="simpanKartuBaru(kr.id)">
+                                        <input v-model="kartuBaru.endorse" type="text" placeholder="Langkah baru…" class="flex-1 min-w-[140px] border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                                        <input v-model="kartuBaru.deadline" type="date" title="Deadline (opsional)" class="border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                                        <button type="submit" :disabled="kartuBaru.processing" class="text-[11px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-md px-2.5 py-1 disabled:opacity-50">Buat</button>
+                                    </form>
+                                    <p v-if="kartuBaru.errors.endorse" class="text-[10px] text-red-600">{{ kartuBaru.errors.endorse }}</p>
+
+                                    <!-- Atau tautkan kartu todolist yang sudah ada -->
+                                    <div v-if="kartuTersedia.length" class="flex items-center gap-1.5">
+                                        <select v-model="attachId" class="flex-1 border border-slate-200 rounded-md px-2 py-1 text-[11px] bg-white focus:outline-none focus:ring-2 focus:ring-brand-300">
+                                            <option value="">Tautkan kartu yang sudah ada…</option>
+                                            <option v-for="c in kartuTersedia" :key="c.id" :value="c.id">{{ c.judul }}</option>
+                                        </select>
+                                        <button type="button" :disabled="!attachId" class="text-[11px] font-semibold text-brand-700 hover:underline disabled:opacity-40" @click="tautkanKartu(kr.id)">Tautkan</button>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">Langkah tambahan dikerjakan di Kanban todolist; menyelesaikannya menggerakkan angka KR ini.</p>
+                                </div>
+                            </template>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500 mb-1" :title="fmtFull(kr.actual, kr.unit) + ' dari ' + fmtFull(kr.target, kr.unit)">
+                                {{ fmt(kr.actual, kr.unit) }} / {{ kr.target > 0 ? fmt(kr.target, kr.unit) : '—' }}
+                            </p>
+                            <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div :class="['h-full rounded-full transition-all', barColor(kr.percent)]" :style="{ width: barWidth(kr.percent) }"></div>
+                            </div>
+                        </div>
+                        <div class="md:text-right">
+                            <p :class="['text-sm font-bold', textColor(kr.percent)]">
+                                {{ kr.percent === null ? 'tanpa target' : kr.percent + '%' }}
+                            </p>
+                            <div v-if="canManage" class="flex md:justify-end items-center gap-2.5 mt-0.5">
+                                <!-- KR otomatis TIDAK punya tombol ini: angkanya dari
+                                     Insight/Pembukuan, dan server pun menolaknya. -->
+                                <button v-if="kr.source === 'manual'" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaAktual(kr)">Perbarui angka</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaKr(o, kr)">Ubah</button>
+                                <button class="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusKr(kr)">Hapus</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+                </template>
+
+                <!-- ============ VERSI 1 · List gaya ClickUp/Jira ============ -->
+                <!-- Satu tabel: tiap Objective jadi baris grup, KR jadi baris di
+                     bawahnya lengkap badge status + bar progress. -->
+                <div v-if="tampilan === 1" class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm min-w-[760px]">
+                            <thead>
+                                <tr class="text-left text-[10px] uppercase tracking-widest text-slate-400 bg-slate-50 border-b border-slate-100">
+                                    <th class="py-2.5 px-4 font-semibold">Objective / Key Result</th>
+                                    <th class="py-2.5 px-4 font-semibold w-32">Status</th>
+                                    <th class="py-2.5 px-4 font-semibold w-56">Progress</th>
+                                    <th class="py-2.5 px-4 font-semibold text-right w-40">Target / Realisasi</th>
+                                    <th v-if="canManage" class="py-2.5 px-4 font-semibold text-right w-28">Aksi</th>
+                                </tr>
+                            </thead>
+                            <!-- Satu <tbody> per Objective supaya pengelompokannya rapi. -->
+                            <tbody v-for="o in objectives" :key="o.id">
+                                <tr class="bg-brand-50/40 border-b border-brand-100">
+                                    <td class="py-2.5 px-4 font-bold text-slate-700">
+                                        {{ o.title }}
+                                        <span v-if="o.priority"
+                                              :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', o.priority.color]">
+                                            {{ o.priority.name }}
+                                        </span>
+                                        <span class="ml-1 text-[11px] font-normal text-slate-400">· {{ o.key_results.length }} KR</span>
+                                        <button v-if="canManage" class="ml-2 text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaKr(o)">+ KR</button>
+                                        <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaObjective(o)">Ubah</button>
+                                        <button v-if="canManage" class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusObjective(o)">Hapus</button>
+                                    </td>
+                                    <td class="py-2.5 px-4 text-right tabular-nums text-xs">
+                                        <template v-if="o.omset_target > 0">
+                                            <p class="font-semibold text-brand-700" :title="fmtFull(o.omset_actual, 'rupiah') + ' / ' + fmtFull(o.omset_target, 'rupiah')">
+                                                {{ fmt(o.omset_actual, 'rupiah') }} / {{ fmt(o.omset_target, 'rupiah') }}
+                                            </p>
+                                            <p v-if="o.omset_owner_name" class="text-[10px] text-slate-400">PIC: {{ o.omset_owner_name }}</p>
+                                        </template>
+                                    </td>
+                                    <td class="py-2.5 px-4">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                                <div :class="['h-full rounded-full', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
+                                            </div>
+                                            <span :class="['text-xs font-bold w-11 text-right', textColor(o.progress)]">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2.5 px-4"></td>
+                                    <td v-if="canManage" class="py-2.5 px-4"></td>
+                                </tr>
+                                <tr v-if="!o.key_results.length">
+                                    <td :colspan="canManage ? 5 : 4" class="py-2 px-4 pl-8 text-xs text-slate-400">Belum ada Key Result.</td>
+                                </tr>
+                                <tr v-for="kr in o.key_results" :key="kr.id" class="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/60">
+                                    <td class="py-2 px-4 pl-8 text-slate-700">
+                                        {{ kr.title }}
+                                        <span v-if="kr.priority"
+                                              :class="['ml-2 text-[10px] text-white font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', kr.priority.color]">
+                                            {{ kr.priority.name }}
+                                        </span>
+                                        <span v-if="kr.owner_name" class="text-[11px] text-slate-400">· {{ kr.owner_name }}</span>
+                                    </td>
+                                    <td class="py-2 px-4">
+                                        <span :class="['inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap', statusKr(kr.percent).cls]">{{ statusKr(kr.percent).label }}</span>
+                                    </td>
+                                    <td class="py-2 px-4">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                <div :class="['h-full rounded-full', barColor(kr.percent)]" :style="{ width: barWidth(kr.percent) }"></div>
+                                            </div>
+                                            <span :class="['text-xs font-bold w-11 text-right', textColor(kr.percent)]">{{ kr.percent === null ? '—' : kr.percent + '%' }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2 px-4 text-right tabular-nums text-slate-500" :title="fmtFull(kr.actual, kr.unit) + ' / ' + fmtFull(kr.target, kr.unit)">
+                                        {{ fmt(kr.actual, kr.unit) }} / {{ kr.target > 0 ? fmt(kr.target, kr.unit) : '—' }}
+                                    </td>
+                                    <td v-if="canManage" class="py-2 px-4 text-right whitespace-nowrap">
+                                        <button v-if="kr.source === 'manual'" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors" @click="bukaAktual(kr)">Angka</button>
+                                        <button class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors" @click="bukaKr(o, kr)">Ubah</button>
+                                        <button class="ml-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors" @click="hapusKr(kr)">Hapus</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ================= Tren antar kuartal ================= -->
+            <section class="space-y-3">
+                <div class="flex flex-wrap items-baseline justify-between gap-3">
+                    <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold">Tren 6 kuartal</h2>
+                    <!-- Satu metrik sekali waktu: view (ratusan ribu) dan omset
+                         (ratusan juta) di satu sumbu akan meratakan salah satunya. -->
+                    <div class="flex gap-1.5">
+                        <button v-for="(t, i) in tren" :key="t.metric"
+                                :class="['text-xs font-semibold rounded-full px-3 py-1.5 border transition',
+                                         i === trenAktif ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50']"
+                                @click="trenAktif = i">
+                            {{ t.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5 space-y-4">
+                    <div class="h-64"><Line :data="lineData" :options="lineOpts" /></div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm min-w-[420px]">
+                            <thead>
+                                <tr class="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                                    <th class="py-2 font-semibold">Kuartal</th>
+                                    <th class="py-2 font-semibold text-right">Target</th>
+                                    <th class="py-2 font-semibold text-right">Realisasi</th>
+                                    <th class="py-2 font-semibold text-right">Capaian</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="p in trenPilih.points" :key="p.label" class="border-b border-slate-50 last:border-b-0">
+                                    <td class="py-2 text-slate-600">{{ p.label }}</td>
+                                    <td class="py-2 text-right tabular-nums text-slate-600">{{ p.target > 0 ? fmtFull(p.target, trenPilih.unit) : '—' }}</td>
+                                    <td class="py-2 text-right tabular-nums text-slate-600">{{ fmtFull(p.actual, trenPilih.unit) }}</td>
+                                    <td :class="['py-2 text-right tabular-nums font-semibold', textColor(p.percent)]">{{ p.percent === null ? '—' : p.percent + '%' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= Modal Objective ================= -->
+        <ModalWrap v-if="objModal" @close="objModal = null">
+            <h3 class="text-lg font-bold text-slate-700">{{ objModal === 'baru' ? 'Objective baru' : 'Ubah Objective' }} — {{ quarter.label }}</h3>
+            <p class="text-xs text-slate-400 mt-1">Tujuan utama; target omzet disimpan langsung pada Objective ini.</p>
+
+            <form class="mt-4 space-y-3" @submit.prevent="simpanObjective">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Objective</label>
+                    <input v-model="objForm.title" type="text" placeholder="Jadi rujukan utama konten AI di Indonesia"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    <p v-if="objForm.errors.title" class="text-xs text-red-600 mt-1">{{ objForm.errors.title }}</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Keterangan <span class="font-normal text-slate-400">(opsional)</span></label>
+                    <textarea v-model="objForm.description" rows="2" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"></textarea>
+                    <p v-if="objForm.errors.description" class="text-xs text-red-600 mt-1">{{ objForm.errors.description }}</p>
+                </div>
+                <!-- Penanda memakai preset yang sama dengan kartu Kanban. -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Status prioritas</label>
+                    <select v-model="objForm.priority_name" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option value="">— tanpa status —</option>
+                        <option v-for="priority in priorities" :key="priority.name" :value="priority.name">{{ priority.name }}</option>
+                    </select>
+                    <p v-if="objForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ objForm.errors.priority_name }}</p>
+                </div>
+                <!-- Target omzet menjadi atribut Objective, bukan Key Result.
+                     Ditampilkan juga di mode edit: mengubah target/PIC di sini
+                     memicu notifikasi perubahan ke PIC lama & baru. -->
+                <div class="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Target omzet kuartal <span class="font-normal text-slate-400">(opsional)</span></label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
+                        <input v-model="objForm.omset_target" type="number" min="0" step="1000" inputmode="decimal"
+                               placeholder="250000000"
+                               class="w-full border border-slate-200 rounded-xl pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    </div>
+                    <p class="mt-1 text-[11px] text-slate-500">Jika diisi, target tersimpan pada Objective dan realisasinya dihitung otomatis dari Pembukuan.</p>
+                    <p v-if="objForm.errors.omset_target" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_target }}</p>
+
+                    <!-- PIC dipilih dari user aktif yang sama dengan pilihan PIC
+                         card. Saat disimpan, server membuat notifikasi database
+                         untuk user ini; staff tetap dapat membacanya tanpa akses
+                         ke halaman OKR. -->
+                    <div class="mt-3">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">PIC target omzet</label>
+                        <select v-model="objForm.omset_owner_id"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-300">
+                            <option value="">— owner utama —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">
+                                {{ person.name }} · {{ person.role }}
+                            </option>
+                        </select>
+                        <p class="mt-1 text-[11px] text-slate-500">PIC akan menerima notifikasi yang tersimpan di server.</p>
+                        <p v-if="objForm.errors.omset_owner_id" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_owner_id }}</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" @click="objModal = null">Batal</button>
+                    <button type="submit" :disabled="objForm.processing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50">Simpan</button>
+                </div>
+            </form>
+        </ModalWrap>
+
+        <!-- ================= Modal Key Result ================= -->
+        <ModalWrap v-if="krModal" @close="krModal = null">
+            <h3 class="text-lg font-bold text-slate-700">{{ krModal.mode === 'baru' ? 'Key Result baru' : 'Ubah Key Result' }}</h3>
+            <p class="text-xs text-slate-400 mt-1">Pekerjaan/hasil pendukung untuk Objective: {{ krModal.objective.title }}</p>
+
+            <form class="mt-4 space-y-3" @submit.prevent="simpanKr">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Pekerjaan / hasil</label>
+                    <input v-model="krForm.title" type="text" placeholder="Publikasikan kampanye dan capai total view"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    <p v-if="krForm.errors.title" class="text-xs text-red-600 mt-1">{{ krForm.errors.title }}</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Status prioritas</label>
+                    <select v-model="krForm.priority_name" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option value="">— tanpa status —</option>
+                        <option v-for="priority in priorities" :key="priority.name" :value="priority.name">{{ priority.name }}</option>
+                    </select>
+                    <p v-if="krForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ krForm.errors.priority_name }}</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Sumber angka</label>
+                    <select v-model="krForm.source" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option v-for="(label, key) in sources" :key="key" :value="key">{{ label }}</option>
+                    </select>
+                    <p class="text-[11px] text-slate-400 mt-1">
+                        {{ krForm.source === 'auto'
+                            ? krForm.metric === 'view'
+                                ? 'Realisasi mengambil total views konten Insight yang terbit di kuartal ini.'
+                                : 'Realisasi dihitung otomatis dari data yang tersedia.'
+                            : krForm.source === 'kartu'
+                            ? 'Realisasi dan target diambil dari board Kanban yang dipilih untuk kuartal Objective ini.'
+                            : 'Realisasi kamu perbarui sendiri lewat tombol “Perbarui angka”.' }}
+                    </p>
+                </div>
+
+                <!-- Metrik hanya relevan untuk KR otomatis — server pun menuntutnya
+                     lewat required_if:source,auto. -->
+                <div v-if="krForm.source === 'auto'">
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Metrik</label>
+                    <select v-model="krForm.metric" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                        <option value="">— pilih —</option>
+                        <option v-for="(label, key) in metrics" :key="key" :value="key">{{ label }}</option>
+                    </select>
+                    <p v-if="krForm.errors.metric" class="text-xs text-red-600 mt-1">{{ krForm.errors.metric }}</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div v-if="krForm.source === 'kartu'">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Board Kanban</label>
+                        <select v-model="krForm.board_key"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300">
+                            <option value="">— tanpa board (langkah per KR) —</option>
+                            <option v-for="board in kanbanBoards" :key="board.key" :value="board.key">{{ board.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.board_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.board_key }}</p>
+                        <!-- Tanpa board: target wajib diisi manual (jumlah kartu yang
+                             harus diselesaikan — realisasi = kartu tertaut yang selesai). -->
+                        <p v-if="!krForm.board_key" class="text-[11px] text-slate-400 mt-1">
+                            Realisasi = kartu yang ditautkan dan sudah selesai. Tanpa board hitungannya per-KR, bukan seluruh board.
+                        </p>
+                        <p v-else class="text-[11px] text-slate-400 mt-1">
+                            Target dan realisasi dihitung dari seluruh kartu di board ini dalam kuartal. Target diatur di /kpi.
+                        </p>
+                    </div>
+                    <div v-else>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target</label>
+                        <input v-model="krForm.target" type="number" min="0" step="any"
+                               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                        <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
+                    </div>
+                    <!-- Kartu tanpa board: target diisi manual di kolom kanan. -->
+                    <div v-if="krForm.source === 'kartu' && !krForm.board_key">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Target (kartu selesai)</label>
+                        <input v-model="krForm.target" type="number" min="0" step="any"
+                               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                        <p v-if="krForm.errors.target" class="text-xs text-red-600 mt-1">{{ krForm.errors.target }}</p>
+                    </div>
+                    <!-- KR 'kartu' selalu bersatuan "angka" (menghitung kartu) —
+                         server memaksanya, jadi pemilih satuan disembunyikan. -->
+                    <div v-if="krForm.source !== 'kartu'">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Satuan</label>
+                        <select v-model="krForm.unit" :disabled="krForm.source === 'auto'"
+                                class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:bg-slate-50 disabled:text-slate-500">
+                            <option v-for="(label, key) in units" :key="key" :value="key">{{ label }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div v-if="krModal.mode === 'baru'" class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Board eksekusi</label>
+                        <select v-model="krForm.kanban_board_key" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option v-for="board in kanbanBoards" :key="board.key" :value="board.key">{{ board.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.kanban_board_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.kanban_board_key }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Masuk kolom</label>
+                        <select v-model="krForm.kanban_column_key" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option v-for="column in executionColumns" :key="column.key" :value="column.key">{{ column.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.kanban_column_key" class="text-xs text-red-600 mt-1">{{ krForm.errors.kanban_column_key }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Kategori</label>
+                        <select v-model="krForm.card_category" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— tanpa kategori —</option>
+                            <option v-for="category in cardCategories" :key="category.name" :value="category.name">{{ category.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.card_category" class="text-xs text-red-600 mt-1">{{ krForm.errors.card_category }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">PIC card utama</label>
+                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— belum ditugaskan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deadline eksekusi</label>
+                        <input v-model="krForm.deadline" type="date" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deskripsi card</label>
+                        <textarea v-model="krForm.card_description" rows="3" placeholder="Jelaskan hasil yang harus dicapai dan batasan pekerjaannya"
+                            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm resize-y"></textarea>
+                        <p v-if="krForm.errors.card_description" class="text-xs text-red-600 mt-1">{{ krForm.errors.card_description }}</p>
+                    </div>
+                </div>
+
+                <!-- Mode edit: board/kolom/deskripsi card utama tak diubah dari
+                     sini (itu urusan Kanban), tetapi PIC & deadline-nya boleh
+                     dikoreksi — server memberi tahu PIC lama/baru bila berubah.
+                     Hanya tampil bila KR ini memang punya card utama. -->
+                <div v-if="krModal.mode === 'edit' && masterCard" class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">PIC card utama</label>
+                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                            <option value="">— belum ditugaskan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
+                        </select>
+                        <p v-if="krForm.errors.assigned_to" class="text-xs text-red-600 mt-1">{{ krForm.errors.assigned_to }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Deadline eksekusi</label>
+                        <input v-model="krForm.deadline" type="date" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
+                        <p v-if="krForm.errors.deadline" class="text-xs text-red-600 mt-1">{{ krForm.errors.deadline }}</p>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" @click="krModal = null">Batal</button>
+                    <button type="submit" :disabled="krForm.processing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50">Simpan</button>
+                </div>
+            </form>
+        </ModalWrap>
+
+        <!-- ================= Modal perbarui realisasi (KR manual) ================= -->
+        <ModalWrap v-if="aktualModal" width="max-w-sm" @close="aktualModal = null">
+            <h3 class="text-lg font-bold text-slate-700">Perbarui angka</h3>
+            <p class="text-xs text-slate-400 mt-1">{{ aktualModal.title }} · target {{ fmtFull(aktualModal.target, aktualModal.unit) }}</p>
+
+            <form class="mt-4 space-y-3" @submit.prevent="simpanAktual">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Realisasi saat ini</label>
+                    <input v-model="aktualForm.actual_manual" type="number" min="0" step="any"
+                           class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    <p v-if="aktualForm.errors.actual_manual" class="text-xs text-red-600 mt-1">{{ aktualForm.errors.actual_manual }}</p>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" @click="aktualModal = null">Batal</button>
+                    <button type="submit" :disabled="aktualForm.processing" class="px-4 py-2 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl disabled:opacity-50">Simpan</button>
+
+                </div>
+            </form>
+        </ModalWrap>
+    </Layout>
+</template>
