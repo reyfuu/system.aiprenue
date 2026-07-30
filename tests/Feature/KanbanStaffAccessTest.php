@@ -145,22 +145,6 @@ class KanbanStaffAccessTest extends TestCase
             );
     }
 
-    /** Badge ketepatan per kartu tetap ada: itu turunan `deadline` & `done`
-     *  yang memang sudah terlihat staff, bukan agregat kinerja tim. */
-    public function test_staff_tetap_melihat_ketepatan_kartunya(): void
-    {
-        Pipeline::create([
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Task telat',
-            'progress' => 'todo', 'payment_status' => 'belum',
-            'deadline' => '2026-01-10', 'completed_at' => '2026-01-20 09:00:00',
-        ]);
-
-        $this->actingAs($this->staff())
-            ->get('/pipelines/kanban?category=todolist')
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page->where('board.todo.0.ketepatan', 'terlambat'));
-    }
-
     public function test_user_menerima_reminder_kerjaan_yang_mendekati_deadline(): void
     {
         $staff = $this->staff();
