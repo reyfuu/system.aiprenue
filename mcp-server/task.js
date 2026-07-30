@@ -21,7 +21,7 @@ const usage = () => {
   node task.js describe <nama_tool>
   node task.js call <nama_tool> ['{"field":"nilai"}']
   node task.js dashboard|orders|finance|content|scripts|insights|users
-  node task.js absences|mindmaps|okr|kpi|tracking|access|inventory|upload
+  node task.js absences|mindmaps|okr|kpi|tracking|access|inventory|upload|audit
   node task.js boards
   node task.js list <board>
   node task.js create <board> "<judul>" [column]
@@ -45,6 +45,7 @@ const CALLS = {
     access: () => ['list_access', {}],
     inventory: () => ['list_inventory', {}],
     upload: () => ['get_upload_status', {}],
+    audit: () => ['list_audit_logs', {}],
     boards: () => ['list_boards', {}],
     list: ([board]) => board ? ['list_tasks', { board }] : usage(),
     create: ([board, title, column]) =>
