@@ -7,10 +7,34 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BoardColumn;
 
 class Pipeline extends Model
 {
     use SoftDeletes;
+    protected static function booted(): void
+    {
+        static::saving(function (Pipeline $pipeline) {
+            if (! $pipeline->isDirty('progress')) {
+                return;
+            }
+            $col = BoardColumn::where('board_key', $pipeline->category)
+                ->where('key', $pipeline->progress)
+                ->first();
+            if ($col) {
+                $name = mb_strtolower($col->name);
+                $isDone = str_starts_with($name, 'done') || str_starts_with($name, 'done ')
+                    || $col->key === 'done' || $col->key === 'deal' || $col->key === 'closing';
+                if ($isDone) {
+                    $pipeline->done = 1;
+                    $pipeline->completed_at = $pipeline->completed_at ?? now();
+                } else {
+                    $pipeline->done = 0;
+                    $pipeline->completed_at = null;
+                }
+            }
+        });
+    }
 
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'created_by', 'key_result_id', 'coaching', 'speaker', 'endorse', 'description', 'progress',
