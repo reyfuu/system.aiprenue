@@ -193,18 +193,27 @@ PROMPT;
                 ]);
 
             if (! $res->successful()) {
-                Log::warning("9router {$model} gagal: HTTP {$res->status()}", ['body' => $res->body()]);
+                Log::warning("9router {$model} HTTP {$res->status()}", [
+                    'body'   => $res->body(),
+                    'url'    => rtrim($baseUrl, '/') . '/chat/completions',
+                ]);
 
                 return [];
             }
 
             $body = $res->json();
-
             $content = $body['choices'][0]['message']['content'] ?? '';
+
+            if (empty($content)) {
+                Log::warning("9router {$model} response kosong", ['body' => $body]);
+            }
 
             return $this->parseJson($content);
         } catch (\Throwable $e) {
-            Log::warning("9router {$model} error: " . $e->getMessage());
+            Log::warning("9router {$model} error: " . $e->getMessage(), [
+                'url' => rtrim($baseUrl, '/') . '/chat/completions',
+                'model' => $model,
+            ]);
 
             return [];
         }
