@@ -36,6 +36,43 @@ class Pipeline extends Model
         });
     }
 
+    /**
+     * Otomatis setel status selesai saat kartu berpindah ke kolom akhir.
+     *
+     *  Pindah ke kolom bernama Done/Deal/Closing → done=1 + stempel selesai.
+     *  Keluar dari kolom tersebut → done=0 + hapus stempel. Sekali selesai,
+     *  stempel LAMA dipertahankan (tidak ditimpa) supaya kartu tak bisa
+     *  "dirapikan" hanya dgn menggerakkannya bolak-balik.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Pipeline $pipeline) {
+            if (! $pipeline->isDirty('progress')) {
+                return;
+            }
+
+            $col = BoardColumn::where('board_key', $pipeline->category)
+                ->where('key', $pipeline->progress)
+                ->first();
+
+            if (! $col) {
+                return;
+            }
+
+            $name = mb_strtolower($col->name);
+            $isDone = str_starts_with($name, 'done') || str_starts_with($name, 'done ')
+                || $col->key === 'done' || $col->key === 'deal' || $col->key === 'closing';
+
+            if ($isDone) {
+                $pipeline->done = true;
+                $pipeline->completed_at = $pipeline->completed_at ?? now();
+            } else {
+                $pipeline->done = false;
+                $pipeline->completed_at = null;
+            }
+        });
+    }
+
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'created_by', 'key_result_id', 'coaching', 'speaker', 'endorse', 'description', 'progress',
         'tanggal_posting', 'tanggal_payment', 'deadline', 'score', 'payment_status',
