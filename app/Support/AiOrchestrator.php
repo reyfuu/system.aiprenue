@@ -182,6 +182,7 @@ PROMPT;
         try {
             $res = Http::timeout($timeout)
                 ->withToken($token)
+                ->withoutVerifying()
                 ->post(rtrim($baseUrl, '/') . '/chat/completions', [
                     'model'       => $model,
                     'temperature' => 0.7,
