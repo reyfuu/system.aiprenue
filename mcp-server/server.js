@@ -147,7 +147,11 @@ async function prioritySnapshot(name) {
 }
 
 const OKR_SOURCES = ['auto', 'manual', 'kartu'];
-const OKR_METRICS = ['view', 'subscriber', 'omset'];
+// Metrik yang boleh dipakai sebuah Key Result. 'omset' SENGAJA tidak ada:
+// target omzet kini tinggal di Objective (kolom omset_target), bukan lagi KR
+// semu — OkrController::storeKeyResult() menolaknya dengan pesan
+// "Target omzet disimpan pada Objective.".
+const OKR_KR_METRICS = ['view', 'subscriber'];
 const OKR_UNITS = ['angka', 'rupiah', 'persen'];
 const LIMIT = z.number().int().min(1).max(200).default(50);
 
@@ -391,7 +395,7 @@ function registerSystemReadTools(server) {
                 [...quarterRange(year, quarter), year, quarter]);
             for (const objective of objectives) {
                 const [krs] = await db.query(
-                    `SELECT kr.id, kr.title, kr.source, kr.metric, kr.target, kr.actual_manual,
+                    `SELECT kr.id, kr.title, kr.description, kr.source, kr.metric, kr.target, kr.actual_manual,
                             kr.unit, kr.board_key, kr.priority, kr.owner_id, u.name AS owner_name
                      FROM key_results kr
                      LEFT JOIN users u ON u.id=kr.owner_id
@@ -399,15 +403,43 @@ function registerSystemReadTools(server) {
                 for (const kr of krs) {
                     let actual = Number(kr.actual_manual || 0);
                     if (kr.source === 'auto') actual = Number(metrics[kr.metric] || 0);
-                    if (kr.source === 'kartu') {
-                        const [[done]] = await db.query(`SELECT COUNT(*) n FROM pipelines WHERE key_result_id=? AND completed_at IS NOT NULL`, [kr.id]);
+                    if (kr.source === 'kartu' && kr.board_key) {
+                        // KR berbasis board: angkanya milik SELURUH board pada kuartal
+                        // ini (disaring lewat deadline kartu), dan targetnya diambil
+                        // dari target kuartal board yang ditetapkan di /kpi — kolom
+                        // key_results.target diabaikan. Persis OkrController::index().
+                        const [[done]] = await db.query(
+                            `SELECT COUNT(*) n FROM pipelines
+                             WHERE category=? AND deadline BETWEEN ? AND ? AND completed_at IS NOT NULL`,
+                            [kr.board_key, ...quarterRange(year, quarter)]);
+                        actual = Number(done.n);
+                        const [[boardTarget]] = await db.query(
+                            `SELECT target_done FROM board_quarter_targets
+                             WHERE board_key=? AND year=? AND quarter=?`,
+                            [kr.board_key, year, quarter]);
+                        kr.target = Number(boardTarget?.target_done ?? 0);
+                    } else if (kr.source === 'kartu') {
+                        // Tanpa board: KR mengukur kartu yang ditautkan langsung ke
+                        // dirinya lewat pipelines.key_result_id, target diisi manual.
+                        const [[done]] = await db.query(
+                            `SELECT COUNT(*) n FROM pipelines WHERE key_result_id=? AND completed_at IS NOT NULL`, [kr.id]);
                         actual = Number(done.n);
                     }
+                    // Kolom DECIMAL keluar sebagai string dari driver MySQL; angka
+                    // dikirim sebagai number supaya identik dengan props /okr dan
+                    // tidak dibaca sebagai teks oleh model AI.
+                    kr.target = Number(kr.target ?? 0);
+                    kr.actual_manual = kr.actual_manual === null ? null : Number(kr.actual_manual);
                     kr.actual = actual;
                     kr.percent = pct(actual, kr.target);
                 }
                 objective.key_results = krs;
-                objective.omset_percent = pct(Number(objective.omset_actual), Number(objective.omset_target));
+                // Objective tanpa target omzet dikirim 0, sama seperti
+                // OkrController::index() — bukan null, agar tak terbaca
+                // "target belum ada" oleh pemanggil.
+                objective.omset_target = Number(objective.omset_target ?? 0);
+                objective.omset_actual = Number(objective.omset_actual ?? 0);
+                objective.omset_percent = pct(objective.omset_actual, objective.omset_target);
                 const scored = krs.map((kr) => kr.percent).filter((v) => v !== null).map((v) => Math.min(100, v));
                 if (objective.omset_percent !== null) scored.push(Math.min(100, objective.omset_percent));
                 objective.progress = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length * 10) / 10 : null;
@@ -619,43 +651,62 @@ function registerSystemWriteTools(server) {
         'create_key_result',
         {
             title: 'Create Key Result',
-            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber; manual memakai actual_manual; kartu dihitung dari card selesai.',
+            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber; manual memakai actual_manual; kartu dihitung dari card selesai. Untuk kartu, board_key opsional: dengan board angkanya diambil dari seluruh board (target = target kuartal board di /kpi), tanpa board KR hanya menghitung card yang ditautkan lewat link_task_to_kr dan target wajib diisi.',
             inputSchema: {
                 objective_id: z.number().int().positive(),
                 title: z.string().min(1).max(255),
+                description: z.string().max(2000).optional().describe('Penjelasan KR yang tampil di halaman OKR'),
                 source: z.enum(OKR_SOURCES),
-                metric: z.enum(OKR_METRICS).nullable().optional(),
-                board_key: z.string().nullable().optional(),
-                target: z.number().nonnegative(),
-                unit: z.enum(OKR_UNITS),
+                metric: z.enum(OKR_KR_METRICS).nullable().optional().describe('Wajib bila source=auto. omset tidak berlaku — target omzet ada di Objective.'),
+                board_key: z.string().nullable().optional().describe('Board Kanban, hanya untuk source=kartu dan bersifat opsional'),
+                target: z.number().nonnegative().optional().describe('Wajib untuk auto & manual, dan untuk kartu TANPA board. Untuk kartu DENGAN board nilainya diabaikan (diambil dari target kuartal board).'),
+                unit: z.enum(OKR_UNITS).optional().describe('Hanya dipakai source=manual; auto & kartu ditentukan otomatis'),
                 owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR'),
                 priority_name: z.string().max(50).optional().describe('Nama prioritas: Urgent atau Penting'),
             },
         },
         async (a) => {
-            const [[objective]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [a.objective_id]);
+            const [[objective]] = await db.query(`SELECT id, year, quarter FROM objectives WHERE id=?`, [a.objective_id]);
             if (!objective) return errText(`Objective id ${a.objective_id} tidak ditemukan.`);
             if (a.source === 'auto' && !a.metric) return errText('KR otomatis wajib memiliki metric.');
-            if (a.source === 'kartu' && !a.board_key) return errText('KR Kanban wajib memiliki board_key.');
             if (a.board_key) {
                 const [[board]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
                 if (!board) return errText(`Board Kanban "${a.board_key}" tidak ditemukan.`);
+            }
+            const boardKey = a.source === 'kartu' ? (a.board_key || null) : null;
+            // Aturan target disamakan dengan OkrController::validasiKeyResult().
+            let target = a.target ?? null;
+            if (boardKey) {
+                const [[boardTarget]] = await db.query(
+                    `SELECT target_done FROM board_quarter_targets WHERE board_key=? AND year=? AND quarter=?`,
+                    [boardKey, objective.year, objective.quarter]);
+                target = Number(boardTarget?.target_done ?? 0);
+            } else if (target === null) {
+                return errText(a.source === 'kartu'
+                    ? 'Tanpa board Kanban, target jumlah kartu wajib diisi.'
+                    : 'Target wajib diisi.');
             }
             const creator = await ownerId();
             const [[position]] = await db.query(
                 `SELECT COALESCE(MAX(position),0)+1 n FROM key_results WHERE objective_id=?`, [a.objective_id]);
             const metric = a.source === 'auto' ? a.metric : null;
-            const boardKey = a.source === 'kartu' ? a.board_key : null;
-            const unit = a.source === 'auto' ? (a.metric === 'omset' ? 'rupiah' : 'angka') : (a.source === 'kartu' ? 'angka' : a.unit);
+            // auto → satuan mengikuti metrik; kartu → selalu menghitung kartu.
+            const unit = a.source === 'auto' ? 'angka' : (a.source === 'kartu' ? 'angka' : (a.unit || 'angka'));
             const priority = a.priority_name ? await prioritySnapshot(a.priority_name) : null;
             const owner = a.owner_id || creator;
             const [result] = await db.query(
                 `INSERT INTO key_results
-                    (objective_id, title, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit,
+                    (objective_id, title, description, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.objective_id, a.title, a.description || null, a.source, boardKey, metric, target, unit,
                  priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
-            return jsonText({ ok: true, key_result: { id: result.insertId, ...a, metric, board_key: boardKey, unit } });
+            return jsonText({
+                ok: true,
+                key_result: { id: result.insertId, ...a, metric, board_key: boardKey, target, unit },
+                // KR dari MCP belum punya card eksekusi (is_kr_master) seperti KR
+                // yang dibuat dari halaman OKR, dan PIC-nya tidak dinotifikasi.
+                catatan: 'KR dibuat tanpa card eksekusi & tanpa notifikasi PIC. Tautkan card dengan link_task_to_kr bila perlu.',
+            });
         }
     );
 
@@ -667,28 +718,40 @@ function registerSystemWriteTools(server) {
             inputSchema: {
                 id: z.number().int().positive(),
                 title: z.string().min(1).max(255).optional(),
-                target: z.number().nonnegative().optional(),
+                description: z.string().max(2000).nullable().optional().describe('Penjelasan KR; kirim null untuk mengosongkan'),
+                target: z.number().nonnegative().optional().describe('Diabaikan bila KR memakai board Kanban — target board diambil dari /kpi'),
                 unit: z.enum(OKR_UNITS).optional(),
                 owner_id: z.number().int().positive().optional(),
                 priority_name: z.string().max(50).optional(),
-                board_key: z.string().nullable().optional(),
+                board_key: z.string().nullable().optional().describe('Ganti/kosongkan board Kanban. Diisi board → target ikut disetel dari target kuartal board.'),
             },
         },
         async (a) => {
-            const [[kr]] = await db.query(`SELECT id FROM key_results WHERE id=?`, [a.id]);
+            const [[kr]] = await db.query(
+                `SELECT kr.id, o.year, o.quarter FROM key_results kr
+                 JOIN objectives o ON o.id=kr.objective_id WHERE kr.id=?`, [a.id]);
             if (!kr) return errText(`Key Result id ${a.id} tidak ditemukan.`);
             const sets = [], vals = [];
             if (a.title !== undefined) { sets.push('title=?'); vals.push(a.title); }
-            if (a.target !== undefined) { sets.push('target=?'); vals.push(a.target); }
+            if (a.description !== undefined) { sets.push('description=?'); vals.push(a.description || null); }
             if (a.unit !== undefined) { sets.push('unit=?'); vals.push(a.unit); }
             if (a.owner_id !== undefined) { sets.push('owner_id=?'); vals.push(a.owner_id); }
+            // Target ditentukan sekali di sini supaya kolom `target` tak pernah
+            // muncul dua kali di klausa SET. Board menang atas target manual:
+            // KR berbasis board angkanya milik target kuartal board (/kpi).
+            let target = a.target;
             if (a.board_key !== undefined) {
                 if (a.board_key) {
                     const [[b]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
                     if (!b) return errText(`Board "${a.board_key}" tidak ditemukan.`);
+                    const [[boardTarget]] = await db.query(
+                        `SELECT target_done FROM board_quarter_targets WHERE board_key=? AND year=? AND quarter=?`,
+                        [a.board_key, kr.year, kr.quarter]);
+                    target = Number(boardTarget?.target_done ?? 0);
                 }
                 sets.push('board_key=?'); vals.push(a.board_key);
             }
+            if (target !== undefined) { sets.push('target=?'); vals.push(target); }
             if (a.priority_name !== undefined) {
                 const p = await prioritySnapshot(a.priority_name);
                 sets.push('priority=?'); vals.push(p ? JSON.stringify(p) : null);
@@ -872,7 +935,7 @@ function registerSystemWriteTools(server) {
 
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
-    const server = new McpServer({ name: 'system-aipreneur', version: '0.3.0' });
+    const server = new McpServer({ name: 'system-aipreneur', version: '0.4.0' });
     registerSystemReadTools(server);
     registerSystemWriteTools(server);
 
