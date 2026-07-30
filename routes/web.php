@@ -3,6 +3,7 @@
 use App\Http\Controllers\AbsenceController;
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
@@ -191,4 +192,8 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // menu 'akses' (owner/manager/it) + akses.update butuh canManage.
     Route::get('/akses', [AksesController::class, 'index'])->name('akses.index');
     Route::put('/akses', [AksesController::class, 'update'])->name('akses.update');
+
+    // Audit Log — read-only riwayat semua mutasi. Hanya owner & it
+    // (gate peran ketat di controller, bukan cuma menu).
+    Route::get('/audit', [AuditLogController::class, 'index'])->name('audit.index');
 });

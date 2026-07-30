@@ -22,6 +22,7 @@ const ITEMS = [
     { key: 'pembukuan', label: 'Pembukuan', href: '/pembukuan',        icon: 'M9 7h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z' },
     { key: 'user',      label: 'User',      href: '/users',            icon: 'M17 20h5v-1a4 4 0 00-4-4h-1m-6 5H2v-1a4 4 0 014-4h4a4 4 0 014 4v1zm-2-9a4 4 0 11-8 0 4 4 0 018 0zm7 0a3 3 0 11-6 0 3 3 0 016 0z' },
     { key: 'akses',     label: 'Manajemen Akses', href: '/akses',    icon: 'M12 11c0-1.1.9-2 2-2s2 .9 2 2m-4 0v0M5 11h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1zm3 0V7a4 4 0 018 0v4' },
+    { key: 'audit',     label: 'Audit Log', href: '/audit',          icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
     // Tautan EKSTERNAL ke aplikasi ProdPilot — buka tab baru, bukan navigasi SPA.
     // `external: true` cuma soal RENDER (<a> bukan <Link>). Hak aksesnya tetap dari
     // menus.prodpilot (User::MENU_ACCESS) — owner/it/manager saja.

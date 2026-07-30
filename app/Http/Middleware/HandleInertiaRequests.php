@@ -83,6 +83,7 @@ class HandleInertiaRequests extends Middleware
                         'upload' => $user->canSee('upload'),       // Upload konten multi-platform (template)
                         'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
                         'akses' => $user->canSee('akses'),       // Manajemen Akses
+                        'audit' => $user->canSee('audit'),       // Audit Log — owner + it
                     ],
                 ] : null,
             ],

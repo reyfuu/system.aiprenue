@@ -388,6 +388,9 @@ const deleteLabel = (id) => {
     router.delete(`/labels/${id}`, { preserveScroll: true });
 };
 
+// ---- Modal Diagram Organisasi (Sesuai Diagram User) ----
+const showOrgDiagram = ref(false);
+
 // ---- Modal board & kolom ----
 const boardCreateOpen = ref(false);
 const boardEditOpen = ref(false);
@@ -1339,6 +1342,143 @@ const toggleArchiveView = () => router.get(props.baseUrl, paramsFilter({
                     <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm">Simpan</button>
                 </div>
             </form>
+        </ModalWrap>
+        <!-- ===== Modal Diagram Struktur Organisasi (Sesuai Diagram User) ===== -->
+        <ModalWrap v-if="showOrgDiagram" width="max-w-6xl" @close="showOrgDiagram = false">
+            <div class="space-y-6 p-2">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                        <h2 class="text-lg font-extrabold text-slate-900">Diagram Struktur Organisasi &amp; Jobdesk Tim</h2>
+                        <p class="text-xs text-slate-500">Hirarki tim dan pembagian peran di Kanban Sistem AI Preneur</p>
+                    </div>
+                    <button @click="showOrgDiagram = false" class="text-slate-400 hover:text-slate-600 font-bold text-sm">✕</button>
+                </div>
+
+                <!-- Tree Diagram Component (Aesthetics Matching Diagram) -->
+                <div class="overflow-x-auto py-6 px-4 bg-slate-50/50 rounded-2xl border border-slate-200/80">
+                    <div class="min-w-[900px] flex flex-col items-center space-y-8">
+                        <!-- Level 1: Owner -->
+                        <div class="flex flex-col items-center">
+                            <div class="bg-white border-2 border-slate-800 rounded-2xl px-8 py-3 text-center shadow-sm hover:border-blue-600 transition-all">
+                                <p class="text-sm font-extrabold text-slate-900">Freedie</p>
+                                <p class="text-xs font-semibold text-slate-500">(Owner)</p>
+                            </div>
+                            <div class="w-0.5 h-8 bg-slate-400"></div>
+                        </div>
+
+                        <!-- Level 2: General Manager -->
+                        <div class="flex flex-col items-center w-full">
+                            <div class="bg-white border-2 border-slate-800 rounded-2xl px-8 py-3 text-center shadow-sm hover:border-blue-600 transition-all z-10">
+                                <p class="text-sm font-extrabold text-slate-900">Gilang</p>
+                                <p class="text-xs font-semibold text-slate-500">(General Manager)</p>
+                            </div>
+                            
+                            <!-- Branching connector lines -->
+                            <div class="w-full relative h-8">
+                                <div class="absolute left-1/2 top-0 w-0.5 h-4 -translate-x-1/2 bg-slate-400"></div>
+                                <div class="absolute top-4 left-[5%] right-[5%] h-0.5 bg-slate-400"></div>
+                            </div>
+                        </div>
+
+                        <!-- Level 3: Team Members Grid / Tree Row -->
+                        <div class="w-full flex justify-between gap-2 px-2">
+                            <!-- ULi -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">ULi</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Script Writer)</p>
+                                </div>
+                            </div>
+
+                            <!-- Aisyah -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Aisyah</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Script Writer)</p>
+                                </div>
+                            </div>
+
+                            <!-- Christian -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Christian</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Editor)</p>
+                                </div>
+                            </div>
+
+                            <!-- Bram -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Bram</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Editor)</p>
+                                </div>
+                            </div>
+
+                            <!-- Apip -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Apip</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Editor)</p>
+                                </div>
+                            </div>
+
+                            <!-- Syifa -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Syifa</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Editor)</p>
+                                </div>
+                            </div>
+
+                            <!-- Fikri -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Fikri</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Editor)</p>
+                                </div>
+                            </div>
+
+                            <!-- Icha -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Icha</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(Designer)</p>
+                                </div>
+                            </div>
+
+                            <!-- Audi -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Audi</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(AI Engineer)</p>
+                                </div>
+                            </div>
+
+                            <!-- Ilham -->
+                            <div class="flex flex-col items-center flex-1">
+                                <div class="w-0.5 h-4 bg-slate-400 -mt-8 mb-4"></div>
+                                <div class="bg-white border border-slate-800 rounded-xl p-2.5 text-center shadow-2xs w-full hover:border-blue-500 transition-all">
+                                    <p class="text-xs font-extrabold text-slate-900">Ilham</p>
+                                    <p class="text-[10px] font-medium text-slate-500">(AI Engineer)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-2">
+                    <button @click="showOrgDiagram = false" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition">Tutup</button>
+                </div>
+            </div>
         </ModalWrap>
     </Layout>
 </template>

@@ -110,9 +110,32 @@ const hapusObjective = (o) => {
 
 // ---- Form Key Result ----
 const krModal = ref(null);
-const krForm = useForm({ objective_id: null, title: '', source: 'manual', board_key: '', metric: '', target: 0, unit: 'angka', priority_name: '', kanban_board_key: '', kanban_column_key: '', card_category: '', card_description: '', assigned_to: '', deadline: '' });
+const krForm = useForm({
+    objective_id: null, title: '', source: 'manual', board_key: '',
+    metric: '', target: 0, unit: 'angka', priority_name: '',
+    kanban_board_key: '', kanban_column_key: '', card_category: '',
+    card_description: '', assigned_to: '', deadline: '',
+});
 const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
 const masterCard = computed(() => krModal.value?.kr?.kartu?.find((k) => k.is_master) ?? null);
+const showWorkstream = ref(false);
+
+const sourceOptions = [
+    { value: 'auto', label: 'Auto', desc: 'Dihitung dari Insight / Pembukuan', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
+    { value: 'manual', label: 'Manual', desc: 'Angka diisi & diperbarui sendiri', icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z' },
+    { value: 'kartu', label: 'Kartu', desc: 'Realisasi = kartu Kanban yang selesai', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+];
+
+const metricOptions = [
+    { value: 'view', label: 'View (Tayangan)', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+    { value: 'subscriber', label: 'Subscriber (Pengikut Baru)', icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z' },
+];
+
+const unitOptions = [
+    { value: 'angka', label: 'Angka / Jumlah' },
+    { value: 'rupiah', label: 'Rupiah (Rp)' },
+    { value: 'persen', label: 'Persentase (%)' },
+];
 
 watch(() => krForm.kanban_board_key, () => {
     if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
@@ -137,6 +160,7 @@ const bukaKr = (objective, kr = null) => {
     const master = kr?.kartu?.find((k) => k.is_master) ?? null;
     krForm.assigned_to = master?.assigned_to ?? '';
     krForm.deadline = master?.deadline ?? '';
+    showWorkstream.value = krModal.value.mode === 'baru';
     krForm.clearErrors();
 };
 
@@ -618,54 +642,209 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
             </form>
         </ModalWrap>
 
-        <!-- Modal Key Result -->
-        <ModalWrap v-if="krModal" @close="krModal = null">
-            <h3 class="text-lg font-bold text-slate-800">{{ krModal.mode === 'baru' ? 'Key Result baru' : 'Ubah Key Result' }}</h3>
-            <form class="mt-4 space-y-4" @submit.prevent="simpanKr">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">Judul Key Result</label>
-                    <input v-model="krForm.title" type="text" placeholder="Mencapai omzet e-commerce Rp500.000.000/bulan" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <!-- Modal Key Result — Desain Baru -->
+        <ModalWrap v-if="krModal" width="max-w-lg" @close="krModal = null">
+            <!-- Header -->
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 flex-shrink-0 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                 </div>
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Target</label>
-                        <input v-model="krForm.target" type="number" step="any" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 leading-tight">
+                        {{ krModal.mode === 'baru' ? 'Key Result Baru' : 'Edit Key Result' }}
+                    </h3>
+                    <p class="text-xs text-slate-400">Objective: {{ krModal.objective.title }}</p>
+                </div>
+            </div>
+
+            <form class="space-y-5" @submit.prevent="simpanKr">
+                <!-- Judul -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Judul Key Result</label>
+                    <input
+                        v-model="krForm.title"
+                        type="text"
+                        placeholder="Contoh: Mencapai omzet e-commerce Rp500.000.000/bulan"
+                        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                    />
+                    <p v-if="krForm.errors.title" class="text-xs text-red-500 mt-1">{{ krForm.errors.title }}</p>
+                </div>
+
+                <!-- Sumber Realisasi — tab button -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-2">Sumber Realisasi</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button
+                            v-for="opt in sourceOptions"
+                            :key="opt.value"
+                            type="button"
+                            @click="krForm.source = opt.value"
+                            :class="[
+                                'flex flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all',
+                                krForm.source === opt.value
+                                    ? 'border-blue-500 bg-blue-50 shadow-sm'
+                                    : 'border-slate-200 bg-white hover:border-slate-300'
+                            ]"
+                        >
+                            <svg class="w-5 h-5" :class="krForm.source === opt.value ? 'text-blue-600' : 'text-slate-400'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" :d="opt.icon" /></svg>
+                            <span class="text-xs font-bold" :class="krForm.source === opt.value ? 'text-blue-700' : 'text-slate-600'">{{ opt.label }}</span>
+                            <span class="text-[10px] leading-tight" :class="krForm.source === opt.value ? 'text-blue-500' : 'text-slate-400'">{{ opt.desc }}</span>
+                        </button>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Satuan Metrik</label>
-                        <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                            <option value="angka">Angka / Jumlah</option>
-                            <option value="rupiah">Rupiah (Rp)</option>
-                            <option value="persen">Persentase (%)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">Penanggung Jawab (PIC)</label>
-                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                            <option value="">— pilih PIC —</option>
-                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }}</option>
-                        </select>
+                    <p v-if="krForm.errors.source" class="text-xs text-red-500 mt-1">{{ krForm.errors.source }}</p>
+                </div>
+
+                <!-- Field spesifik per source -->
+                <!-- Auto: metric + target -->
+                <div v-if="krForm.source === 'auto'" class="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
+                    <p class="text-[11px] font-semibold text-amber-800">Realisasi dihitung otomatis dari data Insight & Pembukuan.</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Metrik</label>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <button
+                                    v-for="m in metricOptions"
+                                    :key="m.value"
+                                    type="button"
+                                    @click="krForm.metric = m.value"
+                                    :class="[
+                                        'flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-all',
+                                        krForm.metric === m.value
+                                            ? 'border-amber-500 bg-amber-100 text-amber-800'
+                                            : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                    ]"
+                                >
+                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" :d="m.icon" /></svg>
+                                    {{ m.label }}
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Target (wajib)</label>
+                            <input v-model="krForm.target" type="number" min="0" step="any" placeholder="500000" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                            <p v-if="krForm.errors.target" class="text-xs text-red-500 mt-1">{{ krForm.errors.target }}</p>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Tambahkan Workstream Task saat membuat KR baru -->
-                <div v-if="krModal.mode === 'baru'" class="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-                    <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Buat Kartu Workstream / Task Utama (Opsional)</h4>
+                <!-- Manual: target + unit -->
+                <div v-if="krForm.source === 'manual'" class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <p class="text-[11px] font-semibold text-slate-600">Angka diisi & diperbarui sendiri oleh tim.</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Target</label>
+                            <input v-model="krForm.target" type="number" min="0" step="any" placeholder="100" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Satuan</label>
+                            <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option v-for="u in unitOptions" :key="u.value" :value="u.value">{{ u.label }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kartu: board + target otomatis -->
+                <div v-if="krForm.source === 'kartu'" class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
+                    <p class="text-[11px] font-semibold text-emerald-800">Realisasi = jumlah kartu Kanban yang selesai di board yang dipilih.</p>
                     <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban Tujuan</label>
-                        <select v-model="krForm.kanban_board_key" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs bg-white">
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban</label>
+                        <select v-model="krForm.board_key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="">— pilih board —</option>
                             <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
                         </select>
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Deskripsi Workstream</label>
-                        <textarea v-model="krForm.card_description" rows="2" placeholder="Jalankan workstream ini berdasarkan diagnosis panel..." class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs bg-white"></textarea>
+                        <p class="text-[10px] text-slate-400 mt-1">Target akan diambil dari KPI Board yang bersangkutan.</p>
+                        <p v-if="krForm.errors.board_key" class="text-xs text-red-500 mt-1">{{ krForm.errors.board_key }}</p>
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" class="px-4 py-2 text-xs font-semibold text-slate-500" @click="krModal = null">Batal</button>
-                    <button type="submit" :disabled="krForm.processing" class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Simpan</button>
+                <!-- Prioritas + PIC (semua source) -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Prioritas</label>
+                        <div class="flex gap-2">
+                            <button
+                                v-for="p in priorities"
+                                :key="p.name"
+                                type="button"
+                                @click="krForm.priority_name = krForm.priority_name === p.name ? '' : p.name"
+                                :class="[
+                                    'flex-1 rounded-lg border px-3 py-2 text-xs font-bold transition-all',
+                                    krForm.priority_name === p.name
+                                        ? 'border-transparent text-white shadow-sm'
+                                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                                ]"
+                                :style="krForm.priority_name === p.name ? { backgroundColor: p.color } : {}"
+                            >
+                                {{ p.name }}
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Penanggung Jawab</label>
+                        <select v-model="krForm.assigned_to" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">— otomatis / belum ditentukan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">{{ person.name }} ({{ person.role }})</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Deadline -->
+                <div v-if="krForm.source !== 'auto'">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Tenggat (opsional)</label>
+                    <input v-model="krForm.deadline" type="date" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+
+                <!-- Workstream / Card Eksekusi (hanya saat baru) -->
+                <div v-if="krModal.mode === 'baru'">
+                    <button
+                        type="button"
+                        @click="showWorkstream = !showWorkstream"
+                        class="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                    >
+                        <svg class="w-4 h-4 transition-transform" :class="showWorkstream ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        {{ showWorkstream ? 'Sembunyikan' : 'Buat Kartu Workstream / Task Utama (Opsional)' }}
+                    </button>
+
+                    <div v-if="showWorkstream" class="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban Tujuan</label>
+                            <select v-model="krForm.kanban_board_key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kolom Awal</label>
+                            <select v-model="krForm.kanban_column_key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option v-for="c in executionColumns" :key="c.key" :value="c.key">{{ c.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Label Kategori</label>
+                            <select v-model="krForm.card_category" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">— tanpa label —</option>
+                                <option v-for="c in cardCategories" :key="c" :value="c">{{ c }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Deskripsi Workstream</label>
+                            <textarea v-model="krForm.card_description" rows="3" placeholder="Jalankan workstream ini berdasarkan diagnosis panel..." class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pesan error sumber -->
+                <p v-if="krForm.errors.source" class="text-xs text-red-500">{{ krForm.errors.source }}</p>
+                <p v-if="krForm.errors.metric" class="text-xs text-red-500">{{ krForm.errors.metric }}</p>
+                <p v-if="krForm.errors.kanban_column_key" class="text-xs text-red-500">{{ krForm.errors.kanban_column_key }}</p>
+                <p v-if="krForm.errors.card_category" class="text-xs text-red-500">{{ krForm.errors.card_category }}</p>
+
+                <!-- Tombol aksi -->
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-colors" @click="krModal = null">Batal</button>
+                    <button type="submit" :disabled="krForm.processing" class="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all disabled:opacity-60">
+                        {{ krForm.processing ? 'Menyimpan…' : (krModal.mode === 'baru' ? 'Simpan Key Result' : 'Simpan Perubahan') }}
+                    </button>
                 </div>
             </form>
         </ModalWrap>

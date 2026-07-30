@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +11,7 @@ use Illuminate\Support\Collection;
 /** Satu Objective kuartalan: tujuan utama, termasuk target omzet bila ada. */
 class Objective extends Model
 {
+    use Auditable;
     protected $fillable = [
         'year', 'quarter', 'title', 'description', 'priority',
         'omset_target', 'omset_owner_id', 'position', 'created_by',

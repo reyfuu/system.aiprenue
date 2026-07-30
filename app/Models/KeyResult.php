@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use App\Support\OkrMetrics;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Satu Key Result: bagian OKR yang benar-benar terukur. */
 class KeyResult extends Model
 {
+    use Auditable;
     protected $fillable = [
         'objective_id', 'title', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
         'owner_id', 'created_by',

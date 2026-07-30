@@ -157,6 +157,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'upload.') => ['upload'],
             str_starts_with($name, 'akses.') => ['akses'],   // Manajemen Akses
             str_starts_with($name, 'okr.') => ['okr'],        // OKR
+            str_starts_with($name, 'audit.') => ['audit'],    // Audit Log
             default => null,
         };
     }

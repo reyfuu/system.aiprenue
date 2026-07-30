@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Pipeline extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, Auditable;
 
     /**
      * Otomatis setel status selesai saat kartu berpindah ke kolom akhir.
