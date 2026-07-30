@@ -5,7 +5,7 @@ import { router, useForm } from '@inertiajs/vue3'; // useForm untuk form, router
 import Layout from '../Layout.vue'; // layout bersama (sidebar + toast)
 
 // Props dari controller: daftar user & peta role
-const props = defineProps({
+defineProps({
     // definisi props Inertia
     users: Array, // array data user
     roles: Object, // objek key->label role

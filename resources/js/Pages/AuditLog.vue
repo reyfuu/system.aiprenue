@@ -42,13 +42,6 @@ function fmt(ts) {
     return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-/** Format JSON jadi ringkasan: comma-separated key. */
-function jsonSummary(obj) {
-    if (!obj) return '';
-    const keys = Object.keys(obj);
-    return keys.length > 3 ? keys.slice(0, 3).join(', ') + `…(+${keys.length - 3})` : keys.join(', ');
-}
-
 /** Terapkan filter & reset halaman ke 1. */
 function filter() {
     // Hanya kirim field yang terisi

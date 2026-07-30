@@ -204,7 +204,6 @@ const krForm = useForm({
     deadline: '',
 });
 const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
-const masterCard = computed(() => krModal.value?.kr?.kartu?.find((k) => k.is_master) ?? null);
 const showWorkstream = ref(false);
 
 const sourceOptions = [

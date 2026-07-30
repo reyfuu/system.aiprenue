@@ -8,7 +8,7 @@ import ModalWrap from '../ModalWrap.vue'; // pembungkus modal
 import { rp } from '../scripts/lib/format'; // format Rupiah
 
 // Props dari controller
-const props = defineProps({
+defineProps({
     payload: Object, // data chart/rekap
     transactions: Array, // daftar transaksi mentah
     inventories: Array, // daftar inventaris mentah

@@ -5,7 +5,7 @@
 import { router } from '@inertiajs/vue3'; // router untuk ganti filter platform
 import Layout from '../Layout.vue'; // Layout sudah render sidebar + toast
 
-const props = defineProps({
+defineProps({
     platforms: { type: Object, default: () => ({}) }, // key→label (instagram, youtube)
     aktif: { type: String, default: 'semua' }, // filter platform aktif
     ringkasan: { type: Object, default: () => ({}) }, // kartu atas
