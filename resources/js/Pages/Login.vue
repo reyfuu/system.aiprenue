@@ -57,7 +57,7 @@ const submit = () => {
                             v-model="form.email"
                             required
                             autofocus
-                            placeholder="admin@example.com"
+                            placeholder="nama@email.com"
                             class="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none"
                         />
                     </div>
