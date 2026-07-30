@@ -1,38 +1,36 @@
 <?php
 
-namespace Database\Seeders;
-
 use App\Models\BoardColumn;
 use App\Models\Category;
 use App\Models\Label;
 use App\Models\Pipeline;
 use App\Models\User;
-use Illuminate\Database\Seeder;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Pemulihan board Kanban tim yang hilang di server.
  *
- * Sumber data satu-satunya adalah 17 tangkapan layar board produksi
- * (app.aipreneur.co.id/pipelines/kanban?category=todo) — database-nya sudah
- * tidak ada. Karena itu seeder ini HANYA memuat yang benar-benar terbaca di
- * gambar:
+ * Dibuat sebagai MIGRASI, bukan seeder, supaya ikut terpasang lewat
+ * `php artisan migrate` saat deploy — produksi tidak menjalankan seeder.
  *
- *   ADA  — nama kolom, judul kartu, penempatan kartu per kolom, label status
- *          (Selesai/Urgent/Penting/Revisi/Tertunda) yang chip-nya terbaca.
- *   TIDAK ADA — tanggal dibuat, deadline, waktu penyelesaian (completed_at),
- *          PIC per kartu, deskripsi kartu, komentar, dan lampiran. Teksnya
- *          terlalu kecil di tangkapan layar untuk dibaca tanpa menebak, dan
- *          menebak tanggal berarti mengarang riwayat pekerjaan.
+ * Sumber datanya hanya 17 tangkapan layar board produksi
+ * (app.aipreneur.co.id/pipelines/kanban?category=todo); databasenya sudah
+ * tidak ada. Karena itu migrasi ini HANYA memuat yang benar-benar terbaca:
  *
- * Konsekuensinya kartu hasil pemulihan tampil tanpa penanda tanggal/ketepatan
- * dan tanpa penugasan. Kolom "DONE ..." tetap menandakan pekerjaan selesai
- * lewat penempatan kolom + label Selesai, bukan lewat completed_at.
+ *   ADA        — nama kolom, judul kartu, penempatan & urutan kartu per kolom,
+ *                dan label status yang chip-nya terbaca.
+ *   TIDAK ADA  — tanggal dibuat, deadline, completed_at, PIC, deskripsi,
+ *                komentar, dan lampiran. Teksnya terlalu kecil untuk dibaca
+ *                tanpa menebak, dan menebak tanggal berarti mengarang riwayat
+ *                pekerjaan tim.
  *
- * Jalankan: php artisan db:seed --class=RecoveryKanbanTimSeeder
- * Aman diulang: bila board sudah berisi kartu, seeder berhenti tanpa menimpa.
+ * Akibatnya kartu hasil pemulihan tampil tanpa penanda tanggal/ketepatan dan
+ * tanpa penugasan, sehingga statistik per orang di atas board menampilkan
+ * semuanya sebagai "Belum ditugaskan". Kolom "DONE ..." tetap menandakan
+ * pekerjaan selesai lewat penempatan kolom + label Selesai, bukan completed_at.
  */
-class RecoveryKanbanTimSeeder extends Seeder
+return new class extends Migration
 {
     /** Board tujuan — samakan dengan produksi (?category=todo). */
     private const BOARD_KEY = 'todo';
@@ -42,9 +40,9 @@ class RecoveryKanbanTimSeeder extends Seeder
     /**
      * Isi board per orang, urut kiri→kanan seperti di tangkapan layar.
      *
-     * Bentuk tiap entri: nama kolom To Do, nama kolom DONE, lalu daftar kartu
-     * masing-masing. Kartu = [judul, label...]. Nama label mengikuti tabel
-     * `labels`; label yang belum ada dibuat otomatis.
+     * Bentuk tiap entri: kolom To Do dan kolom DONE milik satu orang, masing-
+     * masing dengan daftar kartunya. Kartu = [judul, label...]; nama label
+     * mengikuti tabel `labels` dan yang belum ada dibuat otomatis.
      */
     private function papan(): array
     {
@@ -215,21 +213,31 @@ class RecoveryKanbanTimSeeder extends Seeder
         ];
     }
 
-    public function run(): void
+    public function up(): void
     {
+        // Lingkungan tes dilewati. Migrasi ini menyisipkan DATA, bukan mengubah
+        // skema, dan RefreshDatabase menjalankan seluruh migrasi untuk tiap tes
+        // — tanpa penjagaan ini 97 kartu ikut masuk ke database tes dan semua
+        // tes yang mengasumsikan tabel pipelines kosong ikut gagal.
+        if (app()->environment('testing')) {
+            return;
+        }
+
         $board = Category::firstOrCreate(
             ['key' => self::BOARD_KEY, 'type' => 'kanban'],
             ['name' => self::BOARD_NAME],
         );
 
-        // Jangan pernah menimpa board yang sudah berisi kartu — pemulihan ini
-        // menambah data, bukan menggantikan pekerjaan yang sudah berjalan.
+        // Jangan pernah menimpa board yang sudah berisi kartu. Migrasi ini
+        // memulihkan data yang hilang, bukan mengganti pekerjaan yang sedang
+        // berjalan — mis. bila board sempat diisi ulang manual di server.
         if (Pipeline::where('category', self::BOARD_KEY)->exists()) {
-            $this->command?->warn("Board '".self::BOARD_KEY."' sudah berisi kartu — seeder dilewati.");
-
             return;
         }
 
+        // Pembuat kartu = owner pertama. Pada database yang benar-benar baru
+        // (migrate:fresh) tabel users masih kosong karena seeder berjalan
+        // setelah migrasi — created_by nullable, jadi cukup dibiarkan null.
         $pembuat = User::where('role', 'owner')->orderBy('id')->value('id');
 
         DB::transaction(function () use ($pembuat): void {
@@ -251,24 +259,54 @@ class RecoveryKanbanTimSeeder extends Seeder
                             'account' => 'fk',
                             'payment_status' => 'belum',
                             'created_by' => $pembuat,
-                            // deadline, assigned_to, completed_at & description
-                            // sengaja dibiarkan kosong: tidak terbaca di
-                            // tangkapan layar (lihat catatan kelas ini).
                         ]);
 
                         // `position` tidak ada di $fillable Pipeline, jadi harus
-                        // diisi setelah create — kalau ikut mass assignment
-                        // nilainya dibuang diam-diam dan semua kartu menumpuk
-                        // di posisi 0.
+                        // diisi setelah create — lewat mass assignment nilainya
+                        // dibuang diam-diam & semua kartu menumpuk di posisi 0.
                         $card->position = $posisi;
                         $card->save();
                     }
                 }
             }
         });
+    }
 
-        $jumlah = Pipeline::where('category', self::BOARD_KEY)->count();
-        $this->command?->info("Board '".self::BOARD_KEY."' dipulihkan: 22 kolom, {$jumlah} kartu.");
+    /**
+     * Rollback sengaja TIDAK menghapus seluruh isi board.
+     *
+     * Yang dihapus hanya kartu yang judulnya persis sama dengan hasil
+     * pemulihan; kartu baru yang dibuat tim setelah migrasi ini — termasuk
+     * kartu pulihan yang judulnya sudah diedit — tetap aman. Kolom dan board
+     * hanya ikut dihapus bila setelah itu benar-benar tidak ada kartu tersisa.
+     */
+    public function down(): void
+    {
+        $judul = [];
+        foreach ($this->papan() as $orang) {
+            foreach ([$orang['todo'], $orang['done']] as $kolom) {
+                foreach ($kolom['cards'] as $kartu) {
+                    $judul[] = $kartu[0];
+                }
+            }
+        }
+
+        DB::transaction(function () use ($judul): void {
+            // forceDelete(), BUKAN delete(): Pipeline memakai SoftDeletes, jadi
+            // delete() hanya mengisi deleted_at. Barisnya akan tertinggal dan
+            // migrate berikutnya — yang hanya menghitung kartu hidup — menyisipkan
+            // 97 kartu lagi sehingga isinya berlipat tiap siklus rollback.
+            Pipeline::where('category', self::BOARD_KEY)
+                ->whereIn('endorse', $judul)
+                ->forceDelete();
+
+            if (Pipeline::where('category', self::BOARD_KEY)->exists()) {
+                return;
+            }
+
+            BoardColumn::where('board_key', self::BOARD_KEY)->delete();
+            Category::where('key', self::BOARD_KEY)->where('type', 'kanban')->delete();
+        });
     }
 
     /**
@@ -281,10 +319,10 @@ class RecoveryKanbanTimSeeder extends Seeder
      */
     private function labels(array $nama): array
     {
-        $bawaan = [
-            // group 1 = status, group 2 = penanda prioritas/keadaan.
-            'Tertunda' => ['group' => 2, 'color' => 'bg-rose-500'],
-        ];
+        // group 1 = status, group 2 = penanda prioritas/keadaan.
+        // bg-rose-500 sudah ada di safelist resources/css/app.css, jadi chip-nya
+        // tetap berwarna walau warnanya datang dari database.
+        $bawaan = ['Tertunda' => ['group' => 2, 'color' => 'bg-rose-500']];
 
         return collect($nama)
             ->map(function (string $n) use ($bawaan) {
@@ -297,4 +335,4 @@ class RecoveryKanbanTimSeeder extends Seeder
             })
             ->all();
     }
-}
+};
