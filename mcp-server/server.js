@@ -139,6 +139,13 @@ async function ownerId() {
     return u ? u.id : null;
 }
 
+// Snapshot prioritas {name, color} dari tabel labels. Fallback ke warna default.
+async function prioritySnapshot(name) {
+    if (!name || !['Urgent', 'Penting'].includes(name)) return null;
+    const [[label]] = await db.query(`SELECT name, color FROM labels WHERE name=? LIMIT 1`, [name]);
+    return label || { name, color: name === 'Urgent' ? '#dc2626' : '#2563eb' };
+}
+
 const OKR_SOURCES = ['auto', 'manual', 'kartu'];
 const OKR_METRICS = ['view', 'subscriber', 'omset'];
 const OKR_UNITS = ['angka', 'rupiah', 'persen'];
@@ -361,7 +368,7 @@ function registerSystemReadTools(server) {
         'list_okr',
         {
             title: 'List OKR',
-            description: 'Objective dan Key Result satu kuartal beserta realisasi otomatis/manual/Kanban.',
+            description: 'Objective dan Key Result satu kuartal beserta realisasi otomatis/manual/Kanban, target omzet, dan prioritas.',
             inputSchema: {
                 year: z.number().int().min(2000).max(2100).optional(),
                 quarter: z.number().int().min(1).max(4).optional(),
@@ -373,11 +380,22 @@ function registerSystemReadTools(server) {
             quarter ??= current.quarter;
             const metrics = await okrRealisasi(year, quarter);
             const [objectives] = await db.query(
-                `SELECT id, title, description, position FROM objectives WHERE year=? AND quarter=? ORDER BY position,id`, [year, quarter]);
+                `SELECT o.id, o.title, o.description, o.position, o.priority,
+                        o.omset_target, o.created_by,
+                        COALESCE((SELECT SUM(amount_idr) FROM transactions WHERE type='pemasukan' AND date BETWEEN ? AND ?),0) AS omset_actual,
+                        u.name AS omset_owner_name
+                 FROM objectives o
+                 LEFT JOIN users u ON u.id=o.omset_owner_id
+                 WHERE o.year=? AND o.quarter=?
+                 ORDER BY o.position, o.id`,
+                [...quarterRange(year, quarter), year, quarter]);
             for (const objective of objectives) {
                 const [krs] = await db.query(
-                    `SELECT id, title, source, metric, target, actual_manual, unit, board_key, owner_id
-                     FROM key_results WHERE objective_id=? ORDER BY position,id`, [objective.id]);
+                    `SELECT kr.id, kr.title, kr.source, kr.metric, kr.target, kr.actual_manual,
+                            kr.unit, kr.board_key, kr.priority, kr.owner_id, u.name AS owner_name
+                     FROM key_results kr
+                     LEFT JOIN users u ON u.id=kr.owner_id
+                     WHERE kr.objective_id=? ORDER BY kr.position, kr.id`, [objective.id]);
                 for (const kr of krs) {
                     let actual = Number(kr.actual_manual || 0);
                     if (kr.source === 'auto') actual = Number(metrics[kr.metric] || 0);
@@ -389,7 +407,9 @@ function registerSystemReadTools(server) {
                     kr.percent = pct(actual, kr.target);
                 }
                 objective.key_results = krs;
+                objective.omset_percent = pct(Number(objective.omset_actual), Number(objective.omset_target));
                 const scored = krs.map((kr) => kr.percent).filter((v) => v !== null).map((v) => Math.min(100, v));
+                if (objective.omset_percent !== null) scored.push(Math.min(100, objective.omset_percent));
                 objective.progress = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length * 10) / 10 : null;
             }
             return jsonText({ year, quarter, metrics, objectives });
@@ -483,6 +503,36 @@ function registerSystemReadTools(server) {
             return jsonText({ insight_contents: contents, insight_accounts: accounts });
         }
     );
+
+    server.registerTool(
+        'list_audit_logs',
+        {
+            title: 'List Audit Logs',
+            description: 'Riwayat audit semua aksi mutasi di sistem. Filter: user, aksi, model, rentang tanggal.',
+            inputSchema: {
+                user_id: z.number().int().positive().optional(),
+                action: z.enum(['create', 'update', 'delete', 'archive', 'restore', 'progress', 'approve', 'reject']).optional(),
+                model_type: z.string().optional().describe('Nama model, mis. Pipeline, Objective, User'),
+                start: z.string().optional().describe('YYYY-MM-DD'),
+                end: z.string().optional().describe('YYYY-MM-DD'),
+                limit: LIMIT,
+            },
+        },
+        async ({ user_id, action, model_type, start, end, limit }) => {
+            const where = [], args = [];
+            if (user_id) { where.push('a.user_id=?'); args.push(user_id); }
+            if (action) { where.push('a.action=?'); args.push(action); }
+            if (model_type) { where.push('a.model_type=?'); args.push(model_type); }
+            if (start) { where.push('DATE(a.created_at)>=?'); args.push(start); }
+            if (end) { where.push('DATE(a.created_at)<=?'); args.push(end); }
+            const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+            const [rows] = await db.query(
+                `SELECT a.id, a.user_id, u.name AS user_name, a.user_role, a.action, a.model_type, a.model_id, a.model_name, a.ip_address, a.created_at
+                 FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id
+                 ${clause} ORDER BY a.id DESC LIMIT ?`, [...args, limit]);
+            return jsonText({ count: rows.length, logs: rows });
+        }
+    );
 }
 
 function registerSystemWriteTools(server) {
@@ -490,23 +540,30 @@ function registerSystemWriteTools(server) {
         'create_objective',
         {
             title: 'Create Objective',
-            description: 'Buat Objective perusahaan untuk satu kuartal.',
+            description: 'Buat Objective perusahaan untuk satu kuartal dengan target omzet opsional.',
             inputSchema: {
                 year: z.number().int().min(2000).max(2100),
                 quarter: z.number().int().min(1).max(4),
                 title: z.string().min(1).max(255),
                 description: z.string().max(2000).optional(),
+                omset_target: z.number().nonnegative().optional().describe('Target omzet kuartal (Rp)'),
+                omset_owner_id: z.number().int().positive().optional().describe('User ID PIC target omzet'),
+                priority: z.string().max(50).optional().describe('Nama prioritas: Urgent atau Penting'),
             },
         },
         async (a) => {
             const creator = await ownerId();
             const [[position]] = await db.query(
                 `SELECT COALESCE(MAX(position),0)+1 n FROM objectives WHERE year=? AND quarter=?`, [a.year, a.quarter]);
+            const priority = a.priority ? await prioritySnapshot(a.priority) : null;
             const [result] = await db.query(
-                `INSERT INTO objectives (year, quarter, title, description, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [a.year, a.quarter, a.title, a.description || null, position.n, creator]);
-            return jsonText({ ok: true, objective: { id: result.insertId, ...a } });
+                `INSERT INTO objectives (year, quarter, title, description, omset_target, omset_owner_id, priority, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.year, a.quarter, a.title, a.description || null,
+                 a.omset_target || null, a.omset_owner_id || null,
+                 priority ? JSON.stringify(priority) : null,
+                 position.n, creator]);
+            return jsonText({ ok: true, objective: { id: result.insertId, year: a.year, quarter: a.quarter, title: a.title } });
         }
     );
 
@@ -514,7 +571,7 @@ function registerSystemWriteTools(server) {
         'create_key_result',
         {
             title: 'Create Key Result',
-            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber/omset; manual memakai actual_manual; kartu dihitung dari card selesai.',
+            description: 'Tambah Key Result ke Objective. auto memakai metric view/subscriber; manual memakai actual_manual; kartu dihitung dari card selesai.',
             inputSchema: {
                 objective_id: z.number().int().positive(),
                 title: z.string().min(1).max(255),
@@ -523,6 +580,8 @@ function registerSystemWriteTools(server) {
                 board_key: z.string().nullable().optional(),
                 target: z.number().nonnegative(),
                 unit: z.enum(OKR_UNITS),
+                owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR'),
+                priority_name: z.string().max(50).optional().describe('Nama prioritas: Urgent atau Penting'),
             },
         },
         async (a) => {
@@ -540,11 +599,14 @@ function registerSystemWriteTools(server) {
             const metric = a.source === 'auto' ? a.metric : null;
             const boardKey = a.source === 'kartu' ? a.board_key : null;
             const unit = a.source === 'auto' ? (a.metric === 'omset' ? 'rupiah' : 'angka') : (a.source === 'kartu' ? 'angka' : a.unit);
+            const priority = a.priority_name ? await prioritySnapshot(a.priority_name) : null;
+            const owner = a.owner_id || creator;
             const [result] = await db.query(
                 `INSERT INTO key_results
-                    (objective_id, title, source, board_key, metric, target, unit, position, owner_id, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit, position.n, creator, creator]);
+                    (objective_id, title, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit,
+                 priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
             return jsonText({ ok: true, key_result: { id: result.insertId, ...a, metric, board_key: boardKey, unit } });
         }
     );
@@ -706,7 +768,7 @@ function registerSystemWriteTools(server) {
 
 // Bangun instance MCP server + daftarkan tools (fresh per request, mode stateless)
 function buildServer() {
-    const server = new McpServer({ name: 'system-aipreneur', version: '0.2.0' });
+    const server = new McpServer({ name: 'system-aipreneur', version: '0.3.0' });
     registerSystemReadTools(server);
     registerSystemWriteTools(server);
 
