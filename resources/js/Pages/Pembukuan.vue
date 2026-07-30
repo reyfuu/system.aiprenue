@@ -1,66 +1,109 @@
 <script setup>
 // Halaman Pembukuan: chart (read-only) + CRUD transaksi & inventaris (super_admin/it).
-import { ref } from 'vue';                          // state modal/edit
-import { useForm, router } from '@inertiajs/vue3';   // form Inertia + aksi hapus
-import Layout from '../Layout.vue';                  // kerangka + sidebar + toast
+import { ref } from 'vue'; // state modal/edit
+import { useForm, router } from '@inertiajs/vue3'; // form Inertia + aksi hapus
+import Layout from '../Layout.vue'; // kerangka + sidebar + toast
 import Pembukuan from '../scripts/components/Pembukuan.vue'; // komponen chart (prop `data`)
-import ModalWrap from '../ModalWrap.vue';            // pembungkus modal
-import { rp } from '../scripts/lib/format';          // format Rupiah
+import ModalWrap from '../ModalWrap.vue'; // pembungkus modal
+import { rp } from '../scripts/lib/format'; // format Rupiah
 
 // Props dari controller
 const props = defineProps({
-    payload: Object,        // data chart/rekap
-    transactions: Array,    // daftar transaksi mentah
-    inventories: Array,     // daftar inventaris mentah
-    types: Object,          // peta pemasukan/pengeluaran
+    payload: Object, // data chart/rekap
+    transactions: Array, // daftar transaksi mentah
+    inventories: Array, // daftar inventaris mentah
+    types: Object, // peta pemasukan/pengeluaran
     categories: { type: Array, default: () => [] }, // daftar kategori transaksi
 });
 
-const asset = (path) => path ? '/storage/' + path : null;
+const asset = (path) => (path ? '/storage/' + path : null);
 
 // ---- Modal Transaksi ----
 const txOpen = ref(false);
 const txEditId = ref(null);
 const txBuktiInput = ref(null);
 const txForm = useForm({
-    type: 'pemasukan', category: '', description: '', amount_idr: '', date: '',
+    type: 'pemasukan',
+    category: '',
+    description: '',
+    amount_idr: '',
+    date: '',
     bukti: null,
 });
-const openTxCreate = () => { txEditId.value = null; txForm.reset(); txForm.clearErrors(); if (txBuktiInput.value) txBuktiInput.value.value = ''; txOpen.value = true; };
+const openTxCreate = () => {
+    txEditId.value = null;
+    txForm.reset();
+    txForm.clearErrors();
+    if (txBuktiInput.value) txBuktiInput.value.value = '';
+    txOpen.value = true;
+};
 const openTxEdit = (t) => {
     txEditId.value = t.id;
-    txForm.type = t.type; txForm.category = t.category; txForm.description = t.description ?? '';
-    txForm.amount_idr = t.amount_idr; txForm.date = t.date; txForm.bukti = null;
-    txForm.clearErrors(); if (txBuktiInput.value) txBuktiInput.value.value = ''; txOpen.value = true;
+    txForm.type = t.type;
+    txForm.category = t.category;
+    txForm.description = t.description ?? '';
+    txForm.amount_idr = t.amount_idr;
+    txForm.date = t.date;
+    txForm.bukti = null;
+    txForm.clearErrors();
+    if (txBuktiInput.value) txBuktiInput.value.value = '';
+    txOpen.value = true;
 };
 const submitTx = () => {
-    const done = { forceFormData: true, onSuccess: () => { txOpen.value = false; txForm.reset(); }, preserveScroll: true };
+    const done = {
+        forceFormData: true,
+        onSuccess: () => {
+            txOpen.value = false;
+            txForm.reset();
+        },
+        preserveScroll: true,
+    };
     if (txEditId.value) {
         txForm.transform((d) => ({ ...d, _method: 'put' })).post('/transactions/' + txEditId.value, done);
     } else {
         txForm.post('/transactions', done);
     }
 };
-const delTx = (t) => { if (confirm('Hapus transaksi ini?')) router.delete('/transactions/' + t.id, { preserveScroll: true }); };
+const delTx = (t) => {
+    if (confirm('Hapus transaksi ini?')) router.delete('/transactions/' + t.id, { preserveScroll: true });
+};
 
 // ---- Modal Inventaris ----
 const invOpen = ref(false);
 const invEditId = ref(null);
 const invForm = useForm({ name: '', qty: '', unit_value_idr: '', month: '' });
-const openInvCreate = () => { invEditId.value = null; invForm.reset(); invForm.clearErrors(); invOpen.value = true; };
+const openInvCreate = () => {
+    invEditId.value = null;
+    invForm.reset();
+    invForm.clearErrors();
+    invOpen.value = true;
+};
 const openInvEdit = (i) => {
     invEditId.value = i.id;
-    invForm.name = i.name; invForm.qty = i.qty; invForm.unit_value_idr = i.unit_value_idr; invForm.month = i.month;
-    invForm.clearErrors(); invOpen.value = true;
+    invForm.name = i.name;
+    invForm.qty = i.qty;
+    invForm.unit_value_idr = i.unit_value_idr;
+    invForm.month = i.month;
+    invForm.clearErrors();
+    invOpen.value = true;
 };
 const submitInv = () => {
-    const done = { onSuccess: () => { invOpen.value = false; invForm.reset(); }, preserveScroll: true };
+    const done = {
+        onSuccess: () => {
+            invOpen.value = false;
+            invForm.reset();
+        },
+        preserveScroll: true,
+    };
     // input type=month → 'YYYY-MM'; server minta date → tambahkan '-01'
     invForm.transform((d) => ({ ...d, month: d.month && d.month.length === 7 ? d.month + '-01' : d.month }));
-    if (invEditId.value) invForm.put('/inventories/' + invEditId.value, done); // update
-    else invForm.post('/inventories', done);                                   // create
+    if (invEditId.value)
+        invForm.put('/inventories/' + invEditId.value, done); // update
+    else invForm.post('/inventories', done); // create
 };
-const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/inventories/' + i.id, { preserveScroll: true }); };
+const delInv = (i) => {
+    if (confirm('Hapus inventaris ini?')) router.delete('/inventories/' + i.id, { preserveScroll: true });
+};
 </script>
 
 <template>
@@ -72,9 +115,20 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                     <h1 class="text-2xl font-bold tracking-tight">PEMBUKUAN</h1>
                     <p class="text-brand-100 text-sm">Pemasukan, pengeluaran &amp; inventaris</p>
                 </div>
-                <a v-if="payload.reportUrl" :href="payload.reportUrl" target="_blank" rel="noreferrer"
-                   class="bg-white text-brand-700 hover:bg-brand-50 text-sm font-semibold px-5 py-2.5 rounded-xl shadow flex items-center gap-2 transition">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6L19 8.4V18a2 2 0 01-2 2z" /></svg>
+                <a
+                    v-if="payload.reportUrl"
+                    :href="payload.reportUrl"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="bg-white text-brand-700 hover:bg-brand-50 text-sm font-semibold px-5 py-2.5 rounded-xl shadow flex items-center gap-2 transition"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5.6L19 8.4V18a2 2 0 01-2 2z"
+                        />
+                    </svg>
                     Export PDF
                 </a>
             </div>
@@ -88,8 +142,13 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-sm font-bold text-slate-700">Transaksi</h2>
-                    <button @click="openTxCreate" class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                    <button
+                        class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition"
+                        @click="openTxCreate"
+                    >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
                         Tambah Transaksi
                     </button>
                 </div>
@@ -110,28 +169,58 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                             <tr v-for="t in transactions" :key="t.id" class="hover:bg-brand-50/60">
                                 <td class="px-3 py-2.5 text-slate-600">{{ t.date }}</td>
                                 <td class="px-3 py-2.5">
-                                    <span :class="['text-xs font-semibold px-2 py-0.5 rounded-full', t.type === 'pemasukan' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700']">{{ types[t.type] || t.type }}</span>
+                                    <span
+                                        :class="[
+                                            'text-xs font-semibold px-2 py-0.5 rounded-full',
+                                            t.type === 'pemasukan' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700',
+                                        ]"
+                                        >{{ types[t.type] || t.type }}</span
+                                    >
                                 </td>
                                 <td class="px-3 py-2.5 text-slate-600">{{ t.category }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ t.description || '—' }}</td>
-                                <td class="px-3 py-2.5 text-right font-medium" :class="t.type === 'pemasukan' ? 'text-emerald-600' : 'text-red-600'">{{ rp(t.amount_idr) }}</td>
+                                <td
+                                    class="px-3 py-2.5 text-right font-medium"
+                                    :class="t.type === 'pemasukan' ? 'text-emerald-600' : 'text-red-600'"
+                                >
+                                    {{ rp(t.amount_idr) }}
+                                </td>
                                 <td class="px-3 py-2.5 text-center">
-                                    <a v-if="t.bukti_path" :href="asset(t.bukti_path)" target="_blank" rel="noreferrer"
-                                       class="inline-block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 hover:border-brand-400 transition">
+                                    <a
+                                        v-if="t.bukti_path"
+                                        :href="asset(t.bukti_path)"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        class="inline-block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 hover:border-brand-400 transition"
+                                    >
                                         <img :src="asset(t.bukti_path)" class="w-full h-full object-cover" alt="Bukti" />
                                     </a>
                                     <span v-else class="text-xs text-slate-300">—</span>
                                 </td>
                                 <td class="px-3 py-2.5 text-right whitespace-nowrap">
-                                    <button @click="openTxEdit(t)" class="text-slate-400 hover:text-brand-600 mr-2" title="Edit">
-                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
+                                    <button class="text-slate-400 hover:text-brand-600 mr-2" title="Edit" @click="openTxEdit(t)">
+                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z"
+                                            />
+                                        </svg>
                                     </button>
-                                    <button @click="delTx(t)" class="text-slate-400 hover:text-red-600" title="Hapus">
-                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                    <button class="text-slate-400 hover:text-red-600" title="Hapus" @click="delTx(t)">
+                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                                            />
+                                        </svg>
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="transactions.length === 0"><td colspan="7" class="px-3 py-6 text-center text-slate-400">Belum ada transaksi.</td></tr>
+                            <tr v-if="transactions.length === 0">
+                                <td colspan="7" class="px-3 py-6 text-center text-slate-400">Belum ada transaksi.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -141,8 +230,13 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-sm font-bold text-slate-700">Inventaris</h2>
-                    <button @click="openInvCreate" class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                    <button
+                        class="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition"
+                        @click="openInvCreate"
+                    >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
                         Tambah Inventaris
                     </button>
                 </div>
@@ -166,15 +260,29 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                                 <td class="px-3 py-2.5 text-right">{{ rp(i.unit_value_idr) }}</td>
                                 <td class="px-3 py-2.5 text-right font-medium">{{ rp(i.total_value) }}</td>
                                 <td class="px-3 py-2.5 text-right whitespace-nowrap">
-                                    <button @click="openInvEdit(i)" class="text-slate-400 hover:text-brand-600 mr-2" title="Edit">
-                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
+                                    <button class="text-slate-400 hover:text-brand-600 mr-2" title="Edit" @click="openInvEdit(i)">
+                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z"
+                                            />
+                                        </svg>
                                     </button>
-                                    <button @click="delInv(i)" class="text-slate-400 hover:text-red-600" title="Hapus">
-                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                    <button class="text-slate-400 hover:text-red-600" title="Hapus" @click="delInv(i)">
+                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                                            />
+                                        </svg>
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="inventories.length === 0"><td colspan="6" class="px-3 py-6 text-center text-slate-400">Belum ada inventaris.</td></tr>
+                            <tr v-if="inventories.length === 0">
+                                <td colspan="6" class="px-3 py-6 text-center text-slate-400">Belum ada inventaris.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -185,49 +293,105 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
         <ModalWrap v-if="txOpen" width="max-w-md" @close="txOpen = false">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-bold text-brand-800">{{ txEditId ? 'Edit' : 'Tambah' }} Transaksi</h2>
-                <button type="button" @click="txOpen = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+                <button type="button" class="text-slate-400 hover:text-slate-600 text-xl leading-none" @click="txOpen = false">
+                    &times;
+                </button>
             </div>
-            <form @submit.prevent="submitTx" class="space-y-3 text-sm">
-                <label class="block font-medium text-slate-600">Tipe
-                    <select v-model="txForm.type" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+            <form class="space-y-3 text-sm" @submit.prevent="submitTx">
+                <label class="block font-medium text-slate-600"
+                    >Tipe
+                    <select
+                        v-model="txForm.type"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    >
                         <option v-for="(label, key) in types" :key="key" :value="key">{{ label }}</option>
                     </select>
                 </label>
-                <label class="block font-medium text-slate-600">Kategori
-                    <select v-model="txForm.category" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                <label class="block font-medium text-slate-600"
+                    >Kategori
+                    <select
+                        v-model="txForm.category"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    >
                         <option value="" disabled>Pilih kategori…</option>
                         <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
                         <option value="__lainnya__">✏️ Lainnya (tulis manual)…</option>
                     </select>
-                    <input v-if="txForm.category === '__lainnya__'" v-model="txForm.category" required placeholder="Tulis kategori…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <input
+                        v-if="txForm.category === '__lainnya__'"
+                        v-model="txForm.category"
+                        required
+                        placeholder="Tulis kategori…"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="txForm.errors.category" class="text-xs text-red-600">{{ txForm.errors.category }}</span>
                 </label>
-                <label class="block font-medium text-slate-600">Keterangan (opsional)
-                    <input v-model="txForm.description" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Keterangan (opsional)
+                    <input
+                        v-model="txForm.description"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                 </label>
-                <label class="block font-medium text-slate-600">Jumlah (IDR)
-                    <input type="number" step="0.01" min="0" v-model="txForm.amount_idr" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Jumlah (IDR)
+                    <input
+                        v-model="txForm.amount_idr"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="txForm.errors.amount_idr" class="text-xs text-red-600">{{ txForm.errors.amount_idr }}</span>
                 </label>
-                <label class="block font-medium text-slate-600">Tanggal
-                    <input type="date" v-model="txForm.date" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Tanggal
+                    <input
+                        v-model="txForm.date"
+                        type="date"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="txForm.errors.date" class="text-xs text-red-600">{{ txForm.errors.date }}</span>
                 </label>
                 <!-- Upload bukti pembayaran/nota -->
                 <div>
                     <label class="block font-medium text-slate-600 mb-1">Bukti (foto nota / screenshot)</label>
-                    <div v-if="txEditId && transactions.find(t => t.id === txEditId)?.bukti_path && !txForm.bukti" class="mb-2">
-                        <img :src="asset(transactions.find(t => t.id === txEditId).bukti_path)" class="w-24 h-24 object-cover rounded-lg border border-slate-200" alt="Bukti lama" />
+                    <div v-if="txEditId && transactions.find((t) => t.id === txEditId)?.bukti_path && !txForm.bukti" class="mb-2">
+                        <img
+                            :src="asset(transactions.find((t) => t.id === txEditId).bukti_path)"
+                            class="w-24 h-24 object-cover rounded-lg border border-slate-200"
+                            alt="Bukti lama"
+                        />
                         <p class="text-[10px] text-slate-400 mt-0.5">Upload baru untuk mengganti</p>
                     </div>
-                    <input ref="txBuktiInput" type="file" accept="image/*" @change="txForm.bukti = $event.target.files[0]"
-                           class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:font-semibold hover:file:bg-brand-100" />
+                    <input
+                        ref="txBuktiInput"
+                        type="file"
+                        accept="image/*"
+                        class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:font-semibold hover:file:bg-brand-100"
+                        @change="txForm.bukti = $event.target.files[0]"
+                    />
                     <p class="text-[10px] text-slate-400 mt-0.5">JPG/PNG/WebP, maks 5MB. Opsional.</p>
                     <span v-if="txForm.errors.bukti" class="text-xs text-red-600">{{ txForm.errors.bukti }}</span>
                 </div>
                 <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" @click="txOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
-                    <button type="submit" :disabled="txForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan</button>
+                    <button
+                        type="button"
+                        class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                        @click="txOpen = false"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="txForm.processing"
+                        class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60"
+                    >
+                        Simpan
+                    </button>
                 </div>
             </form>
         </ModalWrap>
@@ -236,28 +400,68 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
         <ModalWrap v-if="invOpen" width="max-w-md" @close="invOpen = false">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-bold text-brand-800">{{ invEditId ? 'Edit' : 'Tambah' }} Inventaris</h2>
-                <button type="button" @click="invOpen = false" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+                <button type="button" class="text-slate-400 hover:text-slate-600 text-xl leading-none" @click="invOpen = false">
+                    &times;
+                </button>
             </div>
-            <form @submit.prevent="submitInv" class="space-y-3 text-sm">
-                <label class="block font-medium text-slate-600">Nama Barang
-                    <input v-model="invForm.name" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+            <form class="space-y-3 text-sm" @submit.prevent="submitInv">
+                <label class="block font-medium text-slate-600"
+                    >Nama Barang
+                    <input
+                        v-model="invForm.name"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="invForm.errors.name" class="text-xs text-red-600">{{ invForm.errors.name }}</span>
                 </label>
-                <label class="block font-medium text-slate-600">Jumlah (Qty)
-                    <input type="number" min="0" v-model="invForm.qty" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Jumlah (Qty)
+                    <input
+                        v-model="invForm.qty"
+                        type="number"
+                        min="0"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="invForm.errors.qty" class="text-xs text-red-600">{{ invForm.errors.qty }}</span>
                 </label>
-                <label class="block font-medium text-slate-600">Nilai per Unit (IDR)
-                    <input type="number" step="0.01" min="0" v-model="invForm.unit_value_idr" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Nilai per Unit (IDR)
+                    <input
+                        v-model="invForm.unit_value_idr"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="invForm.errors.unit_value_idr" class="text-xs text-red-600">{{ invForm.errors.unit_value_idr }}</span>
                 </label>
-                <label class="block font-medium text-slate-600">Bulan
-                    <input type="month" v-model="invForm.month" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                <label class="block font-medium text-slate-600"
+                    >Bulan
+                    <input
+                        v-model="invForm.month"
+                        type="month"
+                        required
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                     <span v-if="invForm.errors.month" class="text-xs text-red-600">{{ invForm.errors.month }}</span>
                 </label>
                 <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" @click="invOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
-                    <button type="submit" :disabled="invForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan</button>
+                    <button
+                        type="button"
+                        class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                        @click="invOpen = false"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="invForm.processing"
+                        class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60"
+                    >
+                        Simpan
+                    </button>
                 </div>
             </form>
         </ModalWrap>

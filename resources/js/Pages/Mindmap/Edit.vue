@@ -7,12 +7,12 @@ import Layout from '../../Layout.vue';
 
 const props = defineProps({ mindmap: Object, canManage: Boolean });
 
-const mapEl = ref(null);          // div kontainer kanvas
+const mapEl = ref(null); // div kontainer kanvas
 const title = ref(props.mindmap.title);
 const saving = ref(false);
-const savedAt = ref('');          // jam terakhir simpan
-let mind = null;                  // instance simple-mind-map
-let dragRegistered = false;       // plugin Drag diregistrasi sekali (global pada konstruktor)
+const savedAt = ref(''); // jam terakhir simpan
+let mind = null; // instance simple-mind-map
+let dragRegistered = false; // plugin Drag diregistrasi sekali (global pada konstruktor)
 const selected = ref(false);
 const ctx = ref({ show: false, x: 0, y: 0 }); // menu klik-kanan pada node
 
@@ -86,7 +86,10 @@ onMounted(async () => {
     // Plugin Drag: node bisa di-grab untuk dipindah/disusun ulang. Diregistrasi sekali
     // (usePlugin global pada konstruktor); otomatis nonaktif saat readonly (view-only).
     const { default: Drag } = await import('simple-mind-map/src/plugins/Drag.js');
-    if (!dragRegistered) { MindMap.usePlugin(Drag); dragRegistered = true; }
+    if (!dragRegistered) {
+        MindMap.usePlugin(Drag);
+        dragRegistered = true;
+    }
     mind = new MindMap({
         el: mapEl.value,
         data: dataAwal(),
@@ -99,7 +102,9 @@ onMounted(async () => {
         defaultInsertSecondLevelNodeText: 'Topik baru',
         defaultInsertBelowSecondLevelNodeText: 'Subtopik baru',
     });
-    mind.on('node_active', (_node, nodes) => { selected.value = nodes.length > 0; });
+    mind.on('node_active', (_node, nodes) => {
+        selected.value = nodes.length > 0;
+    });
     // Klik-kanan node → menu tambah child/sibling/hapus. Node yang diklik dijadikan
     // aktif dulu supaya execCommand (yang bekerja pada node aktif) mengenainya.
     mind.on('node_contextmenu', (e, node) => {
@@ -111,14 +116,22 @@ onMounted(async () => {
     });
 });
 
-onBeforeUnmount(() => { mind?.destroy(); mind = null; });
+onBeforeUnmount(() => {
+    mind?.destroy();
+    mind = null;
+});
 
 // Aksi dasar ada di toolbar (mudah ditemukan) DAN via klik-kanan node (menu ctx).
 // Shortcut: Tab, Enter, Delete, dan Ctrl+I.
-const command = (name) => { if (props.canManage && mind) mind.execCommand(name); };
-const ctxAction = (name) => { command(name); ctx.value.show = false; };
+const command = (name) => {
+    if (props.canManage && mind) mind.execCommand(name);
+};
+const ctxAction = (name) => {
+    command(name);
+    ctx.value.show = false;
+};
 const fit = () => mind?.view.fit();
-const zoom = (arah) => arah > 0 ? mind?.view.enlarge() : mind?.view.narrow();
+const zoom = (arah) => (arah > 0 ? mind?.view.enlarge() : mind?.view.narrow());
 
 // Simpan judul + struktur node ke server
 const save = async () => {
@@ -139,10 +152,18 @@ const save = async () => {
 // Share v1: salin link editor ke clipboard
 const shared = ref(false);
 const share = async () => {
-    try { await navigator.clipboard.writeText(window.location.href); shared.value = true; setTimeout(() => (shared.value = false), 2000); } catch { /* abaikan */ }
+    try {
+        await navigator.clipboard.writeText(window.location.href);
+        shared.value = true;
+        setTimeout(() => (shared.value = false), 2000);
+    } catch {
+        /* abaikan */
+    }
 };
 
-const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.value}"?`)) router.delete('/mindmaps/' + props.mindmap.id); };
+const remove = () => {
+    if (props.canManage && confirm(`Hapus mindmap "${title.value}"?`)) router.delete('/mindmaps/' + props.mindmap.id);
+};
 </script>
 
 <template>
@@ -150,50 +171,117 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
         <div class="p-6">
             <!-- Toolbar -->
             <div class="bg-white border border-brand-100 rounded-2xl shadow-sm p-3 mb-3 flex items-center gap-3">
-                <Link href="/mindmaps" title="Semua mindmap" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 pr-2 border-r border-slate-200">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                <Link
+                    href="/mindmaps"
+                    title="Semua mindmap"
+                    class="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-brand-700 pr-2 border-r border-slate-200"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
                     Mindmap
                 </Link>
-                <input v-model="title" :disabled="!canManage" @keydown.enter="save" class="flex-1 max-w-md text-lg font-bold text-brand-800 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-brand-400 outline-none disabled:opacity-100 py-1" />
+                <input
+                    v-model="title"
+                    :disabled="!canManage"
+                    class="flex-1 max-w-md text-lg font-bold text-brand-800 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-brand-400 outline-none disabled:opacity-100 py-1"
+                    @keydown.enter="save"
+                />
 
                 <span v-if="savedAt" class="text-xs text-slate-400">tersimpan {{ savedAt }}</span>
 
                 <div class="ml-auto flex items-center gap-2">
                     <div v-if="canManage" class="flex items-center rounded-lg border border-slate-200 overflow-hidden">
-                        <button @click="command('INSERT_CHILD_NODE')" :disabled="!selected" title="Tambah child (Tab)" class="map-tool">+ Child</button>
-                        <button @click="command('INSERT_NODE')" :disabled="!selected" title="Tambah sibling (Enter)" class="map-tool border-l border-slate-200">+ Sibling</button>
-                        <button @click="command('REMOVE_NODE')" :disabled="!selected" title="Hapus node (Delete)" class="map-tool border-l border-slate-200 text-red-600">Hapus node</button>
+                        <button :disabled="!selected" title="Tambah child (Tab)" class="map-tool" @click="command('INSERT_CHILD_NODE')">
+                            + Child
+                        </button>
+                        <button
+                            :disabled="!selected"
+                            title="Tambah sibling (Enter)"
+                            class="map-tool border-l border-slate-200"
+                            @click="command('INSERT_NODE')"
+                        >
+                            + Sibling
+                        </button>
+                        <button
+                            :disabled="!selected"
+                            title="Hapus node (Delete)"
+                            class="map-tool border-l border-slate-200 text-red-600"
+                            @click="command('REMOVE_NODE')"
+                        >
+                            Hapus node
+                        </button>
                     </div>
                     <div class="flex items-center rounded-lg border border-slate-200 overflow-hidden">
-                        <button @click="zoom(-1)" title="Perkecil" class="map-tool">−</button>
-                        <button @click="fit" title="Pas ke layar (Ctrl+I)" class="map-tool border-x border-slate-200">Fit</button>
-                        <button @click="zoom(1)" title="Perbesar" class="map-tool">+</button>
+                        <button title="Perkecil" class="map-tool" @click="zoom(-1)">−</button>
+                        <button title="Pas ke layar (Ctrl+I)" class="map-tool border-x border-slate-200" @click="fit">Fit</button>
+                        <button title="Perbesar" class="map-tool" @click="zoom(1)">+</button>
                     </div>
-                    <button @click="share" class="inline-flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold px-3 py-2 rounded-lg transition">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.7 10.7l6.6-3.4M8.7 13.3l6.6 3.4M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zm12 7a3 3 0 100-6 3 3 0 000 6z" /></svg>
+                    <button
+                        class="inline-flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold px-3 py-2 rounded-lg transition"
+                        @click="share"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M8.7 10.7l6.6-3.4M8.7 13.3l6.6 3.4M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zm12 7a3 3 0 100-6 3 3 0 000 6z"
+                            />
+                        </svg>
                         {{ shared ? 'Link disalin!' : 'Share' }}
                     </button>
-                    <button v-if="canManage" @click="save" :disabled="saving" class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition disabled:opacity-60">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <button
+                        v-if="canManage"
+                        :disabled="saving"
+                        class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition disabled:opacity-60"
+                        @click="save"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
                         {{ saving ? 'Menyimpan…' : 'Save' }}
                     </button>
-                    <button v-if="canManage" @click="remove" title="Hapus mindmap" class="inline-flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold px-3 py-2 rounded-lg transition">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                    <button
+                        v-if="canManage"
+                        title="Hapus mindmap"
+                        class="inline-flex items-center gap-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold px-3 py-2 rounded-lg transition"
+                        @click="remove"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                            />
+                        </svg>
                     </button>
                 </div>
             </div>
 
             <!-- Kanvas simple-mind-map. Latar titik-titik (bukan putih polos) supaya
                  terasa papan tulis & geseran kanvas kelihatan bergerak. -->
-            <div ref="mapEl" @contextmenu.prevent class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"></div>
+            <div
+                ref="mapEl"
+                class="mindmap-canvas w-full h-[calc(100vh-11rem)] rounded-2xl border border-brand-100 overflow-hidden"
+                @contextmenu.prevent
+            ></div>
 
             <!-- Menu klik-kanan node (owner/manager/it). Backdrop transparan menutup menu saat klik di luar. -->
             <template v-if="canManage && ctx.show">
                 <div class="fixed inset-0 z-40" @click="ctx.show = false" @contextmenu.prevent="ctx.show = false"></div>
-                <div class="fixed z-50 min-w-[9rem] bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }">
-                    <button @click="ctxAction('INSERT_CHILD_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">+ Tambah child</button>
-                    <button @click="ctxAction('INSERT_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">+ Tambah sibling</button>
-                    <button @click="ctxAction('REMOVE_NODE')" class="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">Hapus node</button>
+                <div
+                    class="fixed z-50 min-w-[9rem] bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
+                    :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
+                >
+                    <button class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700" @click="ctxAction('INSERT_CHILD_NODE')">
+                        + Tambah child
+                    </button>
+                    <button class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700" @click="ctxAction('INSERT_NODE')">
+                        + Tambah sibling
+                    </button>
+                    <button class="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600" @click="ctxAction('REMOVE_NODE')">
+                        Hapus node
+                    </button>
                 </div>
             </template>
             <p v-if="!canManage" class="text-xs text-slate-400 mt-2">Mode lihat — hanya owner/manager/it yang bisa mengubah & menyimpan.</p>
@@ -203,14 +291,19 @@ const remove = () => { if (props.canManage && confirm(`Hapus mindmap "${title.va
 
 <style scoped>
 .map-tool {
-    padding: .5rem .7rem;
+    padding: 0.5rem 0.7rem;
     color: #475569;
-    font-size: .75rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    transition: background-color .15s;
+    transition: background-color 0.15s;
 }
-.map-tool:hover { background: #f8fafc; }
-.map-tool:disabled { cursor: not-allowed; opacity: .35; }
+.map-tool:hover {
+    background: #f8fafc;
+}
+.map-tool:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
 
 /* Latar titik-titik ala papan tulis. Ditaruh di kontainer (bukan .map-container)
    supaya tak ikut bergeser saat kanvas di-pan — titiknya jadi acuan diam. */

@@ -2,7 +2,7 @@
 // Layout utama: sidebar + area konten (slot) + toast flash. Dipakai semua halaman ber-sidebar.
 import { computed, onMounted, ref, watch } from 'vue'; // state toast + reminder global
 import { Head, usePage, router } from '@inertiajs/vue3'; // Head judul tab, usePage shared props, router aksi
-import Sidebar from './Sidebar.vue';              // sidebar navigasi
+import Sidebar from './Sidebar.vue'; // sidebar navigasi
 
 // Kembali ke akun owner asli saat sedang "masuk sebagai" peran lain.
 const stopImpersonate = () => router.post('/impersonate/stop');
@@ -10,8 +10,8 @@ const stopImpersonate = () => router.post('/impersonate/stop');
 // Judul halaman (opsional) → dipakai di <Head>
 defineProps({ title: { type: String, default: '' } });
 
-const page = usePage();          // akses flash.status
-const toast = ref(null);         // pesan toast aktif
+const page = usePage(); // akses flash.status
+const toast = ref(null); // pesan toast aktif
 const remindersOpen = ref(false);
 const reminders = computed(() => page.props.workReminders || []);
 const serverNotifications = computed(() => page.props.serverNotifications || []);
@@ -27,9 +27,8 @@ const deadlineText = (item) => {
     return `${item.days_left} hari lagi`;
 };
 
-const waktuNotifikasi = (value) => value
-    ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-    : '';
+const waktuNotifikasi = (value) =>
+    value ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '';
 
 const sendSystemNotifications = () => {
     if (!notificationSupported || Notification.permission !== 'granted') return;
@@ -76,12 +75,16 @@ const enableNotifications = async () => {
 };
 
 const bukaServerNotification = (item) => {
-    router.patch(`/notifications/${item.id}/read`, {}, {
-        preserveScroll: true,
-        onSuccess: () => {
-            if (item.url) router.visit(item.url);
+    router.patch(
+        `/notifications/${item.id}/read`,
+        {},
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                if (item.url) router.visit(item.url);
+            },
         },
-    });
+    );
 };
 
 const tandaiSemuaDibaca = () => router.patch('/notifications/read-all', {}, { preserveScroll: true });
@@ -90,18 +93,15 @@ onMounted(sendSystemNotifications);
 
 // Layout dipertahankan oleh Inertia antarhalaman. Watch ini memastikan
 // notifikasi penugasan yang baru ikut diproses tanpa menunggu reload penuh.
-watch(
-    () => serverNotifications.value.map((item) => `${item.id}:${item.read_at || ''}`).join('|'),
-    sendSystemNotifications,
-);
+watch(() => serverNotifications.value.map((item) => `${item.id}:${item.read_at || ''}`).join('|'), sendSystemNotifications);
 
 // Pantau flash.status; tiap ada pesan baru → tampilkan toast, hilang 3 detik
 watch(
     () => page.props.flash?.status,
     (status) => {
         if (status) {
-            toast.value = status;                          // set pesan
-            setTimeout(() => (toast.value = null), 3000);  // auto-hide
+            toast.value = status; // set pesan
+            setTimeout(() => (toast.value = null), 3000); // auto-hide
         }
     },
     { immediate: true }, // jalankan sekali saat mount (flash dari redirect awal)
@@ -117,11 +117,19 @@ watch(
 
     <!-- Bilah "sedang menyamar": muncul saat owner masuk sebagai peran lain.
          Amber mencolok supaya tak lupa ini bukan akun sendiri. -->
-    <div v-if="page.props.impersonating"
-         class="fixed top-14 md:top-0 right-0 left-0 md:left-56 z-30 bg-amber-500 text-amber-950 text-sm px-4 py-2 flex items-center justify-between shadow">
-        <span>Kamu sedang masuk sebagai <b>{{ page.props.auth?.user?.name }}</b> ({{ page.props.auth?.user?.role }}) — hanya untuk melihat aksesnya.</span>
-        <button type="button" @click="stopImpersonate"
-                class="bg-amber-950 text-amber-50 font-semibold px-3 py-1 rounded-lg hover:bg-amber-900 whitespace-nowrap">
+    <div
+        v-if="page.props.impersonating"
+        class="fixed top-14 md:top-0 right-0 left-0 md:left-56 z-30 bg-amber-500 text-amber-950 text-sm px-4 py-2 flex items-center justify-between shadow"
+    >
+        <span
+            >Kamu sedang masuk sebagai <b>{{ page.props.auth?.user?.name }}</b> ({{ page.props.auth?.user?.role }}) — hanya untuk melihat
+            aksesnya.</span
+        >
+        <button
+            type="button"
+            class="bg-amber-950 text-amber-50 font-semibold px-3 py-1 rounded-lg hover:bg-amber-900 whitespace-nowrap"
+            @click="stopImpersonate"
+        >
             Kembali ke akun saya
         </button>
     </div>
@@ -135,26 +143,52 @@ watch(
     <!-- Lonceng global: menggabungkan riwayat notifikasi server dan reminder
          deadline hasil hitung. Tetap dapat dibuka dari halaman mana pun. -->
     <div v-if="hasBellItems" class="fixed top-16 md:top-4 right-4 z-40">
-        <button type="button" @click="remindersOpen = !remindersOpen"
-                class="relative w-11 h-11 rounded-full bg-white border border-amber-200 text-amber-700 shadow-lg flex items-center justify-center hover:bg-amber-50"
-                title="Notifikasi dan reminder">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 01-6 0" /></svg>
-            <span v-if="bellCount" class="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">{{ bellCount }}</span>
+        <button
+            type="button"
+            class="relative w-11 h-11 rounded-full bg-white border border-amber-200 text-amber-700 shadow-lg flex items-center justify-center hover:bg-amber-50"
+            title="Notifikasi dan reminder"
+            @click="remindersOpen = !remindersOpen"
+        >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 01-6 0"
+                />
+            </svg>
+            <span
+                v-if="bellCount"
+                class="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center"
+                >{{ bellCount }}</span
+            >
         </button>
 
-        <div v-if="remindersOpen" class="mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden">
+        <div
+            v-if="remindersOpen"
+            class="mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden"
+        >
             <div class="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3">
                 <div>
                     <p class="font-bold text-sm text-slate-700">Notifikasi pekerjaan</p>
                     <p class="text-[11px] text-slate-400">Tersimpan di server untuk akun ini.</p>
-                    <button v-if="notificationSupported && notificationPermission === 'default'" type="button" @click="enableNotifications"
-                            class="mt-1 text-xs font-semibold text-brand-700 hover:underline">
+                    <button
+                        v-if="notificationSupported && notificationPermission === 'default'"
+                        type="button"
+                        class="mt-1 text-xs font-semibold text-brand-700 hover:underline"
+                        @click="enableNotifications"
+                    >
                         Aktifkan notifikasi perangkat
                     </button>
-                    <p v-else-if="notificationPermission === 'denied'" class="mt-1 text-[11px] text-slate-400">Notifikasi perangkat diblokir browser.</p>
+                    <p v-else-if="notificationPermission === 'denied'" class="mt-1 text-[11px] text-slate-400">
+                        Notifikasi perangkat diblokir browser.
+                    </p>
                 </div>
-                <button v-if="unreadNotifications" type="button" @click="tandaiSemuaDibaca"
-                        class="text-[11px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+                <button
+                    v-if="unreadNotifications"
+                    type="button"
+                    class="text-[11px] font-semibold text-brand-700 hover:underline whitespace-nowrap"
+                    @click="tandaiSemuaDibaca"
+                >
                     Baca semua
                 </button>
             </div>
@@ -162,15 +196,22 @@ watch(
             <!-- Notifikasi penugasan persisten. Item tanpa URL (mis. target
                  omzet untuk staff) tetap dapat dibaca dan ditandai selesai. -->
             <div v-if="serverNotifications.length" class="max-h-64 overflow-y-auto divide-y divide-slate-100">
-                <button v-for="item in serverNotifications" :key="item.id" type="button"
-                        @click="bukaServerNotification(item)"
-                        :class="['w-full text-left px-4 py-3 hover:bg-slate-50', !item.read_at ? 'bg-brand-50/50' : 'bg-white']">
+                <button
+                    v-for="item in serverNotifications"
+                    :key="item.id"
+                    type="button"
+                    :class="['w-full text-left px-4 py-3 hover:bg-slate-50', !item.read_at ? 'bg-brand-50/50' : 'bg-white']"
+                    @click="bukaServerNotification(item)"
+                >
                     <div class="flex items-start gap-2">
                         <span v-if="!item.read_at" class="mt-1.5 w-2 h-2 rounded-full bg-brand-600 shrink-0"></span>
                         <div :class="!item.read_at ? '' : 'ml-4'">
                             <div class="flex flex-wrap items-center gap-1.5">
                                 <p class="text-sm font-semibold text-slate-700">{{ item.title }}</p>
-                                <span v-if="item.priority?.name" class="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold uppercase text-slate-500">
+                                <span
+                                    v-if="item.priority?.name"
+                                    class="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold uppercase text-slate-500"
+                                >
                                     {{ item.priority.name }}
                                 </span>
                             </div>
@@ -187,7 +228,12 @@ watch(
             <div v-if="reminders.length" class="max-h-64 overflow-y-auto divide-y divide-slate-100">
                 <a v-for="item in reminders" :key="item.id" :href="item.url" class="block px-4 py-3 hover:bg-slate-50">
                     <p class="text-sm font-semibold text-slate-700 truncate">{{ item.title }}</p>
-                    <p :class="['mt-0.5 text-xs font-medium', item.days_left < 0 ? 'text-red-600' : item.days_left === 0 ? 'text-amber-700' : 'text-slate-500']">
+                    <p
+                        :class="[
+                            'mt-0.5 text-xs font-medium',
+                            item.days_left < 0 ? 'text-red-600' : item.days_left === 0 ? 'text-amber-700' : 'text-slate-500',
+                        ]"
+                    >
                         {{ deadlineText(item) }} · {{ item.deadline }}
                     </p>
                 </a>
