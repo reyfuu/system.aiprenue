@@ -1409,4 +1409,126 @@ class OkrTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page->where('objectives.0.key_results.0.actual', 1));
     }
+
+    /** Mengganti kolom ke "Selesai" lewat modal edit Kartu HARUS men-stempel
+     *  completed_at — selama ini jalur ini luput, padahal itulah cara paling
+     *  lazim user menandai pekerjaan rampung. Tanpa stempel, statistik
+     *  ketepatan & target progress board tidak akan bergerak. */
+    public function test_edit_kartu_ganti_kolom_ke_selesai_menstempel_waktu(): void
+    {
+        $user = $this->user();
+        $board = $this->board('lms');
+        $kolomSelesai = BoardColumn::where('board_key', 'lms')->orderBy('position')->get()->last()->key;
+
+        $kartu = $this->kartu([
+            'category' => 'lms',
+            'endorse' => 'Bangun modul kursus',
+            'progress' => 'todo',
+            'deadline' => now()->addDays(7)->toDateString(),
+        ]);
+
+        // Sebelum: completed_at null, ketepatan tidak bisa dinilai.
+        $this->assertNull($kartu->completed_at);
+        $this->assertNull($kartu->ketepatan());
+
+        // User membuka modal edit, pilih kolom "Selesai", simpan.
+        $this->actingAs($user)->put("/pipelines/{$kartu->id}", [
+            'category' => 'lms',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+            'endorse' => 'Bangun modul kursus',
+            'progress' => $kolomSelesai,
+            'deadline' => now()->addDays(7)->toDateString(),
+        ])->assertRedirect();
+
+        $kartu->refresh();
+        $this->assertNotNull($kartu->completed_at, 'completed_at harus terstempel saat pindah ke kolom terakhir lewat edit');
+        $this->assertSame('tepat', $kartu->ketepatan());
+
+        // Statistik board ikut berubah pada kunjungan halaman berikutnya.
+        $target = BoardQuarterTarget::updateOrCreate(
+            ['board_key' => 'lms', 'year' => now()->year, 'quarter' => Quarter::current()['quarter']],
+            ['target_done' => 10, 'created_by' => $user->id],
+        );
+
+        $this->actingAs($user)
+            ->get('/pipelines/kanban?category=lms')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('quarterStats.done', 1)
+                ->where('quarterStats.ketepatan.tepat', 1)
+                ->where('quarterStats.ketepatan.terlambat', 0)
+            );
+    }
+
+    /** Kartu dengan deadline lewat → diselesaikan sekarang → ketepatannya
+     *  "terlambat", bukan "tepat". */
+    public function test_kartu_selesai_terlambat_dihitung_terlambat_di_statistik(): void
+    {
+        $user = $this->user();
+        $board = $this->board('lms');
+        $kolomSelesai = BoardColumn::where('board_key', 'lms')->orderBy('position')->get()->last()->key;
+
+        $kartu = $this->kartu([
+            'category' => 'lms',
+            'endorse' => 'Perbaiki bug login',
+            'progress' => 'todo',
+            'deadline' => now()->subDays(3)->toDateString(),  // 3 hari lalu
+        ]);
+
+        $this->actingAs($user)->put("/pipelines/{$kartu->id}", [
+            'category' => 'lms',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+            'endorse' => 'Perbaiki bug login',
+            'progress' => $kolomSelesai,
+            'deadline' => now()->subDays(3)->toDateString(),
+        ])->assertRedirect();
+
+        $this->assertNotNull($kartu->fresh()->completed_at);
+        $this->assertSame('terlambat', $kartu->fresh()->ketepatan());
+
+        BoardQuarterTarget::updateOrCreate(
+            ['board_key' => 'lms', 'year' => now()->year, 'quarter' => Quarter::current()['quarter']],
+            ['target_done' => 10, 'created_by' => $user->id],
+        );
+
+        $this->actingAs($user)
+            ->get('/pipelines/kanban?category=lms')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('quarterStats.done', 1)
+                ->where('quarterStats.ketepatan.tepat', 0)
+                ->where('quarterStats.ketepatan.terlambat', 1)
+            );
+    }
+
+    /** Mengganti kolom KELUAR dari Selesai HARUS mencabut completed_at —
+     *  kartu yang dibuka lagi tak boleh menyisakan stempel lama. */
+    public function test_edit_kartu_keluar_dari_kolom_selesai_mencabut_stempel(): void
+    {
+        $user = $this->user();
+        $board = $this->board('lms');
+        $kolomSelesai = BoardColumn::where('board_key', 'lms')->orderBy('position')->get()->last()->key;
+
+        $kartu = $this->kartu([
+            'category' => 'lms',
+            'endorse' => 'Tugas yang dibuka lagi',
+            'progress' => $kolomSelesai,
+            'completed_at' => now(),
+            'deadline' => now()->toDateString(),
+        ]);
+        $this->assertNotNull($kartu->completed_at);
+
+        $this->actingAs($user)->put("/pipelines/{$kartu->id}", [
+            'category' => 'lms',
+            'account' => 'fk',
+            'payment_status' => 'belum',
+            'endorse' => 'Tugas yang dibuka lagi',
+            'progress' => 'todo',
+            'deadline' => now()->toDateString(),
+        ])->assertRedirect();
+
+        $this->assertNull($kartu->fresh()->completed_at, 'completed_at harus dicabut saat keluar dari kolom terakhir');
+    }
 }

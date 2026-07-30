@@ -59,11 +59,11 @@ class PipelineTaskController extends Controller
         $pipeline->update(['done' => $done]);
 
         // completed_at HANYA distempel, tak pernah dicabut oleh sync.
-        // Mencabut completed_at adalah aksi eksplisit level kartu (drag
-        // keluar kolom terakhir, atau updateDone(false)). Mengutak-atik
-        // daftar subtask tak boleh menghapus stempel yang sudah dicatat
-        // oleh mekanisme lain — kalau tidak, uncheck satu subtask akan
-        // menurunkan angka statistik yang seharusnya tetap.
+        // Mencabut completed_at adalah aksi eksplisit (tombol "batal
+        // selesai" / updateDone(false)). Mengutak-atik daftar subtask
+        // tak boleh menghapus stempel yang sudah dicatat oleh mekanisme
+        // lain — kalau tidak, uncheck satu subtask akan menurunkan
+        // angka statistik yang seharusnya tetap.
         if ($done && $pipeline->completed_at === null) {
             $pipeline->update(['completed_at' => now()]);
         }
