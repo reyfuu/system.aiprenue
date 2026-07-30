@@ -652,12 +652,12 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                                 Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
                             </span>
                         </div>
-                        <div v-if="canManage" class="flex items-center gap-2">
-                            <button class="text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" @click="bukaObjective(o)">
-                                Edit Objective
+                        <div v-if="canManage" class="flex items-center gap-1.5">
+                            <button class="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors" title="Edit Objective" @click="bukaObjective(o)">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
                             </button>
-                            <button class="text-xs font-bold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" @click="hapusObjective(o)">
-                                Hapus
+                            <button class="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-300 hover:bg-red-50 transition-colors" title="Hapus Objective" @click="hapusObjective(o)">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
                             </button>
                         </div>
                     </div>
@@ -682,10 +682,16 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                         <div class="space-y-2">
                             <div class="flex items-center justify-between">
                                 <span class="text-xs font-bold uppercase tracking-wider text-blue-600">KEY RESULT {{ oIdx + 1 }}.{{ krIdx + 1 }}</span>
-                                <div v-if="canManage" class="flex items-center gap-2">
-                                    <button v-if="kr.source === 'manual'" class="text-[11px] font-bold text-blue-600 hover:underline" @click="bukaAktual(kr)">Edit KR</button>
-                                    <button class="text-[11px] font-bold text-slate-500 hover:text-slate-700" @click="bukaKr(o, kr)">Edit</button>
-                                    <button class="text-[11px] font-bold text-red-500 hover:text-red-700" @click="hapusKr(kr)">Hapus</button>
+                                <div v-if="canManage" class="flex items-center gap-1">
+                                    <button v-if="kr.source === 'manual'" class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors" title="Update Realisasi" @click="bukaAktual(kr)">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                    </button>
+                                    <button class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit Key Result" @click="bukaKr(o, kr)">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
+                                    </button>
+                                    <button class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Hapus Key Result" @click="hapusKr(kr)">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+                                    </button>
                                 </div>
                             </div>
 

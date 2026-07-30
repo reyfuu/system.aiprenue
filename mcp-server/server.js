@@ -568,6 +568,54 @@ function registerSystemWriteTools(server) {
     );
 
     server.registerTool(
+        'update_objective',
+        {
+            title: 'Update Objective',
+            description: 'Ubah Objective yang sudah ada. Isi minimal satu field selain id.',
+            inputSchema: {
+                id: z.number().int().positive(),
+                title: z.string().min(1).max(255).optional(),
+                description: z.string().max(2000).optional(),
+                omset_target: z.number().nonnegative().optional(),
+                omset_owner_id: z.number().int().positive().optional(),
+                priority: z.string().max(50).optional(),
+            },
+        },
+        async (a) => {
+            const [[obj]] = await db.query(`SELECT id FROM objectives WHERE id=?`, [a.id]);
+            if (!obj) return errText(`Objective id ${a.id} tidak ditemukan.`);
+            const sets = [], vals = [];
+            if (a.title !== undefined) { sets.push('title=?'); vals.push(a.title); }
+            if (a.description !== undefined) { sets.push('description=?'); vals.push(a.description); }
+            if (a.omset_target !== undefined) { sets.push('omset_target=?'); vals.push(a.omset_target); }
+            if (a.omset_owner_id !== undefined) { sets.push('omset_owner_id=?'); vals.push(a.omset_owner_id); }
+            if (a.priority !== undefined) {
+                const p = await prioritySnapshot(a.priority);
+                sets.push('priority=?'); vals.push(p ? JSON.stringify(p) : null);
+            }
+            if (!sets.length) return errText('Tidak ada field yang diubah.');
+            sets.push('updated_at=NOW()');
+            await db.query(`UPDATE objectives SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+            return jsonText({ ok: true, objective_id: a.id });
+        }
+    );
+
+    server.registerTool(
+        'delete_objective',
+        {
+            title: 'Delete Objective',
+            description: 'Hapus Objective beserta seluruh Key Result di dalamnya.',
+            inputSchema: { id: z.number().int().positive() },
+        },
+        async (a) => {
+            const [[obj]] = await db.query(`SELECT id, title FROM objectives WHERE id=?`, [a.id]);
+            if (!obj) return errText(`Objective id ${a.id} tidak ditemukan.`);
+            await db.query(`DELETE FROM objectives WHERE id=?`, [a.id]);
+            return jsonText({ ok: true, deleted: obj.title });
+        }
+    );
+
+    server.registerTool(
         'create_key_result',
         {
             title: 'Create Key Result',
@@ -608,6 +656,62 @@ function registerSystemWriteTools(server) {
                 [a.objective_id, a.title, a.source, boardKey, metric, a.target, unit,
                  priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
             return jsonText({ ok: true, key_result: { id: result.insertId, ...a, metric, board_key: boardKey, unit } });
+        }
+    );
+
+    server.registerTool(
+        'update_key_result',
+        {
+            title: 'Update Key Result',
+            description: 'Ubah Key Result. Isi minimal satu field selain id.',
+            inputSchema: {
+                id: z.number().int().positive(),
+                title: z.string().min(1).max(255).optional(),
+                target: z.number().nonnegative().optional(),
+                unit: z.enum(OKR_UNITS).optional(),
+                owner_id: z.number().int().positive().optional(),
+                priority_name: z.string().max(50).optional(),
+                board_key: z.string().nullable().optional(),
+            },
+        },
+        async (a) => {
+            const [[kr]] = await db.query(`SELECT id FROM key_results WHERE id=?`, [a.id]);
+            if (!kr) return errText(`Key Result id ${a.id} tidak ditemukan.`);
+            const sets = [], vals = [];
+            if (a.title !== undefined) { sets.push('title=?'); vals.push(a.title); }
+            if (a.target !== undefined) { sets.push('target=?'); vals.push(a.target); }
+            if (a.unit !== undefined) { sets.push('unit=?'); vals.push(a.unit); }
+            if (a.owner_id !== undefined) { sets.push('owner_id=?'); vals.push(a.owner_id); }
+            if (a.board_key !== undefined) {
+                if (a.board_key) {
+                    const [[b]] = await db.query(`SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.board_key]);
+                    if (!b) return errText(`Board "${a.board_key}" tidak ditemukan.`);
+                }
+                sets.push('board_key=?'); vals.push(a.board_key);
+            }
+            if (a.priority_name !== undefined) {
+                const p = await prioritySnapshot(a.priority_name);
+                sets.push('priority=?'); vals.push(p ? JSON.stringify(p) : null);
+            }
+            if (!sets.length) return errText('Tidak ada field yang diubah.');
+            sets.push('updated_at=NOW()');
+            await db.query(`UPDATE key_results SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+            return jsonText({ ok: true, key_result_id: a.id });
+        }
+    );
+
+    server.registerTool(
+        'delete_key_result',
+        {
+            title: 'Delete Key Result',
+            description: 'Hapus Key Result. Kartu yang tertaut tidak ikut terhapus.',
+            inputSchema: { id: z.number().int().positive() },
+        },
+        async (a) => {
+            const [[kr]] = await db.query(`SELECT id, title FROM key_results WHERE id=?`, [a.id]);
+            if (!kr) return errText(`Key Result id ${a.id} tidak ditemukan.`);
+            await db.query(`DELETE FROM key_results WHERE id=?`, [a.id]);
+            return jsonText({ ok: true, deleted: kr.title });
         }
     );
 

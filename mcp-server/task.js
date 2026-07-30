@@ -25,7 +25,8 @@ const usage = () => {
   node task.js boards
   node task.js list <board>
   node task.js create <board> "<judul>" [column]
-  node task.js update <id> <field> <nilai|null>`);
+  node task.js update <id> <field> <nilai|null>
+  node task.js okr_update <type> <id> <field> <nilai>   (type: objective|kr)`);
     process.exit(1);
 };
 
