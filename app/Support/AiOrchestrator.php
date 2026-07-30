@@ -80,13 +80,15 @@ PROMPT;
     {
         $config = config('services.9router');
 
-        if (empty($config['url']) || empty($config['token'])) {
-            return $this->gagal('9router belum dikonfigurasi. Isi NINEROUTER_URL dan NINEROUTER_TOKEN di .env.');
+        if (empty($config['url'])) {
+            return $this->gagal('URL 9router belum diatur. Isi NINEROUTER_URL di .env (contoh: http://127.0.0.1:8080/v1).');
+        }
+        if (empty($config['token'])) {
+            return $this->gagal('Token 9router belum diatur. Isi NINEROUTER_TOKEN di .env.');
         }
 
         $prompt = $this->bangunPrompt($input);
 
-        // Fase 1: ChatGPT menyusun draft OKR
         $draft = $this->panggilLlm(
             $config['url'],
             $config['token'],
@@ -96,7 +98,8 @@ PROMPT;
         );
 
         if (empty($draft['objectives'])) {
-            return $this->gagal('ChatGPT tidak menghasilkan Objective yang valid.', $draft);
+            $debug = empty($draft) ? 'LLM tidak merespons (cek logs).' : 'Response LLM tidak mengandung objectives.';
+            return $this->gagal('ChatGPT gagal: ' . $debug, $draft);
         }
 
         // Fase 2: Claude memvalidasi & menyeimbangkan (opsional — skip kalau model Claude kosong)
