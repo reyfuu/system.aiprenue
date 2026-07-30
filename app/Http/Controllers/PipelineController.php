@@ -384,60 +384,18 @@ class PipelineController extends Controller
         $category = $cards->pluck('category')->unique();
         abort_if($category->count() > 1, 422, 'Kartu berasal dari board berbeda.');
 
-        // Terurut posisi (forBoard), bukan pluck mentah: kolom TERAKHIR dipakai
-        // sbg penanda "pekerjaan rampung" di bawah, dan urutan hasil query tanpa
-        // ORDER BY tidak dijamin — "terakhir" bisa jadi kolom yang keliru.
         $kolom = BoardColumn::forBoard($category->first());
         $validKeys = $kolom->pluck('key')->all();
         abort_unless(in_array($data['progress'], $validKeys, true), 422, 'Kolom tak dikenal di board ini.');
 
-        // Kolom paling kanan = tahap selesai. Memakai POSISI, bukan mencocokkan
-        // nama/key 'done': kolom board dinamis & bisa dinamai apa saja
-        // ('Published', 'Tayang', 'Selesai'), jadi pencocokan kata akan gagal
-        // diam-diam di board yang tak memakai kata itu.
-        $kolomSelesai = $kolom->last()?->key;
-        $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
-
         // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
-        $baruSelesai = [];
-        DB::transaction(function () use ($data, $cards, $keKolomSelesai, &$baruSelesai) {
+        DB::transaction(function () use ($data) {
             foreach ($data['ids'] as $i => $id) {
                 $ubah = ['progress' => $data['progress'], 'position' => $i];
-
-                // Drag masuk/keluar kolom terakhir ikut menggerakkan stempel
-                // selesai — tanpa ini, kartu yang diselesaikan lewat drag (cara
-                // paling lazim) tak pernah punya completed_at & luput dari
-                // analitik ketepatan. Stempel lama dipertahankan, lihat
-                // stempelSelesai().
-                //
-                // TAPI hanya untuk kartu yang benar-benar BERPINDAH kolom.
-                // Kiriman drag berisi SELURUH isi kolom tujuan (lihat
-                // Kanban.vue), jadi kartu yang sudah lama duduk di situ ikut
-                // terbawa cuma karena posisinya bergeser. Menstempel mereka
-                // juga berarti satu drag menimpa waktu selesai semua kartu
-                // lama dgn "hari ini" — deadline mereka sudah lewat, jadi
-                // seluruh papan mendadak terbaca terlambat.
-                $kartu = $cards->firstWhere('id', $id);
-
-                if ($kartu->progress !== $data['progress']) {
-                    $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
-
-                    // Transisi null → terisi = pekerjaan baru saja rampung;
-                    // pemilik OKR-nya dilaporkan setelah transaksi beres.
-                    if ($kartu->completed_at === null && $ubah['completed_at'] !== null && $kartu->key_result_id) {
-                        $baruSelesai[] = $kartu;
-                    }
-                }
 
                 Pipeline::where('id', $id)->update($ubah);
             }
         });
-
-        // Di luar transaksi: notifikasi tak boleh ikut tergulung bila ada
-        // laporan yang gagal, dan isinya hanya sah bila datanya benar tersimpan.
-        foreach ($baruSelesai as $kartu) {
-            OkrNotifications::laporkanKartuSelesai($kartu, $request->user());
-        }
 
         return response()->json(['ok' => true]);
     }
@@ -511,32 +469,8 @@ class PipelineController extends Controller
     {
         $data = $this->validated($request, $pipeline);
 
-        // Bila progress berubah ke kolom terakhir board, stempel completed_at
-        // — konsisten dengan cara kerja drag (reorder). Tanpa ini, mengganti
-        // kolom lewat modal edit memindahkan kartu secara visual tapi tak
-        // mencatat stempel selesai: statistik ketepatan (tepat/terlambat) &
-        // target progress board tak akan berubah. Laporkan ke pemilik OKR
-        // bila kartu ini tertaut ke KR.
-        $baruSelesai = false;
-        if ($data['progress'] !== $pipeline->progress) {
-            $kolom = BoardColumn::forBoard($data['category'] ?? $pipeline->category);
-            $kolomSelesai = $kolom->last()?->key;
-            $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
-            $data['completed_at'] = $this->stempelSelesai($pipeline, $keKolomSelesai);
-
-            if ($pipeline->completed_at === null
-                && $data['completed_at'] !== null
-                && $pipeline->key_result_id) {
-                $baruSelesai = true;
-            }
-        }
-
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
-
-        if ($baruSelesai) {
-            OkrNotifications::laporkanKartuSelesai($pipeline, $request->user());
-        }
 
         return redirect()->back()->with('status', 'Entri diperbarui.');
     }

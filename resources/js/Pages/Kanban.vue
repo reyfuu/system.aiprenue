@@ -183,17 +183,10 @@ const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compa
 const onCardChange = async (evt, toKey) => {
     if (!evt.added && !evt.moved) return;
 
-    const ok = await patchCard('/pipelines/reorder', {
+    await patchCard('/pipelines/reorder', {
         progress: toKey,
         ids: (cols.value[toKey] || []).map((c) => c.id),
     });
-
-    // Drag antar kolom (evt.added) bisa mengubah completed_at kartu —
-    // quarterStats (target progress + ketepatan) adalah prop Inertia server
-    // yg hanya segar saat halaman dimuat ulang. Reload dgn preserveScroll
-    // menjaga posisi board tanpa patah. Geseran dalam satu kolom (evt.moved)
-    // tak memengaruhi stats → tak perlu reload.
-    if (ok && evt.added) router.reload({ preserveScroll: true });
 };
 
 // Urutan kolom sesudah drag. Cuma 'moved' yang mungkin terjadi: daftar kolom
