@@ -1,6 +1,6 @@
 <script setup>
 // Halaman Order: ringkasan + filter + tabel (10/halaman) + modal CRUD tambah/edit.
-import { ref, reactive, computed } from 'vue';                    // state lokal & turunan reaktif
+import { ref, reactive, computed, watch } from 'vue';                    // state lokal & turunan reaktif
 import { Link, useForm, router, usePage } from '@inertiajs/vue3'; // navigasi, form, aksi Inertia
 import Layout from '../../Layout.vue';                            // kerangka (sidebar + toast)
 import ModalWrap from '../../ModalWrap.vue';                      // pembungkus modal
@@ -53,10 +53,37 @@ const f = reactive({
     search: props.filters.search || '',
 });
 
+// Sinkronkan reactive `f` dengan props.filter setiap kali halaman menerima
+// data baru dari server (setelah apply filter, pagination, dsb). Tanpa ini
+// `f` hanya diisi sekali saat mount — nilai filter dari URL/bookmark tidak
+// akan muncul di input.
+watch(() => props.filters, (val) => {
+    f.tipe_order = val.tipe_order || '';
+    f.account = val.account || '';
+    f.tipe_pembayaran = val.tipe_pembayaran || '';
+    f.output = val.output || '';
+    f.date_from = val.date_from || '';
+    f.date_to = val.date_to || '';
+    f.search = val.search || '';
+}, { deep: true });
+
+// Bangun params bersih — hanya kirim field yang TERISI. Hindari kirim string
+// kosong yg membuat URL penuh `&field=` & bisa membingungkan Inertia.
+const filterParams = () => {
+    const p = {};
+    if (f.tipe_order) p.tipe_order = f.tipe_order;
+    if (f.account) p.account = f.account;
+    if (f.tipe_pembayaran) p.tipe_pembayaran = f.tipe_pembayaran;
+    if (f.output) p.output = f.output;
+    if (f.date_from) p.date_from = f.date_from;
+    if (f.date_to) p.date_to = f.date_to;
+    if (f.search) p.search = f.search;
+    return p;
+};
+
 // Terapkan filter → GET Inertia. Tanpa param `page` agar selalu balik ke halaman 1.
-const applyFilters = (next = {}) => {
-    Object.assign(f, next);
-    router.get('/orders', { ...f }, { preserveState: true, preserveScroll: true, replace: true });
+const applyFilters = () => {
+    router.get('/orders', filterParams(), { preserveState: true, preserveScroll: true, replace: true });
 };
 
 // ---- Modal tambah/edit ----
@@ -212,8 +239,8 @@ const destroy = (o) => {
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-4 mb-5 flex flex-wrap gap-2 items-center text-sm">
                 <!-- Pencarian: terapkan saat Enter atau blur -->
                 <input v-model="f.search" placeholder="Cari nama / telepon / email / kota..."
-                       @keydown.enter="applyFilters({ search: f.search })"
-                       @blur="applyFilters({ search: f.search })"
+                       @keydown.enter="applyFilters()"
+                       @blur="applyFilters()"
                        class="border border-slate-200 rounded-xl px-3 py-2 w-full sm:w-56 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none" />
                 <select v-model="f.tipe_order" @change="applyFilters()" class="w-full sm:w-auto border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
                     <option value="">Semua Tipe Order</option>
@@ -292,7 +319,7 @@ const destroy = (o) => {
                             <td class="px-2.5 py-2.5">
                                 <div v-if="o.outputs?.length" class="flex flex-wrap gap-1 max-w-[160px]">
                                     <button v-for="out in o.outputs" :key="out.id" type="button"
-                                            @click="applyFilters({ output: String(out.id) })"
+                                            @click="f.output = String(out.id); applyFilters()"
                                             :title="`Filter: ${out.name}`"
                                             :class="['text-[10px] px-1.5 py-0.5 rounded-full border transition', String(f.output) === String(out.id) ? 'bg-brand-600 text-white border-brand-600' : 'bg-brand-50 text-brand-700 border-brand-200 hover:bg-brand-100']">
                                         {{ out.name }}

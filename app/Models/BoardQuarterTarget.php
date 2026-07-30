@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Target KPI satu board untuk satu kuartal: berapa kartu harus selesai. */
 class BoardQuarterTarget extends Model
 {
+    use Auditable;
     protected $fillable = ['board_key', 'year', 'quarter', 'target_done', 'note', 'created_by'];
 
     protected $casts = [

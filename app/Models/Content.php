@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Content extends Model
 {
+    use Auditable;
     protected $fillable = [
         'comp', 'jenis_postingan', 'kategori', 'referensi', 'inti_pesan',
         'hook_material', 'brief_original', 'opsi_brief', 'script_remake',

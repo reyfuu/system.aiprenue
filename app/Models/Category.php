@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
+    use Auditable;
     protected $fillable = ['key', 'name', 'type', 'section', 'super_admin_only', 'created_by'];
 
     protected $casts = ['super_admin_only' => 'boolean'];

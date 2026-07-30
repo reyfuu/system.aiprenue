@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -11,7 +12,7 @@ use App\Models\BoardColumn;
 
 class Pipeline extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, Auditable;
 
     protected static function booted(): void
     {

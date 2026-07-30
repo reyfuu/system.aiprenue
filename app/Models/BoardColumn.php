@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class BoardColumn extends Model
 {
+    use Auditable;
     protected $fillable = ['board_key', 'key', 'name', 'color', 'position'];
 
     /** Kolom milik satu board, terurut. */

@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, Auditable;
 
     public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'admin' => 'Admin', 'staff' => 'Staff'];
 
@@ -58,6 +59,7 @@ class User extends Authenticatable
         'upload' => 'Upload',
         'prodpilot' => 'ProdPilot',
         'akses' => 'Manajemen Akses',
+        'audit' => 'Audit Log',
     ];
 
     /** Cache per-instance: `menus` dibangun dgn ~10 kali canSee() pada user yang
@@ -207,6 +209,7 @@ class User extends Authenticatable
             'mindmap'   => 'mindmaps.index',
             'user'      => 'users.index',
             'akses'     => 'akses.index',
+            'audit'     => 'audit.index',
         ];
 
         foreach ($kandidat as $menu => $route) {

@@ -3,6 +3,7 @@
 use App\Http\Controllers\AbsenceController;
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
@@ -156,6 +157,11 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/okr/key-results/{keyResult}/kartu', [OkrController::class, 'storeKartu'])->name('okr.key-results.kartu.store');
     Route::post('/okr/key-results/{keyResult}/attach', [OkrController::class, 'attachKartu'])->name('okr.key-results.kartu.attach');
     Route::delete('/okr/key-results/{keyResult}/kartu/{pipeline}', [OkrController::class, 'detachKartu'])->name('okr.key-results.kartu.detach');
+    // Susun OKR dengan AI — kirim arahan ke 9router (ChatGPT + Claude) lalu
+    // kembalikan usulan Objective & Key Result untuk ditinjau sebelum disimpan.
+    Route::post('/okr/ai/generate', [OkrController::class, 'generateAi'])->name('okr.ai.generate');
+    // Simpan usulan OKR hasil AI ke database — buat Objective + KR + kartu.
+    Route::post('/okr/ai/save', [OkrController::class, 'saveAi'])->name('okr.ai.save');
 
     // KPI board Kanban — data operasional, audiens lebih luas (izin dinamis
     // lewat menu 'kpi'). Penetapan target dibatasi canManage() di
@@ -192,4 +198,8 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // menu 'akses' (owner/manager/it) + akses.update butuh canManage.
     Route::get('/akses', [AksesController::class, 'index'])->name('akses.index');
     Route::put('/akses', [AksesController::class, 'update'])->name('akses.update');
+
+    // Audit Log — read-only riwayat semua mutasi. Hanya owner & it
+    // (gate peran ketat di controller, bukan cuma menu).
+    Route::get('/audit', [AuditLogController::class, 'index'])->name('audit.index');
 });

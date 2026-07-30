@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\BoardColumn;
 use App\Models\BoardQuarterTarget;
 use App\Models\Category;
@@ -507,6 +508,8 @@ class PipelineController extends Controller
     {
         $archiving = is_null($pipeline->archived_at);                 // sedang mengarsip?
         $pipeline->update(['archived_at' => $archiving ? now() : null]);
+
+        AuditLog::record($archiving ? 'archive' : 'restore', $pipeline);
 
         return redirect()->back()->with('status', $archiving ? 'Kartu diarsipkan.' : 'Kartu dikembalikan.');
     }

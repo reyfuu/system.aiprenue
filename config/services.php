@@ -30,6 +30,19 @@ return [
         'token' => env('INSIGHT_AGENT_TOKEN'),
     ],
 
+    // 9router — proxy LLM lokal di VPS (127.0.0.1). Dipakai untuk generate
+    // OKR via ChatGPT & Claude. URL wajib penuh (http://host:port/v1).
+    // token = API key 9router; chatgpt_model = model ChatGPT dengan prefix
+    // cx/ (contoh: cx/gpt-5.6-sol); claude_model = model Claude dengan
+    // prefix cc/ (contoh: cc/claude-opus-4-8).
+    '9router' => [
+        'url'             => env('NINEROUTER_URL'),
+        'token'           => env('NINEROUTER_TOKEN'),
+        'chatgpt_model'   => env('NINEROUTER_CHATGPT_MODEL', 'cx/gpt-5.6-sol'),
+        'claude_model'    => env('NINEROUTER_CLAUDE_MODEL', 'cc/claude-opus-4-8'),
+        'timeout'         => (int) env('NINEROUTER_TIMEOUT', 120),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],
