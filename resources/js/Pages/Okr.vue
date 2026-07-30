@@ -36,10 +36,76 @@ const aiForm = ref({
     arahan: '',
     papan_kanban: 'AI pilih otomatis',
 });
+const aiLoading = ref(false);
+const aiResult = ref(null);
+const aiError = ref('');
+const aiLogs = ref([]);
 
-const submitAiForm = () => {
-    alert('AI sedang memproses usulan OKR berdasarkan arahan Anda...');
-    viewMode.value = 'detail';
+const submitAiForm = async () => {
+    aiLoading.value = true;
+    aiError.value = '';
+    aiResult.value = null;
+    aiLogs.value = [];
+
+    try {
+        const res = await fetch('/okr/ai/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                jenis_periode: aiForm.value.jenis_periode,
+                tahun: Number(aiForm.value.tahun),
+                kuartal: aiForm.value.kuartal,
+                level_okr: aiForm.value.level_okr,
+                arahan: aiForm.value.arahan,
+                papan_kanban: aiForm.value.papan_kanban,
+            }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            aiError.value = data.message || 'Gagal menyusun OKR dengan AI.';
+            aiLogs.value = data.logs || [];
+            return;
+        }
+
+        aiResult.value = data.objectives || [];
+        aiLogs.value = data.logs || [];
+    } catch (e) {
+        aiError.value = 'Gagal terhubung ke server AI: ' + e.message;
+    } finally {
+        aiLoading.value = false;
+    }
+};
+
+/** Simpan semua Objective yang diusulkan AI ke dalam sistem. */
+const simpanAiResult = () => {
+    if (!aiResult.value || aiResult.value.length === 0) return;
+
+    aiLoading.value = true;
+
+    const payload = {
+        year: aiForm.value.tahun,
+        quarter: parseInt(aiForm.value.kuartal.replace('Q', '')),
+        objectives: aiResult.value,
+    };
+
+    router.post('/okr/ai/save', payload, {
+        preserveScroll: true,
+        onSuccess: () => {
+            aiResult.value = null;
+            aiLoading.value = false;
+            viewMode.value = 'detail';
+        },
+        onError: () => {
+            aiError.value = 'Gagal menyimpan OKR AI. Silakan coba lagi.';
+            aiLoading.value = false;
+        },
+    });
 };
 
 // Total tugas & tugas selesai
@@ -196,10 +262,9 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
 <template>
     <Layout title="OKR">
         <!-- =========================================================================
-             AI FORM VIEW (Tampilan Susun OKR dengan AI 100% Sesuai Screenshot)
+             AI FORM VIEW — Susun OKR dengan AI via 9router (ChatGPT + Claude)
              ========================================================================= -->
         <div v-if="viewMode === 'ai_form'" class="min-h-screen bg-slate-50 flex flex-col justify-between">
-            <!-- Header Topbar AI Form -->
             <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
                 <div class="flex items-center gap-3">
                     <button class="p-1 rounded hover:bg-slate-100 text-slate-500" @click="viewMode = 'landing'">
@@ -207,99 +272,180 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </button>
                     <h1 class="text-base font-extrabold text-slate-900 tracking-tight">Susun OKR dengan AI</h1>
                 </div>
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Preneur System</span>
             </header>
 
-            <!-- Main Content AI Form -->
-            <main class="p-8 max-w-7xl w-full mx-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div class="space-y-6">
-                    <!-- Blue Banner Info Box -->
-                    <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-5 space-y-2">
-                        <h3 class="text-xs font-extrabold text-blue-900 flex items-center gap-1.5">
-                            Panel CMO + CFO + COO AI bekerja bersama
-                            <span class="text-amber-400">✨</span>
-                        </h3>
-                        <p class="text-[11px] text-blue-700 leading-relaxed">
-                            Setiap spesialis membaca Pengetahuan AI dan data aktual bidangnya. AI Orchestrator kemudian menyelaraskan usulan mereka, membagi pekerjaan ke anggota aktif, serta memilih papan/kolom Kanban. Hasilnya tetap menjadi draf sebelum satu pun kartu dibuat.
-                        </p>
-                        <a href="#" class="text-[11px] font-bold text-blue-800 underline block pt-1 hover:text-blue-900">Periksa Pengetahuan AI</a>
+            <main class="p-8 max-w-7xl w-full mx-auto flex-1 space-y-6">
+
+                <!-- Loading State -->
+                <div v-if="aiLoading" class="bg-white border border-blue-200 rounded-2xl p-10 text-center shadow-sm">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 mb-4">
+                        <svg class="w-8 h-8 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     </div>
-
-                    <!-- Step 1: Periode -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
-                        <h3 class="text-xs font-extrabold text-slate-900">1. Periode</h3>
-                        <div class="grid grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Jenis periode</label>
-                                <select v-model="aiForm.jenis_periode" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="Kuartalan">Kuartalan</option>
-                                    <option value="Tahunan">Tahunan</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tahun</label>
-                                <input v-model="aiForm.tahun" type="number" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Kuartal</label>
-                                <select v-model="aiForm.kuartal" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="Q1">Q1</option>
-                                    <option value="Q2">Q2</option>
-                                    <option value="Q3">Q3</option>
-                                    <option value="Q4">Q4</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Step 2: Cakupan -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
-                        <h3 class="text-xs font-extrabold text-slate-900">2. Cakupan</h3>
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Level OKR</label>
-                            <select v-model="aiForm.level_okr" class="w-full md:w-1/2 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="Seluruh perusahaan">Seluruh perusahaan</option>
-                                <option value="Departemen">Departemen</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Step 3: Arahan awal -->
-                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
-                        <h3 class="text-xs font-extrabold text-slate-900">3. Arahan awal</h3>
-                        <div class="space-y-2">
-                            <label class="block text-xs font-extrabold text-slate-800">Apa hasil bisnis yang ingin dicapai?</label>
-                            <p class="text-[11px] text-slate-400">Tidak perlu menyusun format OKR. Tulis sasaran, masalah, baseline, batasan, atau prioritas; AI yang memecahkannya.</p>
-                            <textarea 
-                                v-model="aiForm.arahan" 
-                                rows="4" 
-                                placeholder="Contoh: Q3 fokus menaikkan penjualan TikTok 30%, memperbaiki konsistensi konten, dan mengurangi order dengan SKU belum dipetakan. Beban kerja harus merata..." 
-                                class="w-full border border-slate-200 rounded-xl p-4 text-xs text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
-                            ></textarea>
-                        </div>
-
-                        <div class="pt-2 space-y-1">
-                            <label class="block text-[11px] font-semibold text-slate-500">Papan Kanban utama <span class="text-slate-400 font-normal">(opsional)</span></label>
-                            <select v-model="aiForm.papan_kanban" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="AI pilih otomatis">AI pilih otomatis</option>
-                                <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
-                            </select>
-                        </div>
-                        
-                        <button class="w-full bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2" @click="submitAiForm">
-                            <svg class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
-                            Susun Usulan OKR dengan AI
-                        </button>
+                    <h2 class="text-lg font-bold text-slate-800">AI sedang menyusun OKR...</h2>
+                    <p class="text-sm text-slate-500 mt-2">ChatGPT menyusun draft, Claude memvalidasi & menyeimbangkan. Harap tunggu ±30–120 detik.</p>
+                    <div v-if="aiLogs.length" class="mt-4 text-xs text-slate-400 space-y-0.5">
+                        <p v-for="log in aiLogs" :key="log.waktu">{{ log.model }} — {{ new Date(log.waktu).toLocaleTimeString('id-ID') }}</p>
                     </div>
                 </div>
 
-                <!-- Column Right Empty/Help spacer -->
-                <div></div>
+                <!-- Error State -->
+                <div v-if="aiError && !aiLoading" class="bg-red-50 border border-red-200 rounded-2xl p-6">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <div>
+                            <h3 class="text-sm font-bold text-red-800">Gagal menyusun OKR</h3>
+                            <p class="text-sm text-red-600 mt-1">{{ aiError }}</p>
+                            <button @click="aiError = ''" class="mt-3 text-xs font-bold text-red-700 hover:text-red-800 underline">Tutup & coba lagi</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Result — Review & Approve Proposed OKRs -->
+                <div v-if="aiResult && aiResult.length && !aiLoading" class="space-y-6">
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <div>
+                                <h2 class="text-base font-bold text-emerald-800">{{ aiResult.length }} Objective berhasil disusun AI</h2>
+                                <p class="text-xs text-emerald-600">Tinjau dulu sebelum disimpan. AI menyusun berdasar arahan Anda; Anda tetap bisa mengeditnya nanti.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button @click="viewMode = 'detail'" class="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">Batal</button>
+                            <button @click="simpanAiResult" :disabled="aiLoading" class="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm disabled:opacity-60">
+                                Simpan Semua ke {{ aiForm.kuartal }} {{ aiForm.tahun }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-for="(o, oIdx) in aiResult" :key="'ai-obj-' + oIdx" class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-5 shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-extrabold uppercase tracking-wider text-red-600 bg-red-50 px-2 py-0.5 rounded">OBJECTIVE {{ oIdx + 1 }}</span>
+                            <span v-if="o.priority" class="text-[11px] font-bold px-2 py-0.5 rounded" :class="o.priority === 'Urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'">{{ o.priority }}</span>
+                        </div>
+                        <h3 class="text-lg font-extrabold text-slate-900">{{ o.title }}</h3>
+                        <p v-if="o.description" class="text-sm text-slate-500 leading-relaxed">{{ o.description }}</p>
+                        <p v-if="o.omset_target" class="text-sm font-semibold text-slate-700">Target Omzet: Rp{{ Number(o.omset_target).toLocaleString('id-ID') }}</p>
+
+                        <div v-if="o.key_results && o.key_results.length" class="space-y-4 pl-4 border-l-2 border-blue-200">
+                            <div v-for="(kr, krIdx) in o.key_results" :key="'ai-kr-' + krIdx" class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-blue-600">KR {{ oIdx + 1 }}.{{ krIdx + 1 }}</span>
+                                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ kr.source }}</span>
+                                    <span v-if="kr.priority" class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="kr.priority === 'Urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'">{{ kr.priority }}</span>
+                                </div>
+                                <p class="text-sm font-semibold text-slate-800">{{ kr.title }}</p>
+                                <p class="text-xs text-slate-500">
+                                    Target: <strong>{{ kr.unit === 'rupiah' ? 'Rp' + Number(kr.target || 0).toLocaleString('id-ID') : kr.target }} {{ kr.unit === 'persen' ? '%' : '' }}</strong>
+                                    <span v-if="kr.metric" class="ml-3">Metrik: <strong>{{ kr.metric }}</strong></span>
+                                </p>
+
+                                <div v-if="kr.kartu && kr.kartu.length" class="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 mt-1">
+                                    <div v-for="(card, cIdx) in kr.kartu" :key="'ai-card-' + cIdx" class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                                        <p class="text-xs font-bold text-slate-700">{{ card.judul }}</p>
+                                        <p v-if="card.description" class="text-[11px] text-slate-500">{{ card.description }}</p>
+                                        <div class="flex items-center gap-3 text-[10px] text-slate-400 pt-1">
+                                            <span v-if="card.pic">PIC: <strong class="text-slate-600">{{ card.pic }}</strong></span>
+                                            <span v-if="card.deadline">Tenggat: {{ card.deadline }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Input (shown when no result yet) -->
+                <div v-if="!aiResult && !aiLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="space-y-6">
+                        <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-5 space-y-2">
+                            <h3 class="text-xs font-extrabold text-blue-900 flex items-center gap-1.5">
+                                Panel CMO + CFO + COO AI bekerja bersama ✨
+                            </h3>
+                            <p class="text-[11px] text-blue-700 leading-relaxed">
+                                Setiap spesialis membaca Pengetahuan AI dan data aktual bidangnya. AI Orchestrator kemudian menyelaraskan usulan mereka, membagi pekerjaan ke anggota aktif, serta memilih papan/kolom Kanban.
+                            </p>
+                        </div>
+
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">1. Periode</h3>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Jenis periode</label>
+                                    <select v-model="aiForm.jenis_periode" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="Kuartalan">Kuartalan</option>
+                                        <option value="Tahunan">Tahunan</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tahun</label>
+                                    <input v-model="aiForm.tahun" type="number" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Kuartal</label>
+                                    <select v-model="aiForm.kuartal" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="Q1">Q1</option>
+                                        <option value="Q2">Q2</option>
+                                        <option value="Q3">Q3</option>
+                                        <option value="Q4">Q4</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">2. Cakupan</h3>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Level OKR</label>
+                                <select v-model="aiForm.level_okr" class="w-full md:w-1/2 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="Seluruh perusahaan">Seluruh perusahaan</option>
+                                    <option value="Departemen">Departemen</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">3. Arahan awal</h3>
+                            <div class="space-y-2">
+                                <label class="block text-xs font-extrabold text-slate-800">Apa hasil bisnis yang ingin dicapai?</label>
+                                <p class="text-[11px] text-slate-400">Tulis sasaran, masalah, baseline, batasan, atau prioritas; AI yang memecahkannya.</p>
+                                <textarea
+                                    v-model="aiForm.arahan"
+                                    rows="5"
+                                    :minlength="20"
+                                    placeholder="Contoh: Q3 fokus menaikkan penjualan TikTok 30%, memperbaiki konsistensi konten, dan mengurangi order dengan SKU belum dipetakan. Beban kerja harus merata..."
+                                    class="w-full border border-slate-200 rounded-xl p-4 text-xs text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                                ></textarea>
+                                <p class="text-[10px] text-slate-400" :class="aiForm.arahan.length < 20 ? 'text-amber-600' : ''">Minimal 20 karakter ({{ aiForm.arahan.length }}/20)</p>
+                            </div>
+
+                            <div class="pt-2 space-y-1">
+                                <label class="block text-[11px] font-semibold text-slate-500">Papan Kanban utama <span class="text-slate-400 font-normal">(opsional)</span></label>
+                                <select v-model="aiForm.papan_kanban" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="AI pilih otomatis">AI pilih otomatis</option>
+                                    <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                                </select>
+                            </div>
+
+                            <button
+                                :disabled="aiLoading || aiForm.arahan.length < 20"
+                                class="w-full bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                                @click="submitAiForm"
+                            >
+                                <svg v-if="!aiLoading" class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                                <svg v-else class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                {{ aiLoading ? 'AI sedang menyusun...' : 'Susun Usulan OKR dengan AI' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div></div>
+                </div>
             </main>
 
-            <!-- Footer AI Form -->
             <footer class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium">
-                <span>© 2026 SKINKU B2B Portal. Powered by SQL + Laravel.</span>
+                <span>© 2026 AI Preneur System. Powered by 9router + Laravel.</span>
                 <span>HQ Jakarta, Indonesia</span>
             </footer>
         </div>
