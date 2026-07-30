@@ -171,7 +171,7 @@ class OkrController extends Controller
             'quarterOptions' => Quarter::options(),
             'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
             'objectives' => $objectives,
-            'ringkasan' => $this->ringkasan($objectives),
+            'ringkasan' => $this->ringkasan($objectives, $realisasi),
             'tren' => $this->tren($year, $quarter),
             // Omzet sekarang target Objective. Pilihan KR otomatis hanya untuk
             // metrik yang memang tetap menjadi hasil pendukung.
@@ -288,11 +288,14 @@ class OkrController extends Controller
 
     /** Angka puncak halaman. Objective/KR tanpa target tak ikut dihitung —
      *  alasan yang sama dgn Objective::progress(). */
-    private function ringkasan($objectives): array
+    private function ringkasan($objectives, array $realisasi): array
     {
         $krs = $objectives->pluck('key_results')->flatten(1);
         $persenObjective = $objectives->pluck('progress')->filter(fn ($p) => $p !== null);
         $persenKr = $krs->pluck('percent')->filter(fn ($p) => $p !== null);
+
+        $omsetTarget = $objectives->sum(fn ($o) => (float) ($o->omset_target ?? 0));
+        $omsetActual = (float) ($realisasi['omset'] ?? 0);
 
         return [
             'objectives' => $objectives->count(),
@@ -300,6 +303,9 @@ class OkrController extends Controller
             'progress' => $persenObjective->isEmpty() ? null : round($persenObjective->avg(), 1),
             'tercapai' => $persenKr->filter(fn ($p) => $p >= 100)->count(),
             'tertinggal' => $persenKr->filter(fn ($p) => $p < 60)->count(),
+            'omset_target' => $omsetTarget,
+            'omset_actual' => $omsetActual,
+            'omset_percent' => $omsetTarget > 0 ? round($omsetActual / $omsetTarget * 100, 1) : null,
         ];
     }
 

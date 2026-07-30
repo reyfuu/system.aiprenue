@@ -748,7 +748,7 @@ class="ml-3"
                     </div>
 
                     <!-- Stat Cards Grid -->
-                    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Progress Rata-rata</p>
                             <p class="text-2xl font-extrabold text-blue-600">
@@ -766,6 +766,19 @@ class="ml-3"
                                     ringkasan.key_results ||
                                     objectives.reduce((acc, o) => acc + (o.key_results ? o.key_results.length : 0), 0)
                                 }}
+                            </p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
+                            <p class="text-2xl font-extrabold text-slate-800">
+                                {{ ringkasan.omset_target > 0 ? 'Rp ' + nfFull.format(ringkasan.omset_target) : '—' }}
+                            </p>
+                            <p class="text-[10px] text-slate-400">
+                                Actual:
+                                <span :class="ringkasan.omset_actual >= ringkasan.omset_target ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'">
+                                    Rp {{ nfFull.format(ringkasan.omset_actual || 0) }}
+                                </span>
+                                <span v-if="ringkasan.omset_percent !== null" class="ml-1">({{ ringkasan.omset_percent }}%)</span>
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
