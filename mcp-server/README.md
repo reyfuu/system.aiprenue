@@ -68,17 +68,30 @@ eksplisit per fitur; tidak ada tool SQL generik.
 > - **tanpa `board_key`** — KR hanya menghitung card yang ditautkan langsung
 >   lewat `link_task_to_kr`, dan `target` wajib diisi.
 
+> **Card eksekusi & penugasan.** `create_key_result` dengan `kanban_board_key` +
+> `kanban_column_key` juga membuat card utama KR (`is_kr_master`) di board itu —
+> lengkap dengan `card_category`, `card_description`, `assigned_to`, dan
+> `deadline` — lalu mengirim notifikasi database ke PIC, persis form Tambah KR
+> di `/okr`. PIC card otomatis jadi penanggung jawab KR. `update_key_result`
+> menerima `assigned_to`/`deadline` untuk memindahkan penugasan: PIC lama dapat
+> kabar "Penugasan OKR dialihkan", PIC baru dapat "Pekerjaan OKR baru", dan bila
+> hanya tanggalnya berubah PIC dapat "Deadline OKR berubah". KR, card, dan
+> notifikasi ditulis dalam satu transaksi — gagal salah satu berarti batal
+> semua. Isi `APP_URL` di `.env` agar notifikasi memuat tautan ke card; tanpa
+> itu notifikasi tetap terkirim, hanya tanpa tautan.
+
 > Tulisan langsung ke DB (bypass validasi Laravel), tetapi `create_key_result`
 > dan `link_task_to_kr` menegakkan aturan inti yang sama: KR `auto` wajib punya
-> metric, target wajib ada kecuali diturunkan dari board, dan card yang
-> ditautkan harus berasal dari board KR tersebut. **Beda dengan halaman OKR:**
-> KR yang dibuat lewat MCP belum membuat card eksekusi (`is_kr_master`) dan
-> tidak mengirim notifikasi ke PIC.
+> metric, target wajib ada kecuali diturunkan dari board, kolom card harus milik
+> board yang dipilih, dan card yang ditautkan harus berasal dari board KR
+> tersebut.
 
 > Kanban terverifikasi lokal via `test-client.js`. OKR terverifikasi lokal
 > terhadap MariaDB dev: `list_okr` dibandingkan field-per-field dengan props
-> halaman `/okr` (62 field, 0 selisih), plus uji tulis create/update KR untuk
-> kedua mode `kartu`.
+> halaman `/okr` (62 field, 0 selisih), uji tulis create/update KR untuk kedua
+> mode `kartu`, dan uji end-to-end — KR dibuat lewat MCP muncul sebagai card
+> utama di `/okr` dan notifikasinya terbaca di lonceng PIC (`unreadNotificationsCount`
+> 0 → 1).
 
 **Modul lain**
 

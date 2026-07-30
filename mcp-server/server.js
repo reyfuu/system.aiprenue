@@ -11,6 +11,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 const PORT = process.env.MCP_PORT || 8765;
 const TOKEN = process.env.MCP_TOKEN || ''; // kosong = tanpa auth (khusus dev lokal)
+// URL publik app Laravel, dipakai membangun tautan di notifikasi penugasan.
+// Kosong = notifikasi tetap terkirim tetapi tanpa tautan; itu lebih baik
+// daripada menebak host dan mengirim tautan yang menuju halaman salah.
+const APP_URL = (process.env.APP_URL || '').replace(/\/+$/, '');
 
 // ── OAuth 2.1 owner-tunggal, tanpa dependency (crypto bawaan Node) ────────────
 // ChatGPT & Claude hp/web butuh OAuth (UI mereka tak bisa kirim bearer statis).
@@ -144,6 +148,50 @@ async function prioritySnapshot(name) {
     if (!name || !['Urgent', 'Penting'].includes(name)) return null;
     const [[label]] = await db.query(`SELECT name, color FROM labels WHERE name=? LIMIT 1`, [name]);
     return label || { name, color: name === 'Urgent' ? '#dc2626' : '#2563eb' };
+}
+
+// Tautan card Kanban di app Laravel. route('pipelines.kanban', [...]) tidak
+// punya parameter path, jadi category & card jatuh ke query string.
+const kanbanCardUrl = (board, cardId) =>
+    (APP_URL ? `${APP_URL}/pipelines/kanban?category=${encodeURIComponent(board)}&card=${cardId}` : null);
+
+/**
+ * Tulis satu notifikasi database persis seperti `$user->notify()` Laravel:
+ * baris `notifications` berisi uuid, nama kelas penuh notifikasi, dan payload
+ * hasil OkrAssignmentNotification::toArray().
+ *
+ * Dua aturan OkrNotifications::kirim() ikut ditegakkan di sini: penerima harus
+ * benar-benar ada, dan pelaku tidak menotifikasi dirinya sendiri.
+ *
+ * @returns {Promise<boolean>} true bila notifikasi benar-benar ditulis.
+ */
+async function kirimNotifikasiOkr(conn, {
+    penerimaId, pelakuId, kind = 'okr_assignment', title, message, url = null,
+    objectiveId, keyResultId = null, pipelineId = null, priority = null,
+}) {
+    if (!penerimaId) return false;
+    if (pelakuId !== null && pelakuId !== undefined && Number(penerimaId) === Number(pelakuId)) return false;
+    const [[penerima]] = await conn.query(`SELECT id FROM users WHERE id=?`, [penerimaId]);
+    if (!penerima) return false;
+    await conn.query(
+        `INSERT INTO notifications (id, type, notifiable_type, notifiable_id, data, read_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, NOW(), NOW())`,
+        [
+            crypto.randomUUID(),
+            // Nama kelas dikirim sebagai parameter, bukan ditulis inline di SQL:
+            // backslash di literal string MySQL punya arti escape sendiri.
+            'App\\Notifications\\OkrAssignmentNotification',
+            'App\\Models\\User',
+            penerimaId,
+            JSON.stringify({
+                kind, title, message, url,
+                objective_id: objectiveId,
+                key_result_id: keyResultId,
+                pipeline_id: pipelineId,
+                priority,
+            }),
+        ]);
+    return true;
 }
 
 const OKR_SOURCES = ['auto', 'manual', 'kartu'];
@@ -661,12 +709,19 @@ function registerSystemWriteTools(server) {
                 board_key: z.string().nullable().optional().describe('Board Kanban, hanya untuk source=kartu dan bersifat opsional'),
                 target: z.number().nonnegative().optional().describe('Wajib untuk auto & manual, dan untuk kartu TANPA board. Untuk kartu DENGAN board nilainya diabaikan (diambil dari target kuartal board).'),
                 unit: z.enum(OKR_UNITS).optional().describe('Hanya dipakai source=manual; auto & kartu ditentukan otomatis'),
-                owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR'),
+                owner_id: z.number().int().positive().optional().describe('User ID penanggung jawab KR; kalah dari assigned_to bila keduanya diisi'),
                 priority_name: z.string().max(50).optional().describe('Nama prioritas: Urgent atau Penting'),
+                // Card eksekusi — bagian "Pekerjaan" pada form Tambah KR di /okr.
+                kanban_board_key: z.string().optional().describe('Board Kanban tempat card eksekusi KR dibuat. Tanpa ini KR tidak punya card.'),
+                kanban_column_key: z.string().optional().describe('Kolom awal card eksekusi; wajib bila kanban_board_key diisi'),
+                card_category: z.string().optional().describe('Nama label kategori card, harus ada di daftar label'),
+                card_description: z.string().max(5000).optional().describe('Isi/deskripsi card eksekusi'),
+                assigned_to: z.number().int().positive().optional().describe('User ID PIC card eksekusi. Otomatis jadi penanggung jawab KR dan menerima notifikasi penugasan.'),
+                deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Deadline card eksekusi, format YYYY-MM-DD'),
             },
         },
         async (a) => {
-            const [[objective]] = await db.query(`SELECT id, year, quarter FROM objectives WHERE id=?`, [a.objective_id]);
+            const [[objective]] = await db.query(`SELECT id, year, quarter, title FROM objectives WHERE id=?`, [a.objective_id]);
             if (!objective) return errText(`Objective id ${a.objective_id} tidak ditemukan.`);
             if (a.source === 'auto' && !a.metric) return errText('KR otomatis wajib memiliki metric.');
             if (a.board_key) {
@@ -686,6 +741,35 @@ function registerSystemWriteTools(server) {
                     ? 'Tanpa board Kanban, target jumlah kartu wajib diisi.'
                     : 'Target wajib diisi.');
             }
+            // --- Card eksekusi: validasi board/kolom/label/PIC lebih dulu, sama
+            //     seperti OkrController::storeKeyResult() yang memvalidasi semua
+            //     sebelum menyentuh database.
+            let column = null;
+            let label = null;
+            if (a.kanban_board_key) {
+                const [[papan]] = await db.query(
+                    `SELECT \`key\` FROM categories WHERE \`key\`=? AND type='kanban'`, [a.kanban_board_key]);
+                if (!papan) return errText(`Board Kanban "${a.kanban_board_key}" tidak ditemukan.`);
+                if (!a.kanban_column_key) return errText('kanban_column_key wajib diisi bila kanban_board_key diisi.');
+                const [[kolom]] = await db.query(
+                    `SELECT \`key\` FROM board_columns WHERE board_key=? AND \`key\`=?`,
+                    [a.kanban_board_key, a.kanban_column_key]);
+                if (!kolom) return errText('Kolom tidak tersedia pada board yang dipilih.');
+                column = kolom.key;
+            } else if (a.kanban_column_key) {
+                return errText('kanban_column_key tidak berarti tanpa kanban_board_key.');
+            }
+            if (a.card_category) {
+                const [[l]] = await db.query(
+                    `SELECT name, \`group\`, color FROM labels WHERE name=? LIMIT 1`, [a.card_category]);
+                if (!l) return errText('Kategori card tidak tersedia.');
+                label = l;
+            }
+            if (a.assigned_to) {
+                const [[u]] = await db.query(`SELECT id FROM users WHERE id=?`, [a.assigned_to]);
+                if (!u) return errText(`User id ${a.assigned_to} tidak ditemukan.`);
+            }
+
             const creator = await ownerId();
             const [[position]] = await db.query(
                 `SELECT COALESCE(MAX(position),0)+1 n FROM key_results WHERE objective_id=?`, [a.objective_id]);
@@ -693,19 +777,67 @@ function registerSystemWriteTools(server) {
             // auto → satuan mengikuti metrik; kartu → selalu menghitung kartu.
             const unit = a.source === 'auto' ? 'angka' : (a.source === 'kartu' ? 'angka' : (a.unit || 'angka'));
             const priority = a.priority_name ? await prioritySnapshot(a.priority_name) : null;
-            const owner = a.owner_id || creator;
-            const [result] = await db.query(
-                `INSERT INTO key_results
-                    (objective_id, title, description, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-                [a.objective_id, a.title, a.description || null, a.source, boardKey, metric, target, unit,
-                 priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
+            // PIC card eksekusi sekaligus penanggung jawab KR — invariant yang
+            // sama dengan halaman OKR.
+            const owner = a.assigned_to || a.owner_id || creator;
+
+            // KR, card eksekusi, dan notifikasi satu paket: bila salah satu
+            // gagal, semuanya dibatalkan agar PIC tak menerima kabar untuk
+            // pekerjaan yang sebenarnya tidak tersimpan.
+            const conn = await db.getConnection();
+            let krId = null;
+            let cardId = null;
+            let notifikasiTerkirim = false;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO key_results
+                        (objective_id, title, description, source, board_key, metric, target, unit, priority, owner_id, position, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                    [a.objective_id, a.title, a.description || null, a.source, boardKey, metric, target, unit,
+                     priority ? JSON.stringify(priority) : null, owner, position.n, creator]);
+                krId = result.insertId;
+
+                if (column) {
+                    const [card] = await conn.query(
+                        `INSERT INTO pipelines
+                            (category, account, payment_status, progress, endorse, description, labels,
+                             assigned_to, deadline, key_result_id, is_kr_master, created_by, created_at, updated_at)
+                         VALUES (?, 'fk', 'belum', ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW())`,
+                        [a.kanban_board_key, column, a.title, a.card_description || null,
+                         JSON.stringify(label ? [{ name: label.name, group: label.group, color: label.color }] : []),
+                         a.assigned_to || null, a.deadline || null, krId, creator]);
+                    cardId = card.insertId;
+                }
+
+                // Penanggung jawab dikabari ADA atau TIDAK adanya card eksekusi;
+                // tautan hanya disertakan bila card-nya benar-benar dibuat.
+                notifikasiTerkirim = await kirimNotifikasiOkr(conn, {
+                    penerimaId: a.assigned_to || owner,
+                    pelakuId: creator,
+                    title: cardId ? 'Pekerjaan OKR baru' : 'Penanggung jawab KR baru',
+                    message: cardId
+                        ? `Anda ditugaskan pada “${a.title}” untuk Objective “${objective.title}”.`
+                        : `Anda menjadi penanggung jawab KR “${a.title}” pada Objective “${objective.title}”.`,
+                    url: cardId ? kanbanCardUrl(a.kanban_board_key, cardId) : null,
+                    objectiveId: a.objective_id,
+                    keyResultId: krId,
+                    pipelineId: cardId,
+                    priority,
+                });
+                await conn.commit();
+            } catch (e) {
+                await conn.rollback();
+                return errText(`Gagal menyimpan Key Result: ${e.message}`);
+            } finally {
+                conn.release();
+            }
+
             return jsonText({
                 ok: true,
-                key_result: { id: result.insertId, ...a, metric, board_key: boardKey, target, unit },
-                // KR dari MCP belum punya card eksekusi (is_kr_master) seperti KR
-                // yang dibuat dari halaman OKR, dan PIC-nya tidak dinotifikasi.
-                catatan: 'KR dibuat tanpa card eksekusi & tanpa notifikasi PIC. Tautkan card dengan link_task_to_kr bila perlu.',
+                key_result: { id: krId, ...a, metric, board_key: boardKey, target, unit, owner_id: owner },
+                card_eksekusi: cardId ? { id: cardId, board: a.kanban_board_key, column, assigned_to: a.assigned_to ?? null, deadline: a.deadline ?? null } : null,
+                notifikasi_terkirim: notifikasiTerkirim,
             });
         }
     );
@@ -714,7 +846,7 @@ function registerSystemWriteTools(server) {
         'update_key_result',
         {
             title: 'Update Key Result',
-            description: 'Ubah Key Result. Isi minimal satu field selain id.',
+            description: 'Ubah Key Result. Isi minimal satu field selain id. assigned_to & deadline mengubah card eksekusi (card utama KR) dan mengirim notifikasi ke PIC lama/baru, sama seperti form edit KR di /okr.',
             inputSchema: {
                 id: z.number().int().positive(),
                 title: z.string().min(1).max(255).optional(),
@@ -724,13 +856,19 @@ function registerSystemWriteTools(server) {
                 owner_id: z.number().int().positive().optional(),
                 priority_name: z.string().max(50).optional(),
                 board_key: z.string().nullable().optional().describe('Ganti/kosongkan board Kanban. Diisi board → target ikut disetel dari target kuartal board.'),
+                assigned_to: z.number().int().positive().nullable().optional().describe('PIC card eksekusi; null mengosongkan. Hanya berlaku bila KR punya card utama.'),
+                deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('Deadline card eksekusi (YYYY-MM-DD); null mengosongkan'),
             },
         },
         async (a) => {
             const [[kr]] = await db.query(
-                `SELECT kr.id, o.year, o.quarter FROM key_results kr
-                 JOIN objectives o ON o.id=kr.objective_id WHERE kr.id=?`, [a.id]);
+                `SELECT kr.id, kr.title, kr.objective_id, kr.priority, o.year, o.quarter, o.title AS objective_title
+                 FROM key_results kr JOIN objectives o ON o.id=kr.objective_id WHERE kr.id=?`, [a.id]);
             if (!kr) return errText(`Key Result id ${a.id} tidak ditemukan.`);
+            if (a.assigned_to) {
+                const [[u]] = await db.query(`SELECT id FROM users WHERE id=?`, [a.assigned_to]);
+                if (!u) return errText(`User id ${a.assigned_to} tidak ditemukan.`);
+            }
             const sets = [], vals = [];
             if (a.title !== undefined) { sets.push('title=?'); vals.push(a.title); }
             if (a.description !== undefined) { sets.push('description=?'); vals.push(a.description || null); }
@@ -756,10 +894,95 @@ function registerSystemWriteTools(server) {
                 const p = await prioritySnapshot(a.priority_name);
                 sets.push('priority=?'); vals.push(p ? JSON.stringify(p) : null);
             }
-            if (!sets.length) return errText('Tidak ada field yang diubah.');
-            sets.push('updated_at=NOW()');
-            await db.query(`UPDATE key_results SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
-            return jsonText({ ok: true, key_result_id: a.id });
+            const ubahEksekusi = a.assigned_to !== undefined || a.deadline !== undefined;
+            if (!sets.length && !ubahEksekusi) return errText('Tidak ada field yang diubah.');
+
+            // Card utama dibaca SEBELUM update sebagai pembanding notifikasi.
+            // deadline diambil sebagai TEKS lewat DATE_FORMAT, bukan objek Date:
+            // driver mengembalikan DATE sebagai Date tengah malam waktu lokal,
+            // dan toISOString() menggesernya mundur sebesar offset zona waktu
+            // (WIB +7) sehingga pembandingan tanggal meleset satu hari dan
+            // memicu notifikasi "deadline berubah" palsu.
+            const [[master]] = await db.query(
+                `SELECT id, category, assigned_to, DATE_FORMAT(deadline, '%Y-%m-%d') AS deadline
+                 FROM pipelines WHERE key_result_id=? AND is_kr_master=1 LIMIT 1`, [a.id]);
+            const picLama = master?.assigned_to ?? null;
+            const deadlineLama = master?.deadline ?? null;
+            const picBaru = a.assigned_to !== undefined ? (a.assigned_to ?? null) : picLama;
+            const deadlineBaru = a.deadline !== undefined ? (a.deadline ?? null) : deadlineLama;
+
+            const conn = await db.getConnection();
+            const notifikasi = [];
+            try {
+                await conn.beginTransaction();
+                if (sets.length) {
+                    sets.push('updated_at=NOW()');
+                    await conn.query(`UPDATE key_results SET ${sets.join(', ')} WHERE id=?`, [...vals, a.id]);
+                }
+
+                if (master && ubahEksekusi) {
+                    await conn.query(
+                        `UPDATE pipelines SET assigned_to=?, deadline=?, updated_at=NOW() WHERE id=?`,
+                        [picBaru, deadlineBaru, master.id]);
+                    // Penanggung jawab KR mengikuti PIC card — hanya bila PIC
+                    // diisi; mengosongkan PIC tak menghapus pemilik KR.
+                    if (picBaru) {
+                        await conn.query(`UPDATE key_results SET owner_id=?, updated_at=NOW() WHERE id=?`, [picBaru, a.id]);
+                    }
+                }
+
+                // Aturan notifikasi disalin dari OkrController::notifikasiPerubahanEksekusi().
+                const priorityKr = typeof kr.priority === 'string' ? JSON.parse(kr.priority || 'null') : (kr.priority ?? null);
+                const url = master ? kanbanCardUrl(master.category, master.id) : null;
+                if (master && Number(picBaru) !== Number(picLama)) {
+                    const [[penerimaBaru]] = picBaru
+                        ? await conn.query(`SELECT name FROM users WHERE id=?`, [picBaru])
+                        : [[null]];
+                    // PIC lama: tanpa tautan — card itu bukan lagi tanggung jawabnya.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picLama, pelakuId: null, kind: 'okr_perubahan',
+                        title: 'Penugasan OKR dialihkan',
+                        message: `Penugasan “${kr.title}” dialihkan ke ${penerimaBaru?.name ?? 'orang lain'}.`,
+                        url: null, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picLama, jenis: 'penugasan_dialihkan' });
+                    // PIC baru: baginya ini penugasan baru, lengkap dengan tautan.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picBaru, pelakuId: null,
+                        title: 'Pekerjaan OKR baru',
+                        message: `Anda ditugaskan pada “${kr.title}” untuk Objective “${kr.objective_title}”.`,
+                        url, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picBaru, jenis: 'penugasan_baru' });
+                } else if (master && deadlineBaru !== deadlineLama) {
+                    // PIC tetap, deadlinenya yang berubah.
+                    if (await kirimNotifikasiOkr(conn, {
+                        penerimaId: picBaru, pelakuId: null, kind: 'okr_perubahan',
+                        title: 'Deadline OKR berubah',
+                        message: `Deadline “${kr.title}” diubah menjadi ${deadlineBaru ?? 'tanpa tanggal'}.`,
+                        url, objectiveId: kr.objective_id, keyResultId: kr.id,
+                        pipelineId: master.id, priority: priorityKr,
+                    })) notifikasi.push({ ke: picBaru, jenis: 'deadline_berubah' });
+                }
+                await conn.commit();
+            } catch (e) {
+                await conn.rollback();
+                return errText(`Gagal memperbarui Key Result: ${e.message}`);
+            } finally {
+                conn.release();
+            }
+
+            return jsonText({
+                ok: true,
+                key_result_id: a.id,
+                card_eksekusi: master ? { id: master.id, assigned_to: picBaru, deadline: deadlineBaru } : null,
+                // ubahEksekusi tanpa card utama = permintaan diabaikan diam-diam
+                // kalau tidak diberitahukan; ini penjelasannya.
+                catatan: (!master && ubahEksekusi)
+                    ? 'KR ini belum punya card eksekusi, jadi assigned_to/deadline diabaikan. Buat KR dengan kanban_board_key, atau tautkan card lewat link_task_to_kr.'
+                    : undefined,
+                notifikasi,
+            });
         }
     );
 
