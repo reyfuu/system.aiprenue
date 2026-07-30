@@ -418,6 +418,12 @@ const deleteCard = (card) => {
     router.delete('/pipelines/' + card.id, { onSuccess: () => (detailId.value = null) });
 };
 
+/** Buka modal edit langsung dari tombol di kartu — isi form + buka detail. */
+const editCard = (card) => {
+    if (!props.canManage) return;
+    openDetail(card);
+};
+
 // ---- Komentar (semua user boleh) ----
 const commentForm = useForm({ body: '' });
 const submitComment = () => {
@@ -1342,6 +1348,16 @@ class="ml-auto text-[11px] text-slate-400"
                                                             {{ lb.name }}
                                                         </span>
                                                     </div>
+                                                    <button
+                                                        v-if="canManage"
+                                                        title="Edit kartu"
+                                                        class="flex-shrink-0 p-1 -m-1 rounded-md text-slate-400 hover:bg-blue-50 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition"
+                                                        @click.stop="editCard(card)"
+                                                    >
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" />
+                                                        </svg>
+                                                    </button>
                                                     <button
                                                         v-if="canManage"
                                                         title="Hapus kartu"
