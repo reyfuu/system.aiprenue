@@ -12,38 +12,7 @@ use App\Models\BoardColumn;
 class Pipeline extends Model
 {
     use SoftDeletes;
-    protected static function booted(): void
-    {
-        static::saving(function (Pipeline $pipeline) {
-            if (! $pipeline->isDirty('progress')) {
-                return;
-            }
-            $col = BoardColumn::where('board_key', $pipeline->category)
-                ->where('key', $pipeline->progress)
-                ->first();
-            if ($col) {
-                $name = mb_strtolower($col->name);
-                $isDone = str_starts_with($name, 'done') || str_starts_with($name, 'done ')
-                    || $col->key === 'done' || $col->key === 'deal' || $col->key === 'closing';
-                if ($isDone) {
-                    $pipeline->done = 1;
-                    $pipeline->completed_at = $pipeline->completed_at ?? now();
-                } else {
-                    $pipeline->done = 0;
-                    $pipeline->completed_at = null;
-                }
-            }
-        });
-    }
 
-    /**
-     * Otomatis setel status selesai saat kartu berpindah ke kolom akhir.
-     *
-     *  Pindah ke kolom bernama Done/Deal/Closing → done=1 + stempel selesai.
-     *  Keluar dari kolom tersebut → done=0 + hapus stempel. Sekali selesai,
-     *  stempel LAMA dipertahankan (tidak ditimpa) supaya kartu tak bisa
-     *  "dirapikan" hanya dgn menggerakkannya bolak-balik.
-     */
     protected static function booted(): void
     {
         static::saving(function (Pipeline $pipeline) {
