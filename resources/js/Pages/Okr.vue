@@ -191,7 +191,8 @@ const krModal = ref(null);
 const krForm = useForm({
     objective_id: null,
     title: '',
-    source: 'manual',
+    description: '',
+    source: 'kartu',
     board_key: '',
     metric: '',
     target: 0,
@@ -208,27 +209,11 @@ const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_
 const showWorkstream = ref(false);
 
 const sourceOptions = [
-    { value: 'auto', label: 'Auto', desc: 'Dihitung dari Insight / Pembukuan', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
-    {
-        value: 'manual',
-        label: 'Manual',
-        desc: 'Angka diisi & diperbarui sendiri',
-        icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z',
-    },
     {
         value: 'kartu',
         label: 'Kartu',
         desc: 'Realisasi = kartu Kanban yang selesai',
         icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
-    },
-];
-
-const metricOptions = [
-    { value: 'view', label: 'View (Tayangan)', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
-    {
-        value: 'subscriber',
-        label: 'Subscriber (Pengikut Baru)',
-        icon: 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z',
     },
 ];
 
@@ -251,7 +236,8 @@ const bukaKr = (objective, kr = null) => {
     krModal.value = { mode: kr ? 'edit' : 'baru', objective, kr };
     krForm.objective_id = objective.id;
     krForm.title = kr?.title ?? '';
-    krForm.source = kr?.source ?? 'manual';
+    krForm.description = kr?.description ?? '';
+    krForm.source = 'kartu';
     krForm.board_key = kr?.board_key ?? '';
     krForm.metric = kr?.metric ?? '';
     krForm.target = kr?.target ?? 0;
@@ -980,6 +966,8 @@ class="ml-3"
 
                                 <h3 class="text-lg font-extrabold text-slate-900">{{ kr.title }}</h3>
 
+                                <p v-if="kr.description" class="text-xs text-slate-500 leading-relaxed max-w-3xl">{{ kr.description }}</p>
+
                                 <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-600 font-medium">
                                     <span
                                         >Metrik:
@@ -1188,140 +1176,22 @@ class="ml-3"
                 <!-- Judul -->
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1.5">Judul Key Result</label>
-                    <input
-                        v-model="krForm.title"
-                        type="text"
-                        placeholder="Contoh: Mencapai omzet e-commerce Rp500.000.000/bulan"
-                        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                    />
+                    <input v-model="krForm.title" type="text" placeholder="Contoh: Selesaikan 10 kartu produksi konten" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
                     <p v-if="krForm.errors.title" class="text-xs text-red-500 mt-1">{{ krForm.errors.title }}</p>
                 </div>
 
-                <!-- Sumber Realisasi — tab button -->
+                <!-- Deskripsi -->
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-2">Sumber Realisasi</label>
-                    <div class="grid grid-cols-3 gap-2">
-                        <button
-                            v-for="opt in sourceOptions"
-                            :key="opt.value"
-                            type="button"
-                            :class="[
-                                'flex flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all',
-                                krForm.source === opt.value
-                                    ? 'border-blue-500 bg-blue-50 shadow-sm'
-                                    : 'border-slate-200 bg-white hover:border-slate-300',
-                            ]"
-                            @click="krForm.source = opt.value"
-                        >
-                            <svg
-                                class="w-5 h-5"
-                                :class="krForm.source === opt.value ? 'text-blue-600' : 'text-slate-400'"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                viewBox="0 0 24 24"
-                            >
-                                <path stroke-linecap="round" stroke-linejoin="round" :d="opt.icon" />
-                            </svg>
-                            <span class="text-xs font-bold" :class="krForm.source === opt.value ? 'text-blue-700' : 'text-slate-600'">{{
-                                opt.label
-                            }}</span>
-                            <span
-                                class="text-[10px] leading-tight"
-                                :class="krForm.source === opt.value ? 'text-blue-500' : 'text-slate-400'"
-                                >{{ opt.desc }}</span
-                            >
-                        </button>
-                    </div>
-                    <p v-if="krForm.errors.source" class="text-xs text-red-500 mt-1">{{ krForm.errors.source }}</p>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Deskripsi (opsional)</label>
+                    <textarea v-model="krForm.description" rows="2" placeholder="Jelaskan konteks atau tujuan Key Result ini…" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"></textarea>
                 </div>
 
-                <!-- Field spesifik per source -->
-                <!-- Auto: metric + target -->
-                <div v-if="krForm.source === 'auto'" class="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
-                    <p class="text-[11px] font-semibold text-amber-800">Realisasi dihitung otomatis dari data Insight & Pembukuan.</p>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Metrik</label>
-                            <div class="grid grid-cols-2 gap-1.5">
-                                <button
-                                    v-for="m in metricOptions"
-                                    :key="m.value"
-                                    type="button"
-                                    :class="[
-                                        'flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-all',
-                                        krForm.metric === m.value
-                                            ? 'border-amber-500 bg-amber-100 text-amber-800'
-                                            : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
-                                    ]"
-                                    @click="krForm.metric = m.value"
-                                >
-                                    <svg
-                                        class="w-3.5 h-3.5 flex-shrink-0"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path stroke-linecap="round" stroke-linejoin="round" :d="m.icon" />
-                                    </svg>
-                                    {{ m.label }}
-                                </button>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Target (wajib)</label>
-                            <input
-                                v-model="krForm.target"
-                                type="number"
-                                min="0"
-                                step="any"
-                                placeholder="500000"
-                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
-                            />
-                            <p v-if="krForm.errors.target" class="text-xs text-red-500 mt-1">{{ krForm.errors.target }}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Manual: target + unit -->
-                <div v-if="krForm.source === 'manual'" class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                    <p class="text-[11px] font-semibold text-slate-600">Angka diisi & diperbarui sendiri oleh tim.</p>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Target</label>
-                            <input
-                                v-model="krForm.target"
-                                type="number"
-                                min="0"
-                                step="any"
-                                placeholder="100"
-                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Satuan</label>
-                            <select
-                                v-model="krForm.unit"
-                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option v-for="u in unitOptions" :key="u.value" :value="u.value">{{ u.label }}</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Kartu: board + target otomatis -->
-                <div v-if="krForm.source === 'kartu'" class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
-                    <p class="text-[11px] font-semibold text-emerald-800">
-                        Realisasi = jumlah kartu Kanban yang selesai di board yang dipilih.
-                    </p>
+                <!-- Board Kanban -->
+                <div class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
+                    <p class="text-[11px] font-semibold text-emerald-800">Realisasi = jumlah kartu Kanban yang selesai di board yang dipilih.</p>
                     <div>
                         <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban</label>
-                        <select
-                            v-model="krForm.board_key"
-                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
+                        <select v-model="krForm.board_key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500">
                             <option value="">— pilih board —</option>
                             <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
                         </select>
@@ -1330,7 +1200,7 @@ class="ml-3"
                     </div>
                 </div>
 
-                <!-- Prioritas + PIC (semua source) -->
+                <!-- Prioritas + PIC -->
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-semibold text-slate-600 mb-1.5">Prioritas</label>

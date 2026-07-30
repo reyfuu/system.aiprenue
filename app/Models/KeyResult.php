@@ -13,7 +13,7 @@ class KeyResult extends Model
 {
     use Auditable;
     protected $fillable = [
-        'objective_id', 'title', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
+        'objective_id', 'title', 'description', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
         'owner_id', 'created_by',
     ];
 
