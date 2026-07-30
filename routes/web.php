@@ -28,6 +28,7 @@ use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');

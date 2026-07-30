@@ -8,19 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BoardColumn;
 
 class Pipeline extends Model
 {
     use SoftDeletes, Auditable;
 
-    /**
-     * Otomatis setel status selesai saat kartu berpindah ke kolom akhir.
-     *
-     *  Pindah ke kolom bernama Done/Deal/Closing → done=1 + stempel selesai.
-     *  Keluar dari kolom tersebut → done=0 + hapus stempel. Sekali selesai,
-     *  stempel LAMA dipertahankan (tidak ditimpa) supaya kartu tak bisa
-     *  "dirapikan" hanya dgn menggerakkannya bolak-balik.
-     */
     protected static function booted(): void
     {
         static::saving(function (Pipeline $pipeline) {
