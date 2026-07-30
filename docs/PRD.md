@@ -60,10 +60,16 @@ Papan bergaya Trello:
 - **Fitur kartu**: label warna (Urgent dsb.), deadline (highlight bila lewat), deskripsi, checklist/todo, lampiran file, komentar, dan arsip (kartu selesai).
 
 ### 4.4 OKR (P0) — owner + manager
-Goal perusahaan per kuartal: **Objective** (kalimat tujuan) berisi **Key Result** terukur. Tiga sumber realisasi KR:
-- **auto** — dihitung dari Insight (view, subscriber) & Pembukuan (omset). Tak bisa diketik tangan.
+Goal perusahaan per kuartal: **Objective** (kalimat tujuan dan target omzet bila ada) berisi **Key Result** berupa pekerjaan/hasil pendukung. Tiga sumber realisasi KR:
+- **auto** — dihitung dari Insight (view, subscriber). Tak bisa diketik tangan.
 - **manual** — angka diperbarui sendiri (target tanpa sumber data).
 - **kartu** — realisasi = kartu Kanban **todolist** yang ditautkan ke KR & sudah selesai. Inilah jembatan goal→eksekusi: goal ditulis di OKR, langkah pencapaiannya dibuat sebagai kartu todolist. Grafik tren 6 kuartal.
+- Saat membuat Objective, target omzet dapat langsung diisi dan disimpan pada Objective; realisasinya dihitung otomatis dari Pembukuan tanpa membuat KR omzet.
+- PIC target omzet dapat dipilih saat Objective dibuat **maupun dikoreksi lewat edit Objective**. PIC—termasuk staff—menerima notifikasi persisten dari server tanpa memperoleh akses ke angka/detail OKR lainnya. Mengganti PIC/target memberi tahu PIC lama (dialihkan/dicabut) dan PIC baru.
+- Objective dan Key Result dapat diberi status prioritas **Urgent** atau **Penting**, memakai nama/warna yang sama dengan penanda kartu Kanban.
+- KR yang membentuk card eksekusi mengirim notifikasi server ke PIC dengan tautan langsung ke card Kanban. KR tanpa card tetap memberi tahu penanggung jawabnya (tanpa tautan). PIC & deadline card utama dapat dikoreksi dari edit KR; perubahannya memberi tahu PIC lama/baru.
+- Pemilik OKR (penanggung jawab & pembuat KR) menerima notifikasi saat kartu tertaut KR selesai — lewat drag, tombol selesai, maupun tuntasnya semua tugas kartu.
+- PIC kartu OKR menerima notifikasi pengingat deadline (maks. 1/kartu/hari, dibuat saat ia membuka halaman — tanpa cron). Lonceng global juga tetap menampilkan reminder deadline yang sudah ada. Notifikasi tak pernah dikirim ke pelaku perubahannya sendiri.
 
 ### 4.5 KPI (P0) — dua tab
 - **Per Board**: target "berapa kartu selesai" tiap board + rekap ketepatan (tepat/terlambat/lewat deadline). Owner/manager/it/admin.

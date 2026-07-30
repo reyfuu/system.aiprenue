@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Absence extends Model
 {
+    use Auditable;
     protected $fillable = [
         'user_id', 'type', 'start_date', 'end_date', 'reason', 'attachment_path', 'status',
     ];

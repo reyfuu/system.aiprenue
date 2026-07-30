@@ -2,22 +2,53 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\BoardColumn;
 
 class Pipeline extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, Auditable;
+
+    protected static function booted(): void
+    {
+        static::saving(function (Pipeline $pipeline) {
+            if (! $pipeline->isDirty('progress')) {
+                return;
+            }
+
+            $col = BoardColumn::where('board_key', $pipeline->category)
+                ->where('key', $pipeline->progress)
+                ->first();
+
+            if (! $col) {
+                return;
+            }
+
+            $name = mb_strtolower($col->name);
+            $isDone = str_starts_with($name, 'done') || str_starts_with($name, 'done ')
+                || $col->key === 'done' || $col->key === 'deal' || $col->key === 'closing';
+
+            if ($isDone) {
+                $pipeline->done = true;
+                $pipeline->completed_at = $pipeline->completed_at ?? now();
+            } else {
+                $pipeline->done = false;
+                $pipeline->completed_at = null;
+            }
+        });
+    }
 
     protected $fillable = [
         'category', 'jenis', 'account', 'assigned_to', 'created_by', 'key_result_id', 'coaching', 'speaker', 'endorse', 'description', 'progress',
-        'tanggal_posting', 'tanggal_payment', 'deadline', 'payment_status',
+        'tanggal_posting', 'tanggal_payment', 'deadline', 'score', 'payment_status',
 
         'amount_idr', 'amount_usd', 'dp1', 'dp2', 'dp3', 'notes', 'link', 'todos', 'labels', 'done',
-        'completed_at', 'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig',
+        'completed_at', 'archived_at', 'kontak_wa', 'kontak_gmail', 'kontak_ig', 'is_kr_master',
 
     ];
 
@@ -25,6 +56,7 @@ class Pipeline extends Model
         'tanggal_posting' => 'date',
         'tanggal_payment' => 'date',
         'deadline' => 'date',
+        'score' => 'integer',
         'completed_at' => 'datetime',
         'archived_at' => 'datetime',
         'amount_idr' => 'decimal:2',
@@ -35,6 +67,7 @@ class Pipeline extends Model
         'todos' => 'array',
         'labels' => 'array',
         'done' => 'boolean',
+        'is_kr_master' => 'boolean',
     ];
 
     public function outputs(): BelongsToMany
@@ -102,6 +135,11 @@ class Pipeline extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(PipelineAttachment::class);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(PipelineTask::class)->orderBy('position')->orderBy('id');
     }
 
     /** Kategori/board dinamis dari tabel categories: ['key' => 'Name'].

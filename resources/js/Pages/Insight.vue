@@ -2,23 +2,21 @@
 // Halaman Insight — performa konten Instagram & YouTube berdampingan.
 // Fokusnya menjawab "konten mana yang menang & kenapa", bukan memajang
 // sebanyak mungkin angka. Metrik yang tak menjawab itu sengaja tak ada.
-import { router } from '@inertiajs/vue3';   // router untuk ganti filter platform
-import Layout from '../Layout.vue';         // Layout sudah render sidebar + toast
+import { router } from '@inertiajs/vue3'; // router untuk ganti filter platform
+import Layout from '../Layout.vue'; // Layout sudah render sidebar + toast
 
-const props = defineProps({
-    platforms: { type: Object, default: () => ({}) },  // key→label (instagram, youtube)
-    aktif: { type: String, default: 'semua' },         // filter platform aktif
-    ringkasan: { type: Object, default: () => ({}) },  // kartu atas
-    konten: { type: Array, default: () => [] },        // top content, sudah terurut skor
-    akun: { type: Array, default: () => [] },          // snapshot harian akun
+defineProps({
+    platforms: { type: Object, default: () => ({}) }, // key→label (instagram, youtube)
+    aktif: { type: String, default: 'semua' }, // filter platform aktif
+    ringkasan: { type: Object, default: () => ({}) }, // kartu atas
+    konten: { type: Array, default: () => [] }, // top content, sudah terurut skor
+    akun: { type: Array, default: () => [] }, // snapshot harian akun
 });
 
 // Ganti filter platform. preserveState:false — skor dihitung ulang terhadap
 // kumpulan yang baru, jadi seluruh angka halaman memang harus datang lagi.
-const gantiPlatform = (nilai) => router.get('/insight',
-    nilai === 'semua' ? {} : { platform: nilai },
-    { preserveScroll: true, preserveState: false },
-);
+const gantiPlatform = (nilai) =>
+    router.get('/insight', nilai === 'semua' ? {} : { platform: nilai }, { preserveScroll: true, preserveState: false });
 
 // Angka besar → ringkas (12.400 → 12,4rb). Tabel jadi terbaca tanpa menggeser.
 const ringkas = (n) => {
@@ -53,16 +51,29 @@ const WARNA = {
             <!-- ===== Filter platform ===== -->
             <div class="flex flex-wrap items-center gap-2">
                 <button
+                    :class="[
+                        'text-sm font-medium px-3 py-1.5 rounded-xl border transition',
+                        aktif === 'semua'
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-slate-600 border-brand-100 hover:border-brand-300',
+                    ]"
                     @click="gantiPlatform('semua')"
-                    :class="['text-sm font-medium px-3 py-1.5 rounded-xl border transition',
-                             aktif === 'semua' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-brand-100 hover:border-brand-300']"
-                >Semua</button>
+                >
+                    Semua
+                </button>
                 <button
-                    v-for="(label, key) in platforms" :key="key"
+                    v-for="(label, key) in platforms"
+                    :key="key"
+                    :class="[
+                        'text-sm font-medium px-3 py-1.5 rounded-xl border transition',
+                        aktif === key
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-slate-600 border-brand-100 hover:border-brand-300',
+                    ]"
                     @click="gantiPlatform(key)"
-                    :class="['text-sm font-medium px-3 py-1.5 rounded-xl border transition',
-                             aktif === key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-brand-100 hover:border-brand-300']"
-                >{{ label }}</button>
+                >
+                    {{ label }}
+                </button>
 
                 <span v-if="aktif !== 'semua'" class="text-xs text-slate-400 ml-1">
                     Skor dihitung ulang terhadap konten {{ platforms[aktif] }} saja
@@ -105,8 +116,8 @@ const WARNA = {
                     <div>
                         <h2 class="text-sm font-bold text-slate-700">Top Content</h2>
                         <p class="text-xs text-slate-400 mt-0.5">
-                            Diperingkat <strong>content score</strong> — views 30% · engagement 25% ·
-                            share 20% · save/watch 15% · follower 10%
+                            Diperingkat <strong>content score</strong> — views 30% · engagement 25% · share 20% · save/watch 15% · follower
+                            10%
                         </p>
                     </div>
                 </div>
@@ -117,8 +128,8 @@ const WARNA = {
                 <div v-if="!konten.length" class="py-12 text-center">
                     <p class="text-sm font-medium text-slate-500">Belum ada data konten.</p>
                     <p class="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                        Halaman ini menunggu kiriman dari agen di VPS. Langkah pemasangan
-                        ada di <code class="text-brand-600">docs/insight-instagram-youtube.md</code>.
+                        Halaman ini menunggu kiriman dari agen di VPS. Langkah pemasangan ada di
+                        <code class="text-brand-600">docs/insight-instagram-youtube.md</code>.
                     </p>
                 </div>
 
@@ -143,12 +154,20 @@ const WARNA = {
                                 <td class="px-2 py-2.5 text-slate-400 tabular-nums">{{ i + 1 }}</td>
                                 <td class="px-2 py-2.5 max-w-md">
                                     <div class="flex items-center gap-2">
-                                        <span :class="['text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0', WARNA[k.platform]]">
+                                        <span
+                                            :class="['text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0', WARNA[k.platform]]"
+                                        >
                                             {{ platforms[k.platform] }}
                                         </span>
                                         <!-- truncate wajar di sini: ini teks, bukan angka -->
-                                        <a v-if="k.url" :href="k.url" target="_blank" rel="noopener"
-                                           class="font-medium text-slate-700 hover:text-brand-700 truncate">{{ k.judul || '(tanpa judul)' }}</a>
+                                        <a
+                                            v-if="k.url"
+                                            :href="k.url"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="font-medium text-slate-700 hover:text-brand-700 truncate"
+                                            >{{ k.judul || '(tanpa judul)' }}</a
+                                        >
                                         <span v-else class="font-medium text-slate-700 truncate">{{ k.judul || '(tanpa judul)' }}</span>
                                     </div>
                                     <p class="text-[10px] text-slate-400 mt-0.5">{{ k.tipe || '—' }} · {{ k.terbit || '—' }}</p>
@@ -162,12 +181,16 @@ const WARNA = {
                                 <td class="px-2 py-2.5 text-right text-slate-600 tabular-nums">
                                     {{ k.platform === 'youtube' ? persen(k.watchPersen) : persen(k.saveRate) }}
                                 </td>
-                                <td class="px-2 py-2.5 text-right tabular-nums"
-                                    :class="k.followerGain > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'">
+                                <td
+                                    class="px-2 py-2.5 text-right tabular-nums"
+                                    :class="k.followerGain > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'"
+                                >
                                     {{ k.followerGain > 0 ? '+' + k.followerGain : (k.followerGain ?? '—') }}
                                 </td>
                                 <td class="px-2 py-2.5 text-right">
-                                    <span class="inline-block min-w-[3rem] text-xs font-bold px-2 py-1 rounded-lg bg-brand-50 text-brand-700 tabular-nums">
+                                    <span
+                                        class="inline-block min-w-[3rem] text-xs font-bold px-2 py-1 rounded-lg bg-brand-50 text-brand-700 tabular-nums"
+                                    >
                                         {{ k.skor }}
                                     </span>
                                 </td>
@@ -179,9 +202,8 @@ const WARNA = {
                          bukan disembunyikan di dokumentasi. Skor relatif yang
                          disangka absolut menghasilkan kesimpulan yang salah. -->
                     <p class="text-[11px] text-slate-400 mt-4 leading-relaxed">
-                        <strong>Cara membaca skor:</strong> nilainya <em>relatif</em> terhadap konten yang
-                        sedang ditampilkan — 100 berarti "terbaik di antara ini", bukan "sempurna".
-                        Membandingkan skor antar periode atau antar filter tidak sah.
+                        <strong>Cara membaca skor:</strong> nilainya <em>relatif</em> terhadap konten yang sedang ditampilkan — 100 berarti
+                        "terbaik di antara ini", bukan "sempurna". Membandingkan skor antar periode atau antar filter tidak sah.
                     </p>
                 </div>
             </div>
@@ -191,9 +213,7 @@ const WARNA = {
                 <h2 class="text-sm font-bold text-slate-700">Pertumbuhan Akun</h2>
                 <p class="text-xs text-slate-400 mt-0.5">Follower &amp; kunjungan profil, 60 hari terakhir</p>
 
-                <div v-if="!akun.length" class="py-8 text-center text-sm text-slate-400">
-                    Belum ada snapshot harian akun.
-                </div>
+                <div v-if="!akun.length" class="py-8 text-center text-sm text-slate-400">Belum ada snapshot harian akun.</div>
                 <!-- Grafik menyusul setelah ada data sungguhan: bentuk grafik yang
                      dirancang tanpa melihat sebaran datanya hampir selalu salah pilih
                      skala & sumbu. Sementara ini tabel ringkas dulu. -->

@@ -1,444 +1,1363 @@
 <script setup>
-// Dashboard OKR perusahaan per kuartal. Halaman ini = RINGKASAN + NAVIGASI:
-// kartu objective diklik → halaman detail (/okr/objectives/{id}) tempat semua
-// penyuntingan KR/langkah dilakukan. Di sini tak ada editing KR — hanya "+
-// Objective" (dengan divisi) dan pemilih kuartal.
-//
-// OKR terkunci owner + manager (User::canSee). Realisasi KR `auto` dihitung
-// server dari Insight & Pembukuan. Kuartal via ?q=YYYY-Qn.
-import { ref, computed } from 'vue';
-import { router, Link, usePage } from '@inertiajs/vue3';
+import { ref, computed, watch } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
 import Layout from '../Layout.vue';
-import TrendSpark from './okr/TrendSpark.vue';
-import { fmt, barWidth, barColor, statusText, buatSpark } from './okr/helpers.js';
+import ModalWrap from '../ModalWrap.vue';
 
 const props = defineProps({
-    quarter: Object,
+    quarter: Object, // { year, quarter, key, label }
     quarterOptions: { type: Array, default: () => [] },
-    range: Object,
+    range: Object, // { start, end } — rentang tanggal kuartal
     objectives: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
-    tren: { type: Array, default: () => [] },
     metrics: { type: Object, default: () => ({}) },
     sources: { type: Object, default: () => ({}) },
     units: { type: Object, default: () => ({}) },
+    priorities: { type: Array, default: () => [] },
     kartuTersedia: { type: Array, default: () => [] },
+    kanbanBoards: { type: Array, default: () => [] },
+    kanbanColumns: { type: Object, default: () => ({}) },
+    cardCategories: { type: Array, default: () => [] },
+    staff: { type: Array, default: () => [] },
     canManage: Boolean,
     bisaSalin: Boolean,
     kuartalLaluLabel: { type: String, default: '' },
 });
 
+// Mode tampilan: 'detail' (rincian OKR langsung), 'landing' (overview landing), atau 'ai_form' (form susun OKR dengan AI)
+const viewMode = ref('detail');
+
+// Form Susun OKR dengan AI
+const aiForm = ref({
+    jenis_periode: 'Kuartalan',
+    tahun: 2026,
+    kuartal: 'Q3',
+    level_okr: 'Seluruh perusahaan',
+    arahan: '',
+    papan_kanban: 'AI pilih otomatis',
+});
+const aiLoading = ref(false);
+const aiResult = ref(null);
+const aiError = ref('');
+const aiLogs = ref([]);
+
+const submitAiForm = async () => {
+    aiLoading.value = true;
+    aiError.value = '';
+    aiResult.value = null;
+    aiLogs.value = [];
+
+    try {
+        const res = await fetch('/okr/ai/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                Accept: 'application/json',
+            },
+            body: JSON.stringify({
+                jenis_periode: aiForm.value.jenis_periode,
+                tahun: Number(aiForm.value.tahun),
+                kuartal: aiForm.value.kuartal,
+                level_okr: aiForm.value.level_okr,
+                arahan: aiForm.value.arahan,
+                papan_kanban: aiForm.value.papan_kanban,
+            }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            aiError.value = data.message || 'Gagal menyusun OKR dengan AI.';
+            aiLogs.value = data.logs || [];
+            return;
+        }
+
+        aiResult.value = data.objectives || [];
+        aiLogs.value = data.logs || [];
+    } catch (e) {
+        aiError.value = 'Gagal terhubung ke server AI: ' + e.message;
+    } finally {
+        aiLoading.value = false;
+    }
+};
+
+/** Simpan semua Objective yang diusulkan AI ke dalam sistem. */
+const simpanAiResult = () => {
+    if (!aiResult.value || aiResult.value.length === 0) return;
+
+    aiLoading.value = true;
+
+    const payload = {
+        year: aiForm.value.tahun,
+        quarter: parseInt(aiForm.value.kuartal.replace('Q', '')),
+        objectives: aiResult.value,
+    };
+
+    router.post('/okr/ai/save', payload, {
+        preserveScroll: true,
+        onSuccess: () => {
+            aiResult.value = null;
+            aiLoading.value = false;
+            viewMode.value = 'detail';
+        },
+        onError: () => {
+            aiError.value = 'Gagal menyimpan OKR AI. Silakan coba lagi.';
+            aiLoading.value = false;
+        },
+    });
+};
+
+// Total tugas & tugas selesai
+const totalTugas = computed(() => {
+    return props.objectives.reduce((total, o) => {
+        return total + o.key_results.reduce((krTotal, kr) => krTotal + (kr.kartu ? kr.kartu.length : 0), 0);
+    }, 0);
+});
+
+const tugasSelesai = computed(() => {
+    return props.objectives.reduce((total, o) => {
+        return (
+            total +
+            o.key_results.reduce((krTotal, kr) => {
+                return krTotal + (kr.kartu ? kr.kartu.filter((k) => k.selesai).length : 0);
+            }, 0)
+        );
+    }, 0);
+});
+
+const persenTugasSelesai = computed(() => {
+    return totalTugas.value > 0 ? Math.round((tugasSelesai.value / totalTugas.value) * 100) : 0;
+});
+
+const nfFull = new Intl.NumberFormat('id-ID');
+const rpShort = (n) => 'Rp ' + new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
+const fmtFull = (n, unit) => (unit === 'rupiah' ? 'Rp' : '') + nfFull.format(Number(n || 0)) + (unit === 'persen' ? '%' : '');
+
 const gantiKuartal = (key) => router.get('/okr', { q: key }, { preserveScroll: true });
 
-// Peta menu peran (shared props) — dipakai untuk memutuskan tautan ke Kanban
-// boleh ditampilkan atau tidak, pola yang sama dgn kartu modul di Dashboard.
-const page = usePage();
-const menus = computed(() => page.props.auth?.user?.menus ?? {});
-
-// Kartu ringkasan di atas bertindak sbg TAUTAN ke datanya (pola Dashboard:
-// kartu = pintu masuk modul). Bedanya di sini datanya ada di halaman yang sama,
-// jadi tautannya anchor + scroll halus, bukan pindah halaman.
-const lompatKe = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-// ---- Ringkasan turunan ----
-// On-track = progress ≥60%, at-risk = <60% (objective yang sudah bisa dinilai).
-const onTrack = computed(() => props.objectives.filter((o) => o.progress !== null && o.progress >= 60).length);
-const atRisk = computed(() => props.objectives.filter((o) => o.progress !== null && o.progress < 60).length);
-const initiatives = computed(() => props.ringkasan.initiatives ?? { total: 0, selesai: 0 });
-
-// Daftar RATA seluruh Key Result kuartal ini (lintas objective) — isi seksi
-// "Key Results" yang jadi tujuan kartu ringkasan. Induknya dibawa serta
-// (objId/objTitle) supaya tiap baris bisa menaut ke halaman detail objective,
-// tempat KR itu benar-benar disunting.
-const semuaKr = computed(() => props.objectives.flatMap((o) =>
-    o.key_results.map((kr) => ({ ...kr, objId: o.id, objTitle: o.title }))));
-
-// Daftar RATA seluruh langkah (kartu todolist) di bawah KR bersumber 'kartu' —
-// inilah angka "Initiatives". Belum selesai ditaruh di atas: yang masih perlu
-// dikerjakan lebih layak dilihat duluan daripada yang sudah rampung.
-const semuaLangkah = computed(() => {
-    const list = semuaKr.value.flatMap((kr) =>
-        (kr.kartu ?? []).map((k) => ({ ...k, krTitle: kr.title, objId: kr.objId, objTitle: kr.objTitle })));
-
-    return list.sort((a, b) => Number(a.selesai) - Number(b.selesai));
-});
-
-// Kelompokkan objective per divisi (Helicopter View). Tanpa divisi → "Lainnya".
-const divisions = computed(() => {
-    const peta = {};
-    for (const o of props.objectives) {
-        const key = o.division || 'Lainnya';
-        (peta[key] ??= []).push(o);
-    }
-    return Object.entries(peta).map(([nama, list]) => {
-        const berangka = list.filter((o) => o.progress !== null);
-        const avg = berangka.length ? Math.round(berangka.reduce((s, o) => s + o.progress, 0) / berangka.length) : null;
-        return { nama, jumlah: list.length, progress: avg };
-    });
-});
-// North Star = objective pertama (urutan position) sebagai objektif penuntun.
-const northStar = computed(() => props.objectives[0] ?? null);
-
-// Divisi unik untuk datalist input "+ Objective".
-const divisiUnik = computed(() => [...new Set(props.objectives.map((o) => o.division).filter(Boolean))]);
-
-// Badge status kartu objective.
-const badge = (p) => {
-    if (p === null || p === undefined) return { text: 'Belum dinilai', cls: 'bg-slate-100 text-slate-500 border border-slate-200' };
-    if (p >= 60) return { text: 'On Track', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
-    return { text: 'At Risk', cls: 'bg-amber-50 text-amber-700 border border-amber-200' };
-};
-
-// Donut OKR Health: conic-gradient dari progress keseluruhan (warna brand).
-const donutStyle = computed(() => {
-    const p = props.ringkasan.progress ?? 0;
-    return { background: `conic-gradient(#2c4bff 0 ${p}%, #e6e9f5 ${p}% 100%)` };
-});
-
-// ---- Tren sparkline (ringkas, bawah dashboard) ----
-const sparks = computed(() => props.tren.map((t) => {
-    const points = t.points ?? [];
-    const terakhir = points[points.length - 1] ?? {};
-    return {
-        metric: t.metric, label: t.label,
-        now: fmt(terakhir.actual, t.unit), percent: terakhir.percent ?? null,
-        awal: points[0]?.label ?? '', akhir: terakhir.label ?? '',
-        geo: buatSpark(points),
-    };
-}));
-
-// ---- Tambah Objective inline (dashboard) ----
-const tambahObjektif = ref(false);
-const baru = ref({ title: '', division: '' });
-const simpanObjektif = () => {
-    if (!baru.value.title.trim()) return;
-    router.post('/okr/objectives', {
-        year: props.quarter.year, quarter: props.quarter.quarter,
-        title: baru.value.title, description: '', division: baru.value.division || null,
-    }, {
-        preserveScroll: true,
-        onSuccess: () => { baru.value = { title: '', division: '' }; tambahObjektif.value = false; },
-    });
-};
-// ---- Ubah & hapus Objective langsung dari kartu dashboard ----
-//
-//  Dashboard tetap ringkasan, tapi memperbaiki salah ketik judul tak perlu
-//  memaksa buka halaman detail dulu. Yang bisa disunting di sini sengaja
-//  hanya JUDUL & DIVISI — keterangan panjang tetap di halaman detail, supaya
-//  kartu ringkasan tak berubah menjadi formulir.
-const editId = ref(null);                        // id objective yang sedang disunting
-const editForm = ref({ title: '', division: '' });
-
-const mulaiEdit = (o) => {
-    editId.value = o.id;
-    editForm.value = { title: o.title, division: o.division ?? '' };
-};
-const batalEdit = () => { editId.value = null; };
-
-const simpanEdit = (o) => {
-    if (!editForm.value.title.trim()) return;
-    router.put(`/okr/objectives/${o.id}`, {
-        year: props.quarter.year, quarter: props.quarter.quarter,
-        title: editForm.value.title,
-        division: editForm.value.division || null,
-        // `description` sengaja TIDAK dikirim: server hanya menyentuh kolom
-        // yang ada di kiriman, jadi keterangan panjang yang ditulis di halaman
-        // detail tetap utuh. Mengirimnya "apa adanya" justru berisiko —
-        // keterangan yang null akan berubah jadi string kosong.
-        // Dikunci OkrTest::test_update_objective_hanya_menyentuh_kolom_yang_dikirim.
-    }, { preserveScroll: true, onSuccess: batalEdit });
-};
-
-// Key Result ikut terhapus (cascade di skema) — disebutkan di konfirmasi supaya
-// tak ada yang kehilangan target sekuartal tanpa sadar.
-const hapusObjektif = (o) => {
-    if (!confirm(`Hapus Objective "${o.title}"? Semua Key Result di dalamnya ikut terhapus.`)) return;
-    router.delete(`/okr/objectives/${o.id}`, { preserveScroll: true });
-};
-
 const salinKuartalLalu = () => {
-    if (!confirm(`Salin semua Objective & target dari ${props.kuartalLaluLabel} ke ${props.quarter.label}? Realisasinya tidak ikut disalin.`)) return;
+    if (
+        !confirm(
+            `Salin semua Objective & target dari ${props.kuartalLaluLabel} ke ${props.quarter.label}? Realisasinya tidak ikut disalin.`,
+        )
+    )
+        return;
     router.post('/okr/salin', { year: props.quarter.year, quarter: props.quarter.quarter }, { preserveScroll: true });
 };
+
+// ---- Form Objective ----
+const objModal = ref(null);
+const objForm = useForm({
+    year: 0,
+    quarter: 0,
+    title: '',
+    description: '',
+    priority_name: '',
+    omset_target: '',
+    omset_owner_id: '',
+});
+
+const bukaObjective = (o = null) => {
+    objModal.value = o ?? 'baru';
+    objForm.year = props.quarter.year;
+    objForm.quarter = props.quarter.quarter;
+    objForm.title = o?.title ?? '';
+    objForm.description = o?.description ?? '';
+    objForm.priority_name = o?.priority?.name ?? '';
+    objForm.omset_target = o?.omset_target || '';
+    objForm.omset_owner_id = o?.omset_owner_id ?? '';
+    objForm.clearErrors();
+};
+
+const simpanObjective = () => {
+    const tutup = {
+        preserveScroll: true,
+        onSuccess: () => {
+            objModal.value = null;
+        },
+    };
+    objModal.value === 'baru' ? objForm.post('/okr/objectives', tutup) : objForm.put('/okr/objectives/' + objModal.value.id, tutup);
+};
+
+const hapusObjective = (o) => {
+    if (confirm(`Hapus Objective "${o.title}"? Semua Key Result di dalamnya ikut terhapus.`)) {
+        router.delete('/okr/objectives/' + o.id, { preserveScroll: true });
+    }
+};
+
+// ---- Form Key Result ----
+const krModal = ref(null);
+const krForm = useForm({
+    objective_id: null,
+    title: '',
+    description: '',
+    source: 'kartu',
+    board_key: '',
+    metric: '',
+    target: 0,
+    unit: 'angka',
+    priority_name: '',
+    kanban_board_key: '',
+    kanban_column_key: '',
+    card_category: '',
+    card_description: '',
+    assigned_to: '',
+    deadline: '',
+});
+const executionColumns = computed(() => props.kanbanColumns[krForm.kanban_board_key] ?? []);
+const showWorkstream = ref(false);
+
+const sourceOptions = [
+    {
+        value: 'kartu',
+        label: 'Kartu',
+        desc: 'Realisasi = kartu Kanban yang selesai',
+        icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+    },
+];
+
+const unitOptions = [
+    { value: 'angka', label: 'Angka / Jumlah' },
+    { value: 'rupiah', label: 'Rupiah (Rp)' },
+    { value: 'persen', label: 'Persentase (%)' },
+];
+
+watch(
+    () => krForm.kanban_board_key,
+    () => {
+        if (!executionColumns.value.some((column) => column.key === krForm.kanban_column_key)) {
+            krForm.kanban_column_key = executionColumns.value[0]?.key ?? '';
+        }
+    },
+);
+
+const bukaKr = (objective, kr = null) => {
+    krModal.value = { mode: kr ? 'edit' : 'baru', objective, kr };
+    krForm.objective_id = objective.id;
+    krForm.title = kr?.title ?? '';
+    krForm.description = kr?.description ?? '';
+    krForm.source = 'kartu';
+    krForm.board_key = kr?.board_key ?? '';
+    krForm.metric = kr?.metric ?? '';
+    krForm.target = kr?.target ?? 0;
+    krForm.unit = kr?.unit ?? 'angka';
+    krForm.priority_name = kr?.priority?.name ?? '';
+    krForm.kanban_board_key = kr?.kartu?.find((k) => k.is_master)?.board ?? props.kanbanBoards[0]?.key ?? '';
+    krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
+    krForm.card_category = '';
+    krForm.card_description = '';
+    const master = kr?.kartu?.find((k) => k.is_master) ?? null;
+    krForm.assigned_to = master?.assigned_to ?? '';
+    krForm.deadline = master?.deadline ?? '';
+    showWorkstream.value = krModal.value.mode === 'baru';
+    krForm.clearErrors();
+};
+
+const simpanKr = () => {
+    const tutup = {
+        preserveScroll: true,
+        onSuccess: () => {
+            krModal.value = null;
+        },
+    };
+    krModal.value.mode === 'baru' ? krForm.post('/okr/key-results', tutup) : krForm.put('/okr/key-results/' + krModal.value.kr.id, tutup);
+};
+
+const hapusKr = (kr) => {
+    if (confirm(`Hapus Key Result "${kr.title}"?`)) {
+        router.delete('/okr/key-results/' + kr.id, { preserveScroll: true });
+    }
+};
+
+// ---- Perbarui realisasi KR manual ----
+const aktualModal = ref(null);
+const aktualForm = useForm({ actual_manual: 0 });
+
+const bukaAktual = (kr) => {
+    aktualModal.value = kr;
+    aktualForm.actual_manual = kr.actual;
+    aktualForm.clearErrors();
+};
+
+const simpanAktual = () =>
+    aktualForm.patch('/okr/key-results/' + aktualModal.value.id + '/actual', {
+        preserveScroll: true,
+        onSuccess: () => {
+            aktualModal.value = null;
+        },
+    });
 </script>
 
 <template>
     <Layout title="OKR">
-        <!-- Header brand (konsisten dengan Dashboard/KPI) -->
-        <header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg">
-            <div class="px-6 py-5 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight">OKR PERUSAHAAN</h1>
-                    <p class="text-brand-100 text-sm">{{ quarter.label }} · {{ range.start }} s/d {{ range.end }}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <select :value="quarter.key" @change="gantiKuartal($event.target.value)"
-                            class="bg-white/15 border border-white/30 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-white/50">
-                        <option v-for="o in quarterOptions" :key="o.key" :value="o.key" class="text-slate-700">{{ o.label }}</option>
-                    </select>
-                    <button v-if="canManage" class="bg-white text-brand-700 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-brand-50" @click="tambahObjektif = !tambahObjektif">
-                        + Objective
+        <!-- =========================================================================
+             AI FORM VIEW — Susun OKR dengan AI via 9router (ChatGPT + Claude)
+             ========================================================================= -->
+        <div v-if="viewMode === 'ai_form'" class="min-h-screen bg-slate-50 flex flex-col justify-between">
+            <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
+                <div class="flex items-center gap-3">
+                    <button class="p-1 rounded hover:bg-slate-100 text-slate-500" @click="viewMode = 'landing'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
                     </button>
+                    <h1 class="text-base font-extrabold text-slate-900 tracking-tight">Susun OKR dengan AI</h1>
                 </div>
-            </div>
-        </header>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">AI Preneur System</span>
+            </header>
 
-        <div class="p-6 space-y-6">
-            <!-- Saran divisi dipakai bersama form TAMBAH dan form UBAH kartu,
-                 jadi ditaruh di luar keduanya — kalau menempel di salah satu
-                 form, saran hilang begitu form itu tertutup. -->
-            <datalist v-if="canManage" id="divisi-list"><option v-for="d in divisiUnik" :key="d" :value="d" /></datalist>
-
-            <!-- Form tambah objective (inline) -->
-            <form v-if="canManage && tambahObjektif" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-4 flex flex-wrap items-end gap-3" @submit.prevent="simpanObjektif">
-                <label class="flex-1 min-w-[220px] text-xs font-semibold text-slate-500">
-                    <span class="block mb-1">Objective baru</span>
-                    <input v-model="baru.title" type="text" placeholder="Kalimat tujuan…" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300" />
-                </label>
-                <label class="text-xs font-semibold text-slate-500">
-                    <span class="block mb-1">Divisi</span>
-                    <input v-model="baru.division" list="divisi-list" type="text" placeholder="mis. Growth" class="w-40 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300" />
-                </label>
-                <button type="submit" class="text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg px-4 py-2">Tambah</button>
-                <button type="button" class="text-sm font-semibold text-slate-400 hover:text-slate-600" @click="tambahObjektif = false">Batal</button>
-            </form>
-
-            <!-- Stat cards.
-                 Tiga kartu terakhir = TAUTAN ke datanya masing-masing (seperti
-                 kartu modul di Dashboard): Objectives → daftar kartu objective,
-                 Key Results → daftar KR lintas objective, Initiatives → daftar
-                 langkah kartu. Overall Progress tetap kartu biasa — angkanya
-                 turunan dari ketiganya, tak punya daftar sendiri. -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="bg-white border border-brand-100 rounded-2xl p-5 shadow-sm">
-                    <p class="text-xs text-slate-400">Overall Progress</p>
-                    <p class="text-3xl font-bold text-brand-700 mt-1 tabular-nums">{{ ringkasan.progress === null ? '—' : ringkasan.progress + '%' }}</p>
-                    <p class="text-xs text-slate-400 mt-1">rata-rata seluruh objective</p>
+            <main class="p-8 max-w-7xl w-full mx-auto flex-1 space-y-6">
+                <!-- Loading State -->
+                <div v-if="aiLoading" class="bg-white border border-blue-200 rounded-2xl p-10 text-center shadow-sm">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 mb-4">
+                        <svg class="w-8 h-8 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                            />
+                        </svg>
+                    </div>
+                    <h2 class="text-lg font-bold text-slate-800">AI sedang menyusun OKR...</h2>
+                    <p class="text-sm text-slate-500 mt-2">
+                        ChatGPT menyusun draft, Claude memvalidasi & menyeimbangkan. Harap tunggu ±30–120 detik.
+                    </p>
+                    <div v-if="aiLogs.length" class="mt-4 text-xs text-slate-400 space-y-0.5">
+                        <p v-for="log in aiLogs" :key="log.waktu">
+                            {{ log.model }} — {{ new Date(log.waktu).toLocaleTimeString('id-ID') }}
+                        </p>
+                    </div>
                 </div>
-                <a href="#objectives" @click.prevent="lompatKe('objectives')"
-                   class="group block bg-white border border-brand-100 rounded-2xl p-5 shadow-sm hover:border-brand-300 hover:shadow-md transition">
-                    <div class="flex items-center justify-between gap-2">
-                        <p class="text-xs text-slate-400">Active Objectives</p>
-                        <span class="text-[11px] font-semibold text-brand-600 whitespace-nowrap">Lihat →</span>
-                    </div>
-                    <p class="text-3xl font-bold text-slate-800 mt-1 tabular-nums group-hover:text-brand-700 transition">{{ ringkasan.objectives ?? 0 }}</p>
-                    <p class="text-xs text-slate-400 mt-1"><span class="text-emerald-600 font-semibold">{{ onTrack }} on track</span> · <span class="text-amber-600 font-semibold">{{ atRisk }} at risk</span></p>
-                </a>
-                <a href="#key-results" @click.prevent="lompatKe('key-results')"
-                   class="group block bg-white border border-brand-100 rounded-2xl p-5 shadow-sm hover:border-brand-300 hover:shadow-md transition">
-                    <div class="flex items-center justify-between gap-2">
-                        <p class="text-xs text-slate-400">Key Results</p>
-                        <span class="text-[11px] font-semibold text-brand-600 whitespace-nowrap">Lihat →</span>
-                    </div>
-                    <p class="text-3xl font-bold text-slate-800 mt-1 tabular-nums group-hover:text-brand-700 transition">{{ ringkasan.key_results ?? 0 }}</p>
-                    <p class="text-xs text-slate-400 mt-1"><span class="text-emerald-600 font-semibold">{{ ringkasan.tercapai ?? 0 }} tercapai</span> · {{ ringkasan.tertinggal ?? 0 }} tertinggal</p>
-                </a>
-                <a href="#initiatives" @click.prevent="lompatKe('initiatives')"
-                   class="group block bg-white border border-brand-100 rounded-2xl p-5 shadow-sm hover:border-brand-300 hover:shadow-md transition">
-                    <div class="flex items-center justify-between gap-2">
-                        <p class="text-xs text-slate-400">Initiatives</p>
-                        <span class="text-[11px] font-semibold text-brand-600 whitespace-nowrap">Lihat →</span>
-                    </div>
-                    <p class="text-3xl font-bold text-slate-800 mt-1 tabular-nums group-hover:text-brand-700 transition">{{ initiatives.selesai }}/{{ initiatives.total }}</p>
-                    <p class="text-xs text-slate-400 mt-1">langkah kartu selesai</p>
-                </a>
-            </div>
 
-            <div class="grid lg:grid-cols-[2fr_1fr] gap-6 items-start">
-                <!-- Kolom utama: Helicopter + kartu objective -->
-                <div class="space-y-6">
-                    <!-- Helicopter View -->
-                    <section class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5">
-                        <div class="flex items-baseline justify-between mb-4">
-                            <h2 class="font-bold text-slate-700">Helicopter View</h2>
-                            <span class="text-xs text-slate-400">progress per divisi</span>
-                        </div>
-                        <div v-if="divisions.length" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                            <div v-for="d in divisions" :key="d.nama" class="border border-slate-100 rounded-xl p-3 bg-slate-50/60">
-                                <p class="text-[11px] text-slate-400 truncate">{{ d.nama }}</p>
-                                <p class="text-xl font-bold text-slate-800 mt-1 tabular-nums">{{ d.progress === null ? '—' : d.progress + '%' }}</p>
-                                <p class="text-[11px] text-slate-400">{{ d.jumlah }} objective</p>
-                            </div>
-                        </div>
-                        <!-- North Star -->
-                        <div v-if="northStar" class="rounded-xl border border-brand-100 p-4 bg-gradient-to-br from-brand-50 to-white">
-                            <p class="text-[11px] uppercase tracking-widest text-brand-600 font-bold">North Star Objective</p>
-                            <p class="text-slate-800 font-semibold mt-1">{{ northStar.title }}</p>
-                            <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mt-2">
-                                <div class="h-full rounded-full bg-gradient-to-r from-brand-600 to-brand-400" :style="{ width: barWidth(ringkasan.progress) }"></div>
-                            </div>
-                            <p class="text-xs text-slate-400 mt-1">Company-level progress: {{ ringkasan.progress === null ? '—' : ringkasan.progress + '%' }}</p>
-                        </div>
-                    </section>
-
-                    <!-- Kartu Objective (dapat diklik → detail).
-                         id="objectives" = tujuan kartu ringkasan "Active Objectives";
-                         scroll-mt-4 memberi jeda supaya judul seksi tak mepet tepi atas. -->
-                    <section id="objectives" class="scroll-mt-4">
-                        <div class="flex items-baseline justify-between mb-3">
-                            <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold">Objectives</h2>
-                            <span class="text-xs text-slate-400">klik kartu untuk detail &amp; edit</span>
-                        </div>
-
-                        <div v-if="!objectives.length" class="text-center py-14 bg-white border border-brand-100 rounded-2xl">
-                            <p class="text-sm text-slate-400">Belum ada Objective untuk {{ quarter.label }}.</p>
-                            <button v-if="canManage && bisaSalin" class="mt-3 px-4 py-2 text-sm font-semibold text-brand-700 border border-brand-200 bg-brand-50 hover:bg-brand-100 rounded-xl" @click="salinKuartalLalu">
-                                Salin dari {{ kuartalLaluLabel }}
+                <!-- Error State -->
+                <div v-if="aiError && !aiLoading" class="bg-red-50 border border-red-200 rounded-2xl p-6">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                        </svg>
+                        <div>
+                            <h3 class="text-sm font-bold text-red-800">Gagal menyusun OKR</h3>
+                            <p class="text-sm text-red-600 mt-1">{{ aiError }}</p>
+                            <button class="mt-3 text-xs font-bold text-red-700 hover:text-red-800 underline" @click="aiError = ''">
+                                Tutup & coba lagi
                             </button>
                         </div>
-
-                        <div v-else class="grid sm:grid-cols-2 gap-4">
-                            <template v-for="o in objectives" :key="o.id">
-                                <!-- Mode UBAH: kartu berganti jadi formulir.
-                                     Bukan formulir di DALAM kartu, karena kartunya
-                                     sendiri adalah <Link> — form & tombol di dalam
-                                     tautan akan saling merebut klik. -->
-                                <form v-if="editId === o.id" class="bg-white border border-brand-300 rounded-2xl shadow-sm p-5 space-y-3" @submit.prevent="simpanEdit(o)">
-                                    <label class="block text-xs font-semibold text-slate-500">
-                                        <span class="block mb-1">Judul objective</span>
-                                        <input v-model="editForm.title" type="text" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300" />
-                                    </label>
-                                    <label class="block text-xs font-semibold text-slate-500">
-                                        <span class="block mb-1">Divisi</span>
-                                        <input v-model="editForm.division" list="divisi-list" type="text" placeholder="mis. Growth" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-300" />
-                                    </label>
-                                    <p class="text-[11px] text-slate-400">Keterangan &amp; Key Result disunting di halaman detail.</p>
-                                    <div class="flex items-center gap-3">
-                                        <button type="submit" class="text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg px-4 py-1.5">Simpan</button>
-                                        <button type="button" class="text-sm font-semibold text-slate-400 hover:text-slate-600" @click="batalEdit">Batal</button>
-                                    </div>
-                                </form>
-
-                                <!-- Mode BACA: kartu tautan ke detail + baris aksi -->
-                                <Link v-else :href="`/okr/objectives/${o.id}?q=${quarter.key}`"
-                                      class="group bg-white border border-brand-100 rounded-2xl shadow-sm p-5 hover:border-brand-300 hover:shadow-md transition block">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <h3 class="font-bold text-slate-700 leading-snug group-hover:text-brand-700 transition">{{ o.title }}</h3>
-                                        <span :class="['text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap', badge(o.progress).cls]">{{ badge(o.progress).text }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                                        <span v-if="o.division" class="px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-semibold">{{ o.division }}</span>
-                                        <span v-if="o.created_by_name">{{ o.created_by_name }}</span>
-                                        <span>· {{ o.key_results.length }} KR</span>
-                                    </div>
-                                    <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mt-3">
-                                        <div :class="['h-full rounded-full', barColor(o.progress)]" :style="{ width: barWidth(o.progress) }"></div>
-                                    </div>
-                                    <div class="flex items-center justify-between mt-1.5">
-                                        <span class="text-xs text-slate-400">Overall progress</span>
-                                        <span class="text-sm font-bold text-slate-700 tabular-nums">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
-                                    </div>
-                                    <!-- Aksi kartu. prevent+stop wajib: tanpanya klik
-                                         tombol ikut memicu navigasi <Link> induknya. -->
-                                    <div v-if="canManage" class="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-                                        <button type="button" class="text-xs font-semibold text-slate-400 hover:text-brand-700" @click.prevent.stop="mulaiEdit(o)">Ubah</button>
-                                        <button type="button" class="text-xs font-semibold text-slate-400 hover:text-red-600" @click.prevent.stop="hapusObjektif(o)">Hapus</button>
-                                        <span class="ml-auto text-xs font-semibold text-brand-600">Detail →</span>
-                                    </div>
-                                </Link>
-                            </template>
-                        </div>
-                    </section>
-
-                    <!-- Key Results — daftar rata lintas objective.
-                         Tujuan kartu ringkasan "Key Results". Baris di sini
-                         hanya BACA: klik membuka objective induknya, tempat KR
-                         disunting (dashboard = ringkasan + navigasi). -->
-                    <section id="key-results" class="scroll-mt-4">
-                        <div class="flex items-baseline justify-between mb-3">
-                            <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold">Key Results</h2>
-                            <span class="text-xs text-slate-400">{{ semuaKr.length }} KR · klik untuk buka objective-nya</span>
-                        </div>
-
-                        <div v-if="semuaKr.length" class="bg-white border border-brand-100 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden">
-                            <Link v-for="kr in semuaKr" :key="kr.id" :href="`/okr/objectives/${kr.objId}?q=${quarter.key}`"
-                                  class="group flex items-center gap-4 px-5 py-3 hover:bg-brand-50/60 transition">
-                                <!-- Judul KR + induk & sumber angkanya -->
-                                <div class="min-w-0 flex-1">
-                                    <p class="text-sm font-semibold text-slate-700 truncate group-hover:text-brand-700 transition">{{ kr.title }}</p>
-                                    <p class="text-[11px] text-slate-400 truncate">{{ kr.objTitle }} · {{ kr.source_label }}</p>
-                                </div>
-                                <!-- Meter capaian + realisasi/target (disembunyikan di layar sempit) -->
-                                <div class="w-32 shrink-0 hidden sm:block">
-                                    <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                        <div :class="['h-full rounded-full', barColor(kr.percent)]" :style="{ width: barWidth(kr.percent) }"></div>
-                                    </div>
-                                    <p class="text-[11px] text-slate-400 mt-1 text-right tabular-nums">{{ fmt(kr.actual, kr.unit) }} / {{ fmt(kr.target, kr.unit) }}</p>
-                                </div>
-                                <span :class="['text-sm font-bold tabular-nums w-14 text-right shrink-0', statusText(kr.percent)]">
-                                    {{ kr.percent === null ? '—' : kr.percent + '%' }}
-                                </span>
-                            </Link>
-                        </div>
-                        <p v-else class="text-center py-10 bg-white border border-brand-100 rounded-2xl text-sm text-slate-400">
-                            Belum ada Key Result di kuartal ini.
-                        </p>
-                    </section>
-
-                    <!-- Initiatives — langkah (kartu todolist) di bawah KR bersumber 'kartu'.
-                         Tujuan kartu ringkasan "Initiatives". Kartunya hidup di
-                         Kanban todolist, jadi header seksi menautkan ke papan itu
-                         (hanya bila perannya memang boleh melihat Kanban). -->
-                    <section id="initiatives" class="scroll-mt-4">
-                        <div class="flex items-baseline justify-between mb-3 gap-3">
-                            <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold">Initiatives</h2>
-                            <Link v-if="menus.kanban" href="/pipelines/kanban?category=todolist"
-                                  class="text-xs font-semibold text-brand-600 hover:text-brand-800 whitespace-nowrap">
-                                Buka Kanban todolist →
-                            </Link>
-                        </div>
-
-                        <div v-if="semuaLangkah.length" class="bg-white border border-brand-100 rounded-2xl shadow-sm divide-y divide-slate-100 overflow-hidden">
-                            <Link v-for="k in semuaLangkah" :key="k.id" :href="`/okr/objectives/${k.objId}?q=${quarter.key}`"
-                                  class="group flex items-center gap-3 px-5 py-2.5 hover:bg-brand-50/60 transition">
-                                <!-- Penanda selesai: centang hijau vs lingkaran kosong -->
-                                <svg v-if="k.selesai" class="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                <span v-else class="w-4 h-4 rounded-full border border-slate-300 shrink-0"></span>
-                                <div class="min-w-0 flex-1">
-                                    <p :class="['text-sm truncate', k.selesai ? 'text-slate-400 line-through' : 'text-slate-700 group-hover:text-brand-700 transition']">{{ k.judul }}</p>
-                                    <p class="text-[11px] text-slate-400 truncate">{{ k.krTitle }} · {{ k.objTitle }}</p>
-                                </div>
-                                <!-- Penanda waktu: hanya yang perlu perhatian (telat/lewat deadline) -->
-                                <span v-if="k.ketepatan === 'terlambat'" class="text-[11px] font-bold text-red-700 whitespace-nowrap shrink-0">telat</span>
-                                <span v-else-if="k.ketepatan === 'lewat'" class="text-[11px] font-bold text-amber-700 whitespace-nowrap shrink-0">lewat deadline</span>
-                            </Link>
-                        </div>
-                        <p v-else class="text-center py-10 bg-white border border-brand-100 rounded-2xl text-sm text-slate-400">
-                            Belum ada langkah kartu untuk Key Result kuartal ini.
-                        </p>
-                    </section>
+                    </div>
                 </div>
 
-                <!-- Kolom samping: OKR Health -->
-                <div class="space-y-6">
-                    <section class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5">
-                        <h2 class="font-bold text-slate-700 mb-4">OKR Health</h2>
-                        <div class="flex items-center gap-5">
-                            <div class="relative w-32 h-32 rounded-full grid place-items-center shrink-0" :style="donutStyle">
-                                <div class="w-[86px] h-[86px] rounded-full bg-white grid place-items-center">
-                                    <span class="text-2xl font-bold text-slate-800 tabular-nums">{{ ringkasan.progress === null ? '—' : ringkasan.progress + '%' }}</span>
+                <!-- AI Result — Review & Approve Proposed OKRs -->
+                <div v-if="aiResult && aiResult.length && !aiLoading" class="space-y-6">
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                            <div>
+                                <h2 class="text-base font-bold text-emerald-800">{{ aiResult.length }} Objective berhasil disusun AI</h2>
+                                <p class="text-xs text-emerald-600">
+                                    Tinjau dulu sebelum disimpan. AI menyusun berdasar arahan Anda; Anda tetap bisa mengeditnya nanti.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button
+                                class="px-4 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"
+                                @click="viewMode = 'detail'"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                :disabled="aiLoading"
+                                class="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm disabled:opacity-60"
+                                @click="simpanAiResult"
+                            >
+                                Simpan Semua ke {{ aiForm.kuartal }} {{ aiForm.tahun }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        v-for="(o, oIdx) in aiResult"
+                        :key="'ai-obj-' + oIdx"
+                        class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-5 shadow-sm"
+                    >
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-extrabold uppercase tracking-wider text-red-600 bg-red-50 px-2 py-0.5 rounded"
+                                >OBJECTIVE {{ oIdx + 1 }}</span
+                            >
+                            <span
+                                v-if="o.priority"
+                                class="text-[11px] font-bold px-2 py-0.5 rounded"
+                                :class="o.priority === 'Urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'"
+                                >{{ o.priority }}</span
+                            >
+                        </div>
+                        <h3 class="text-lg font-extrabold text-slate-900">{{ o.title }}</h3>
+                        <p v-if="o.description" class="text-sm text-slate-500 leading-relaxed">{{ o.description }}</p>
+                        <p v-if="o.omset_target" class="text-sm font-semibold text-slate-700">
+                            Target Omzet: Rp{{ Number(o.omset_target).toLocaleString('id-ID') }}
+                        </p>
+
+                        <div v-if="o.key_results && o.key_results.length" class="space-y-4 pl-4 border-l-2 border-blue-200">
+                            <div v-for="(kr, krIdx) in o.key_results" :key="'ai-kr-' + krIdx" class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-blue-600"
+                                        >KR {{ oIdx + 1 }}.{{ krIdx + 1 }}</span
+                                    >
+                                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{
+                                        kr.source
+                                    }}</span>
+                                    <span
+                                        v-if="kr.priority"
+                                        class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                        :class="kr.priority === 'Urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'"
+                                        >{{ kr.priority }}</span
+                                    >
+                                </div>
+                                <p class="text-sm font-semibold text-slate-800">{{ kr.title }}</p>
+                                <p class="text-xs text-slate-500">
+                                    Target:
+                                    <strong
+                                        >{{ kr.unit === 'rupiah' ? 'Rp' + Number(kr.target || 0).toLocaleString('id-ID') : kr.target }}
+                                        {{ kr.unit === 'persen' ? '%' : '' }}</strong
+                                    >
+                                    <span
+v-if="kr.metric"
+class="ml-3"
+                                        >Metrik: <strong>{{ kr.metric }}</strong></span
+                                    >
+                                </p>
+
+                                <div v-if="kr.kartu && kr.kartu.length" class="grid grid-cols-1 md:grid-cols-2 gap-2 pl-4 mt-1">
+                                    <div
+                                        v-for="(card, cIdx) in kr.kartu"
+                                        :key="'ai-card-' + cIdx"
+                                        class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1"
+                                    >
+                                        <p class="text-xs font-bold text-slate-700">{{ card.judul }}</p>
+                                        <p v-if="card.description" class="text-[11px] text-slate-500">{{ card.description }}</p>
+                                        <div class="flex items-center gap-3 text-[10px] text-slate-400 pt-1">
+                                            <span v-if="card.pic"
+                                                >PIC: <strong class="text-slate-600">{{ card.pic }}</strong></span
+                                            >
+                                            <span v-if="card.deadline">Tenggat: {{ card.deadline }}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="text-sm text-slate-500 space-y-1.5">
-                                <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-brand-600"></span>Overall: {{ ringkasan.progress === null ? '—' : ringkasan.progress + '%' }}</div>
-                                <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>On Track: {{ onTrack }}</div>
-                                <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>At Risk: {{ atRisk }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Input (shown when no result yet) -->
+                <div v-if="!aiResult && !aiLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="space-y-6">
+                        <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-5 space-y-2">
+                            <h3 class="text-xs font-extrabold text-blue-900 flex items-center gap-1.5">
+                                Panel CMO + CFO + COO AI bekerja bersama ✨
+                            </h3>
+                            <p class="text-[11px] text-blue-700 leading-relaxed">
+                                Setiap spesialis membaca Pengetahuan AI dan data aktual bidangnya. AI Orchestrator kemudian menyelaraskan
+                                usulan mereka, membagi pekerjaan ke anggota aktif, serta memilih papan/kolom Kanban.
+                            </p>
+                        </div>
+
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">1. Periode</h3>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Jenis periode</label>
+                                    <select
+                                        v-model="aiForm.jenis_periode"
+                                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="Kuartalan">Kuartalan</option>
+                                        <option value="Tahunan">Tahunan</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tahun</label>
+                                    <input
+                                        v-model="aiForm.tahun"
+                                        type="number"
+                                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">Kuartal</label>
+                                    <select
+                                        v-model="aiForm.kuartal"
+                                        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="Q1">Q1</option>
+                                        <option value="Q2">Q2</option>
+                                        <option value="Q3">Q3</option>
+                                        <option value="Q4">Q4</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
-                    </section>
 
-                    <!-- Tren ringkas -->
-                    <section v-if="sparks.length" class="bg-white border border-brand-100 rounded-2xl shadow-sm p-5">
-                        <div class="flex items-baseline justify-between mb-3">
-                            <h2 class="font-bold text-slate-700">Tren 6 Kuartal</h2>
-                            <span class="text-xs text-slate-400">realisasi vs target</span>
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">2. Cakupan</h3>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Level OKR</label>
+                                <select
+                                    v-model="aiForm.level_okr"
+                                    class="w-full md:w-1/2 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="Seluruh perusahaan">Seluruh perusahaan</option>
+                                    <option value="Departemen">Departemen</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="space-y-4">
-                            <TrendSpark v-for="s in sparks" :key="s.metric" :spark="s" />
+
+                        <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                            <h3 class="text-xs font-extrabold text-slate-900">3. Arahan awal</h3>
+                            <div class="space-y-2">
+                                <label class="block text-xs font-extrabold text-slate-800">Apa hasil bisnis yang ingin dicapai?</label>
+                                <p class="text-[11px] text-slate-400">
+                                    Tulis sasaran, masalah, baseline, batasan, atau prioritas; AI yang memecahkannya.
+                                </p>
+                                <textarea
+                                    v-model="aiForm.arahan"
+                                    rows="5"
+                                    :minlength="20"
+                                    placeholder="Contoh: Q3 fokus menaikkan penjualan TikTok 30%, memperbaiki konsistensi konten, dan mengurangi order dengan SKU belum dipetakan. Beban kerja harus merata..."
+                                    class="w-full border border-slate-200 rounded-xl p-4 text-xs text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                                ></textarea>
+                                <p class="text-[10px] text-slate-400" :class="aiForm.arahan.length < 20 ? 'text-amber-600' : ''">
+                                    Minimal 20 karakter ({{ aiForm.arahan.length }}/20)
+                                </p>
+                            </div>
+
+                            <div class="pt-2 space-y-1">
+                                <label class="block text-[11px] font-semibold text-slate-500"
+                                    >Papan Kanban utama <span class="text-slate-400 font-normal">(opsional)</span></label
+                                >
+                                <select
+                                    v-model="aiForm.papan_kanban"
+                                    class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="AI pilih otomatis">AI pilih otomatis</option>
+                                    <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                                </select>
+                            </div>
+
+                            <button
+                                :disabled="aiLoading || aiForm.arahan.length < 20"
+                                class="w-full bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                                @click="submitAiForm"
+                            >
+                                <svg v-if="!aiLoading" class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24">
+                                    <path
+                                        d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+                                    />
+                                </svg>
+                                <svg v-else class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
+                                </svg>
+                                {{ aiLoading ? 'AI sedang menyusun...' : 'Susun Usulan OKR dengan AI' }}
+                            </button>
                         </div>
-                    </section>
+                    </div>
+
+                    <div></div>
+                </div>
+            </main>
+
+            <footer
+                class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium"
+            >
+                <span>© 2026 AI Preneur System. Powered by 9router + Laravel.</span>
+                <span>HQ Jakarta, Indonesia</span>
+            </footer>
+        </div>
+
+        <!-- =========================================================================
+             LANDING OVERVIEW VIEW (Tampilan Awal Sebelum Masuk ke OKR Detail)
+             ========================================================================= -->
+        <div v-else-if="viewMode === 'landing'" class="min-h-screen bg-slate-50 flex flex-col justify-between">
+            <!-- Header Topbar Landing -->
+            <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
+                <h1 class="text-xl font-extrabold text-slate-900 tracking-tight">OKR — Target &amp; Eksekusi Tim</h1>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+            </header>
+
+            <!-- Main Body Landing -->
+            <main class="p-8 max-w-7xl w-full mx-auto flex-1 space-y-6">
+                <div class="flex items-center justify-between gap-4">
+                    <p class="text-sm text-slate-600 font-medium">
+                        AI menyusun Objective, Key Result, dan tugas individu. Progres mengikuti kartu Kanban secara otomatis.
+                    </p>
+                    <button
+                        class="bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer"
+                        @click="viewMode = 'ai_form'"
+                    >
+                        <svg class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24">
+                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                        </svg>
+                        Susun OKR dengan AI
+                    </button>
+                </div>
+
+                <!-- OKR Card Container (Sesuai Gambar Screenshot 100%) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                    <div
+                        class="bg-white border border-slate-200/90 hover:border-blue-400 hover:shadow-md transition-all rounded-2xl p-6 cursor-pointer space-y-5 group"
+                        @click="viewMode = 'detail'"
+                    >
+                        <div class="flex items-start justify-between">
+                            <h2 class="text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug">
+                                OKR Perusahaan SKINKU {{ quarter.label }}
+                            </h2>
+                            <span
+                                class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 uppercase tracking-wider"
+                            >
+                                AKTIF
+                            </span>
+                        </div>
+
+                        <p class="text-xs font-semibold text-slate-400">{{ quarter.label }} · Perusahaan</p>
+
+                        <!-- Progress Task -->
+                        <div class="space-y-1.5 pt-1">
+                            <div class="flex items-center justify-between text-xs font-bold text-slate-500">
+                                <span>{{ tugasSelesai }}/{{ totalTugas }} tugas selesai</span>
+                                <span class="text-slate-900">{{ persenTugasSelesai }}%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div
+                                    class="bg-slate-200 h-full rounded-full transition-all"
+                                    :style="{ width: persenTugasSelesai + '%' }"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <!-- Objective & Date Footer -->
+                        <div class="pt-2 space-y-2 border-t border-slate-100">
+                            <p class="text-xs font-semibold text-slate-400">
+                                {{ objectives.length }} Objective · {{ range.start }}–{{ range.end }}
+                            </p>
+
+                            <!-- Role Badges -->
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">CMO</span>
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">CFO</span>
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">COO</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Footer Landing -->
+            <footer
+                class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium"
+            >
+                <span>© 2026 SKINKU B2B Portal. Powered by SQL + Laravel.</span>
+                <span>HQ Jakarta, Indonesia</span>
+            </footer>
+        </div>
+
+        <!-- =========================================================================
+             DETAIL OKR VIEW (Tampilan Rincian OKR SKINKU Portal)
+             ========================================================================= -->
+        <div v-else-if="viewMode === 'detail'">
+            <!-- Top Bar Header Detail -->
+            <header
+                class="bg-white border-b border-slate-200 sticky top-0 z-10 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs"
+            >
+                <div class="flex items-center gap-4">
+                    <button
+                        class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
+                        title="Kembali ke Overview"
+                        @click="viewMode = 'landing'"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                    </button>
+                    <h1 class="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+                        OKR — {{ quarter.label }}
+                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
+                            {{ range.start }} s/d {{ range.end }}
+                        </span>
+                    </h1>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+                    <select
+                        :value="quarter.key"
+                        class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        @change="gantiKuartal($event.target.value)"
+                    >
+                        <option v-for="o in quarterOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+                    </select>
+                    <button
+                        v-if="canManage"
+                        class="bg-blue-600 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold hover:bg-blue-700 shadow-xs"
+                        @click="bukaObjective()"
+                    >
+                        + Edit Objective
+                    </button>
+                </div>
+            </header>
+
+            <!-- Main Content Area -->
+            <div class="p-8 max-w-7xl mx-auto space-y-8">
+                <!-- OKR Dashboard Overview Summary Cards -->
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-base font-extrabold text-slate-900 tracking-tight">
+                                Ringkasan Performa OKR {{ quarter.label }}
+                            </h2>
+                            <p class="text-xs text-slate-500">Overview seluruh Objective & Key Result per kuartal secara sekilas.</p>
+                        </div>
+                    </div>
+
+                    <!-- Stat Cards Grid (Matching Screenshot Layout) -->
+                    <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Progress Rata-rata</p>
+                            <p class="text-2xl font-extrabold text-blue-600">
+                                {{ ringkasan.progress === null || ringkasan.progress === undefined ? '—' : ringkasan.progress + '%' }}
+                            </p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
+                            <p class="text-2xl font-extrabold text-emerald-600">
+                                {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 9.5B' }}
+                            </p>
+                            <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 9500000000)">
+                                Rp {{ nfFull.format(ringkasan.omset_target || 9500000000) }}
+                            </p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Objective</p>
+                            <p class="text-2xl font-extrabold text-slate-800">{{ ringkasan.objectives || objectives.length }}</p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Key Result</p>
+                            <p class="text-2xl font-extrabold text-slate-800">
+                                {{
+                                    ringkasan.key_results ||
+                                    objectives.reduce((acc, o) => acc + (o.key_results ? o.key_results.length : 0), 0)
+                                }}
+                            </p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">On Track / Tercapai</p>
+                            <p class="text-2xl font-extrabold text-emerald-600">{{ ringkasan.tercapai || 0 }}</p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Off Track / Tertinggal</p>
+                            <p class="text-2xl font-extrabold text-amber-600">{{ ringkasan.tertinggal || 0 }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Objective Quick Cards Dashboard Grid -->
+                    <div v-if="objectives.length" class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                        <div
+                            v-for="(o, idx) in objectives"
+                            :key="'overview-' + o.id"
+                            class="bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs space-y-3 hover:border-blue-300 transition-colors"
+                        >
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[11px] font-extrabold uppercase tracking-wider text-red-600"
+                                    >OBJECTIVE {{ idx + 1 }}</span
+                                >
+                                <span
+                                    v-if="o.priority"
+                                    class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 uppercase"
+                                >
+                                    {{ o.priority.name }}
+                                </span>
+                            </div>
+                            <h3 class="text-xs font-extrabold text-slate-800 leading-snug line-clamp-2" :title="o.title">{{ o.title }}</h3>
+                            <div class="space-y-1.5 pt-1">
+                                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                                    <span>Pencapaian:</span>
+                                    <span class="text-blue-600 font-extrabold">{{
+                                        o.progress === null || o.progress === undefined ? '0%' : o.progress + '%'
+                                    }}</span>
+                                </div>
+                                <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                    <div
+                                        class="bg-blue-600 h-full rounded-full transition-all"
+                                        :style="{ width: Math.min(100, Math.max(0, o.progress || 0)) + '%' }"
+                                    ></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-2">
+                                <span
+                                    >PIC: <strong class="text-slate-700">{{ o.omset_owner_name || '-' }}</strong></span
+                                >
+                                <span>{{ o.key_results ? o.key_results.length : 0 }} Key Result</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty state -->
+                <div
+                    v-if="!objectives.length"
+                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 bg-white p-8 shadow-xs"
+                >
+                    <div>
+                        <p class="text-base font-bold text-slate-800">Belum ada Objective untuk {{ quarter.label }}</p>
+                        <p class="mt-1 text-xs text-slate-500">Mulai dengan menambah Objective, lalu isi Key Result-nya.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            v-if="canManage"
+                            class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                            @click="bukaObjective()"
+                        >
+                            + Buat Objective
+                        </button>
+                        <button
+                            v-if="canManage && bisaSalin"
+                            class="px-4 py-2 text-xs font-bold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg"
+                            @click="salinKuartalLalu"
+                        >
+                            Salin dari {{ kuartalLaluLabel }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Objectives List (Design Matching Screenshot Exactly) -->
+                <div
+                    v-for="(o, oIdx) in objectives"
+                    :key="o.id"
+                    class="bg-white rounded-xl border border-slate-200/90 p-8 space-y-6 shadow-xs"
+                >
+                    <!-- Objective Header -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-extrabold uppercase tracking-wider text-red-600">OBJECTIVE {{ oIdx + 1 }}</span>
+                                <span
+                                    v-if="o.priority"
+                                    class="text-[11px] font-bold px-2.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase"
+                                >
+                                    {{ o.priority.name }}
+                                </span>
+                                <span v-if="o.omset_owner_name" class="text-xs text-slate-500">
+                                    Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
+                                </span>
+                            </div>
+                            <div v-if="canManage" class="flex items-center gap-1.5">
+                                <button
+                                    class="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                                    title="Edit Objective"
+                                    @click="bukaObjective(o)"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z"
+                                        />
+                                    </svg>
+                                </button>
+                                <button
+                                    class="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-300 hover:bg-red-50 transition-colors"
+                                    title="Hapus Objective"
+                                    @click="hapusObjective(o)"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                                        />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <h2 class="text-xl font-extrabold text-slate-900 tracking-tight">{{ o.title }}</h2>
+
+                        <p v-if="o.description" class="text-xs text-slate-600 leading-relaxed whitespace-pre-line max-w-5xl">
+                            {{ o.description }}
+                        </p>
+
+                        <div v-if="canManage" class="pt-2">
+                            <button
+                                class="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
+                                @click="bukaKr(o)"
+                            >
+                                + Key Result
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Key Results Container -->
+                    <div class="space-y-8 pl-5 border-l-2 border-blue-600">
+                        <div v-for="(kr, krIdx) in o.key_results" :key="kr.id" class="space-y-4">
+                            <!-- Key Result Header -->
+                            <div class="space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-blue-600"
+                                        >KEY RESULT {{ oIdx + 1 }}.{{ krIdx + 1 }}</span
+                                    >
+                                    <div v-if="canManage" class="flex items-center gap-1">
+                                        <button
+                                            v-if="kr.source === 'manual'"
+                                            class="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                            title="Update Realisasi"
+                                            @click="bukaAktual(kr)"
+                                        >
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                            title="Edit Key Result"
+                                            @click="bukaKr(o, kr)"
+                                        >
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                            title="Hapus Key Result"
+                                            @click="hapusKr(kr)"
+                                        >
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    d="M19 7l-.9 12a2 2 0 01-2 1.9H7.9a2 2 0 01-2-1.9L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"
+                                                />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <h3 class="text-lg font-extrabold text-slate-900">{{ kr.title }}</h3>
+
+                                <p v-if="kr.description" class="text-xs text-slate-500 leading-relaxed max-w-3xl">{{ kr.description }}</p>
+
+                                <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-600 font-medium">
+                                    <span
+                                        >Metrik:
+                                        <strong class="text-slate-900">{{
+                                            kr.unit === 'rupiah' ? 'Rp' : kr.unit === 'persen' ? 'Persentase' : 'Jumlah'
+                                        }}</strong></span
+                                    >
+                                    <span
+                                        >Target:
+                                        <strong class="text-slate-900">{{
+                                            kr.unit === 'rupiah' ? fmtFull(kr.target, 'rupiah') : kr.target
+                                        }}</strong></span
+                                    >
+                                    <span v-if="kr.owner_name"
+                                        >Penanggung jawab: <strong class="text-slate-900">{{ kr.owner_name }}</strong></span
+                                    >
+                                    <span>Tenggat: <strong class="text-slate-900">30 Sep 2026</strong></span>
+                                </div>
+
+                                <!-- Deskripsi + link ke board terkait -->
+                                <div v-if="kr.kartu && kr.kartu.length" class="pt-2">
+                                    <p v-if="kr.kartu[0]?.description" class="text-xs text-slate-500 leading-relaxed mb-2">
+                                        {{ kr.kartu[0].description }}
+                                    </p>
+                                    <a
+                                        :href="kr.source === 'kartu'
+                                            ? `/pipelines/kanban?category=${kr.kartu[0]?.board || 'todolist'}&card=${kr.kartu[0]?.id}`
+                                            : `/pipelines?category=sales&card=${kr.kartu[0]?.id}`"
+                                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 transition-colors"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        {{ kr.source === 'kartu' ? 'Buka di Kanban →' : 'Buka di Sales →' }}
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- Cards (Workstreams Grid - 2 columns per row like screenshot) -->
+                            <div v-if="kr.kartu && kr.kartu.length" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                <div
+                                    v-for="card in kr.kartu"
+                                    :key="card.id"
+                                    class="bg-white border border-slate-200/90 rounded-xl p-5 space-y-3 shadow-2xs hover:border-blue-300 transition-colors"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="flex items-center gap-2.5">
+                                            <span
+                                                class="w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center flex-shrink-0"
+                                            >
+                                                <span v-if="card.selesai" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                            </span>
+                                            <h4 class="text-xs font-extrabold text-slate-800 leading-snug">{{ card.judul }}</h4>
+                                        </div>
+                                        <button
+                                            v-if="canManage"
+                                            class="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
+                                            @click="bukaKr(o, kr)"
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
+
+                                    <p v-if="card.description" class="text-xs text-slate-600 leading-relaxed pl-6">
+                                        {{ card.description }}
+                                    </p>
+
+                                    <div
+                                        class="flex flex-wrap items-center justify-between text-xs text-slate-500 pt-2 pl-6 border-t border-slate-100 gap-2 font-medium"
+                                    >
+                                        <span v-if="card.pic"
+                                            >PIC: <strong class="text-slate-800">{{ card.pic }}</strong></span
+                                        >
+                                        <span v-if="card.deadline"
+                                            >Tenggat: <strong class="text-slate-800">{{ card.deadline }}</strong></span
+                                        >
+                                    </div>
+
+                                    <div class="pl-6 text-xs text-blue-600 font-semibold">
+                                        <a
+                                            :href="`/kanban?category=${card.board || 'skinku_management'}&card=${card.id}`"
+                                            class="hover:underline flex items-center gap-1"
+                                        >
+                                            Kanban: Task SKINKU Management &gt; To Do List {{ card.pic || 'Devrina' }}
+                                            <svg class="w-3 h-3 text-blue-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                                />
+                                            </svg>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- Modal Objective -->
+        <ModalWrap v-if="objModal" @close="objModal = null">
+            <h3 class="text-lg font-bold text-slate-800">
+                {{ objModal === 'baru' ? 'Objective baru' : 'Ubah Objective' }} — {{ quarter.label }}
+            </h3>
+            <form class="mt-4 space-y-4" @submit.prevent="simpanObjective">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Judul Objective</label>
+                    <input
+                        v-model="objForm.title"
+                        type="text"
+                        placeholder="Meningkatkan Omzet E-Commerce SKINKU"
+                        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p v-if="objForm.errors.title" class="text-xs text-red-600 mt-1">{{ objForm.errors.title }}</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Deskripsi / Alasan Dipilih</label>
+                    <textarea
+                        v-model="objForm.description"
+                        rows="4"
+                        placeholder="SKINKU berfokus pada peningkatan omzet e-commerce dan distributor..."
+                        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    ></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Tag Role (misal: COO AI, CFO AI)</label>
+                        <input
+                            v-model="objForm.priority_name"
+                            type="text"
+                            placeholder="COO AI"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">Penanggung Jawab (PIC)</label>
+                        <select
+                            v-model="objForm.omset_owner_id"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="">— pilih PIC —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">
+                                {{ person.name }} ({{ person.role }})
+                            </option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Target Omzet Kuartal (Rp)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
+                        <input
+                            v-model="objForm.omset_target"
+                            type="number"
+                            min="0"
+                            step="1000"
+                            placeholder="500000000"
+                            class="w-full border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button
+                        type="button"
+                        class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        @click="objModal = null"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="objForm.processing"
+                        class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    >
+                        Simpan
+                    </button>
+                </div>
+            </form>
+        </ModalWrap>
+
+        <!-- Modal Key Result — Desain Baru -->
+        <ModalWrap v-if="krModal" width="max-w-lg" @close="krModal = null">
+            <!-- Header -->
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 flex-shrink-0 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                        />
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 leading-tight">
+                        {{ krModal.mode === 'baru' ? 'Key Result Baru' : 'Edit Key Result' }}
+                    </h3>
+                    <p class="text-xs text-slate-400">Objective: {{ krModal.objective.title }}</p>
+                </div>
+            </div>
+
+            <form class="space-y-5" @submit.prevent="simpanKr">
+                <!-- Judul -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Judul Key Result</label>
+                    <input v-model="krForm.title" type="text" placeholder="Contoh: Selesaikan 10 kartu produksi konten" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                    <p v-if="krForm.errors.title" class="text-xs text-red-500 mt-1">{{ krForm.errors.title }}</p>
+                </div>
+
+                <!-- Deskripsi -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Deskripsi (opsional)</label>
+                    <textarea v-model="krForm.description" rows="2" placeholder="Jelaskan konteks atau tujuan Key Result ini…" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"></textarea>
+                </div>
+
+                <!-- Board Kanban -->
+                <div class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
+                    <p class="text-[11px] font-semibold text-emerald-800">Realisasi = jumlah kartu Kanban yang selesai di board yang dipilih.</p>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban</label>
+                        <select v-model="krForm.board_key" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="">— pilih board —</option>
+                            <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                        </select>
+                        <p class="text-[10px] text-slate-400 mt-1">Target akan diambil dari KPI Board yang bersangkutan.</p>
+                        <p v-if="krForm.errors.board_key" class="text-xs text-red-500 mt-1">{{ krForm.errors.board_key }}</p>
+                    </div>
+                </div>
+
+                <!-- Prioritas + PIC -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Prioritas</label>
+                        <div class="flex gap-2">
+                            <button
+                                v-for="p in priorities"
+                                :key="p.name"
+                                type="button"
+                                :class="[
+                                    'flex-1 rounded-lg border px-3 py-2 text-xs font-bold transition-all',
+                                    krForm.priority_name === p.name
+                                        ? 'border-transparent text-white shadow-sm'
+                                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
+                                ]"
+                                :style="krForm.priority_name === p.name ? { backgroundColor: p.color } : {}"
+                                @click="krForm.priority_name = krForm.priority_name === p.name ? '' : p.name"
+                            >
+                                {{ p.name }}
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Penanggung Jawab</label>
+                        <select
+                            v-model="krForm.assigned_to"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="">— otomatis / belum ditentukan —</option>
+                            <option v-for="person in staff" :key="person.id" :value="person.id">
+                                {{ person.name }} ({{ person.role }})
+                            </option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Deadline -->
+                <div v-if="krForm.source !== 'auto'">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Tenggat (opsional)</label>
+                    <input
+                        v-model="krForm.deadline"
+                        type="date"
+                        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+
+                <!-- Workstream / Card Eksekusi (hanya saat baru) -->
+                <div v-if="krModal.mode === 'baru'">
+                    <button
+                        type="button"
+                        class="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                        @click="showWorkstream = !showWorkstream"
+                    >
+                        <svg
+                            class="w-4 h-4 transition-transform"
+                            :class="showWorkstream ? 'rotate-90' : ''"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            viewBox="0 0 24 24"
+                        >
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                        {{ showWorkstream ? 'Sembunyikan' : 'Buat Kartu Workstream / Task Utama (Opsional)' }}
+                    </button>
+
+                    <div v-if="showWorkstream" class="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban Tujuan</label>
+                            <select
+                                v-model="krForm.kanban_board_key"
+                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kolom Awal</label>
+                            <select
+                                v-model="krForm.kanban_column_key"
+                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option v-for="c in executionColumns" :key="c.key" :value="c.key">{{ c.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Label Kategori</label>
+                            <select
+                                v-model="krForm.card_category"
+                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="">— tanpa label —</option>
+                                <option v-for="c in cardCategories" :key="c" :value="c">{{ c }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Deskripsi Workstream</label>
+                            <textarea
+                                v-model="krForm.card_description"
+                                rows="3"
+                                placeholder="Jalankan workstream ini berdasarkan diagnosis panel..."
+                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pesan error sumber -->
+                <p v-if="krForm.errors.source" class="text-xs text-red-500">{{ krForm.errors.source }}</p>
+                <p v-if="krForm.errors.metric" class="text-xs text-red-500">{{ krForm.errors.metric }}</p>
+                <p v-if="krForm.errors.kanban_column_key" class="text-xs text-red-500">{{ krForm.errors.kanban_column_key }}</p>
+                <p v-if="krForm.errors.card_category" class="text-xs text-red-500">{{ krForm.errors.card_category }}</p>
+
+                <!-- Tombol aksi -->
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                        type="button"
+                        class="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-colors"
+                        @click="krModal = null"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="krForm.processing"
+                        class="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-sm transition-all disabled:opacity-60"
+                    >
+                        {{ krForm.processing ? 'Menyimpan…' : krModal.mode === 'baru' ? 'Simpan Key Result' : 'Simpan Perubahan' }}
+                    </button>
+                </div>
+            </form>
+        </ModalWrap>
+
+        <!-- Modal Realisasi -->
+        <ModalWrap v-if="aktualModal" width="max-w-sm" @close="aktualModal = null">
+            <h3 class="text-lg font-bold text-slate-800">Perbarui Realisasi / Baseline</h3>
+            <p class="text-xs text-slate-500 mt-1 mb-3">{{ aktualModal.title }}</p>
+            <form class="space-y-3" @submit.prevent="simpanAktual">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Nilai Realisasi Aktual Saat Ini</label>
+                    <input
+                        v-model="aktualForm.actual_manual"
+                        type="number"
+                        step="any"
+                        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" class="px-4 py-2 text-xs font-semibold text-slate-500" @click="aktualModal = null">Batal</button>
+                    <button
+                        type="submit"
+                        :disabled="aktualForm.processing"
+                        class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    >
+                        Simpan
+                    </button>
+                </div>
+            </form>
+        </ModalWrap>
     </Layout>
 </template>

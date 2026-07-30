@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\BoardColumn;
 use App\Models\BoardQuarterTarget;
 use App\Models\Category;
@@ -10,9 +11,11 @@ use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
+use App\Support\OkrNotifications;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -106,7 +109,7 @@ class PipelineController extends Controller
         [$qStart, $qEnd] = Quarter::range($quarterPanel['year'], $quarterPanel['quarter']);
 
         $pipelines = Pipeline::where('category', $category)
-            ->with(['outputs', 'assignee', 'creator', 'comments.user', 'attachments.user'])
+            ->with(['outputs', 'assignee', 'creator', 'comments.user', 'attachments.user', 'tasks.assignee'])
             ->when($showArchived, fn ($q) => $q->whereNotNull('archived_at'), fn ($q) => $q->whereNull('archived_at'))
             ->when($jenis, fn ($q) => $q->whereIn('jenis', $jenis))
             ->when($quarterPilih, fn ($q) => $q->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()]))
@@ -181,10 +184,25 @@ class PipelineController extends Controller
                 'completed_at' => $p->completed_at?->toDateString(),
                 'link' => $p->link,
                 'labels' => $p->labels ?? [],
+                'key_result_id' => $p->key_result_id,
+                'is_kr_master' => (bool) $p->is_kr_master,
+                'tasks' => $p->tasks->map(fn ($task) => [
+                    'id' => $task->id,
+                    'title' => $task->title,
+                    'assigned_to' => $task->assigned_to,
+                    'assignee' => $task->assignee?->name,
+                    'deadline' => $task->deadline?->toDateString(),
+                    'done' => $task->completed_at !== null,
+                ])->values(),
+                'task_progress' => [
+                    'done' => $p->tasks->whereNotNull('completed_at')->count(),
+                    'total' => $p->tasks->count(),
+                ],
                 'done' => (bool) $p->done,                         // kartu ditandai selesai (ala Trello)
                 'revisi' => (int) $p->revisi,                        // 0=tanpa revisi, 1-3
                 // fitur kartu: deadline, deskripsi, arsip
                 'deadline' => $p->deadline?->toDateString(),
+                'score' => $p->score,
                 'description' => $p->description,
                 'archived' => (bool) $p->archived_at,
                 // komentar (terbaru dulu) + lampiran
@@ -263,6 +281,24 @@ class PipelineController extends Controller
             ];
         }
 
+        $staff = User::orderBy('name')->get(['id', 'name', 'role']);
+        $scoreBulan = [];
+        if ($showGallery) {
+            $totalScore = Pipeline::query()
+                ->whereIn('category', Category::where('type', 'kanban')->select('key'))
+                ->whereBetween('deadline', [today()->startOfMonth(), today()->endOfMonth()])
+                ->whereNotNull('assigned_to')
+                ->selectRaw('assigned_to, COALESCE(SUM(score), 0) as total')
+                ->groupBy('assigned_to')
+                ->pluck('total', 'assigned_to');
+            $scoreBulan = $staff->map(fn (User $anggota) => [
+                'id' => $anggota->id,
+                'name' => $anggota->name,
+                'score' => (int) ($totalScore[$anggota->id] ?? 0),
+                'shortage' => max(0, 100 - (int) ($totalScore[$anggota->id] ?? 0)),
+            ])->values();
+        }
+
         return Inertia::render('Kanban', [
             // Kuartal yang sedang dipakai panel + status apakah kartunya ikut disaring.
             'quarter' => [
@@ -294,15 +330,21 @@ class PipelineController extends Controller
             'jenisCounts' => $jenisCounts,                                // angka di tiap chip
             'showArchived' => $showArchived,                               // sedang lihat arsip?
             'archivedCount' => $archivedCount,                             // jumlah kartu diarsip
-            'staff' => User::orderBy('name')->get(['id', 'name', 'role']),
+            'staff' => $staff,
+            'monthlyScores' => $scoreBulan,
+            'scoreMonth' => today()->translatedFormat('F Y'),
             'outputs' => Output::orderBy('name')->get(),
             'canManage' => auth()->user()->canManageBoard($category),      // KARTU: staff boleh di board kanban, bukan Sales
             'canManageStructure' => auth()->user()->canManage(),           // KOLOM/BOARD/LAMPIRAN: owner/manager/it/admin saja
             'currentBoard' => $currentBoard,
             // Pembuat board. null utk board bawaan seeder & board lama.
             'boardCreator' => $currentBoard?->creator?->name,
-            // Definisi label (dikelola owner) untuk picker & pengelolaan di modal.
-            'labels' => Label::orderBy('id')->get(['id', 'name', 'color']),
+            // Process khusus board Kanban; Sales tetap memakai kategori deal lama.
+            // $showGallery membedakan pemanggil Kanban dari Sales pada renderer bersama ini.
+            'labels' => Label::query()
+                ->when(! $showGallery, fn ($query) => $query->where('group', 2))
+                ->orderBy('id')
+                ->get(['id', 'name', 'group', 'color']),
             // Referensi untuk form tambah/edit kartu
             'accounts' => Pipeline::ACCOUNTS,
             'jenisList' => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
@@ -343,43 +385,14 @@ class PipelineController extends Controller
         $category = $cards->pluck('category')->unique();
         abort_if($category->count() > 1, 422, 'Kartu berasal dari board berbeda.');
 
-        // Terurut posisi (forBoard), bukan pluck mentah: kolom TERAKHIR dipakai
-        // sbg penanda "pekerjaan rampung" di bawah, dan urutan hasil query tanpa
-        // ORDER BY tidak dijamin — "terakhir" bisa jadi kolom yang keliru.
         $kolom = BoardColumn::forBoard($category->first());
         $validKeys = $kolom->pluck('key')->all();
         abort_unless(in_array($data['progress'], $validKeys, true), 422, 'Kolom tak dikenal di board ini.');
 
-        // Kolom paling kanan = tahap selesai. Memakai POSISI, bukan mencocokkan
-        // nama/key 'done': kolom board dinamis & bisa dinamai apa saja
-        // ('Published', 'Tayang', 'Selesai'), jadi pencocokan kata akan gagal
-        // diam-diam di board yang tak memakai kata itu.
-        $kolomSelesai = $kolom->last()?->key;
-        $keKolomSelesai = $kolomSelesai !== null && $data['progress'] === $kolomSelesai;
-
         // Transaksi: separuh tersimpan = urutan kacau di layar semua orang.
-        DB::transaction(function () use ($data, $cards, $keKolomSelesai) {
+        DB::transaction(function () use ($data) {
             foreach ($data['ids'] as $i => $id) {
                 $ubah = ['progress' => $data['progress'], 'position' => $i];
-
-                // Drag masuk/keluar kolom terakhir ikut menggerakkan stempel
-                // selesai — tanpa ini, kartu yang diselesaikan lewat drag (cara
-                // paling lazim) tak pernah punya completed_at & luput dari
-                // analitik ketepatan. Stempel lama dipertahankan, lihat
-                // stempelSelesai().
-                //
-                // TAPI hanya untuk kartu yang benar-benar BERPINDAH kolom.
-                // Kiriman drag berisi SELURUH isi kolom tujuan (lihat
-                // Kanban.vue), jadi kartu yang sudah lama duduk di situ ikut
-                // terbawa cuma karena posisinya bergeser. Menstempel mereka
-                // juga berarti satu drag menimpa waktu selesai semua kartu
-                // lama dgn "hari ini" — deadline mereka sudah lewat, jadi
-                // seluruh papan mendadak terbaca terlambat.
-                $kartu = $cards->firstWhere('id', $id);
-
-                if ($kartu->progress !== $data['progress']) {
-                    $ubah['completed_at'] = $this->stempelSelesai($kartu, $keKolomSelesai);
-                }
 
                 Pipeline::where('id', $id)->update($ubah);
             }
@@ -392,7 +405,14 @@ class PipelineController extends Controller
     public function updateDone(Request $request, Pipeline $pipeline)
     {
         $data = $request->validate(['done' => 'required|boolean']);
+        // Transisi dinilai dari nilai SEBELUM update: null → selesai berarti
+        // pekerjaan baru rampung (bukan sekadar ditekan ulang tombolnya).
+        $baruSelesai = $pipeline->completed_at === null && $data['done'];
         $pipeline->update($data + ['completed_at' => $this->stempelSelesai($pipeline, $data['done'])]);
+
+        if ($baruSelesai && $pipeline->key_result_id) {
+            OkrNotifications::laporkanKartuSelesai($pipeline, $request->user());
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -428,6 +448,14 @@ class PipelineController extends Controller
         $pipeline = Pipeline::create($data + ['created_by' => $request->user()?->id]);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
+        // Notifikasi: kartu baru dengan penanggung jawab → beri tahu ybs.
+        if (! empty($data['assigned_to']) && ! $pipeline->done) {
+            $assignee = User::find($data['assigned_to']);
+            if ($assignee) {
+                OkrNotifications::notifikasiPenugasanKartu($pipeline, $assignee, $request->user());
+            }
+        }
+
         // Lampiran opsional saat membuat kartu (jpeg/pdf/dll). Kartu belum punya id
         // sebelum dibuat, jadi filenya ikut di request buat-kartu — bukan endpoint
         // /attachments terpisah. Logika sama dgn AttachmentController::store.
@@ -448,9 +476,22 @@ class PipelineController extends Controller
 
     public function update(Request $request, Pipeline $pipeline)
     {
-        $data = $this->validated($request);
+        $data = $this->validated($request, $pipeline);
+
+        // Catat PJ sebelum update, lalu bandingkan dgn PJ sesudah update.
+        $pjLama = $pipeline->assigned_to;
+
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
+
+        // Notifikasi: PJ berubah ke orang lain & kartu belum selesai.
+        $pjBaru = $data['assigned_to'] ?? null;
+        if ($pjBaru && (int) $pjBaru !== (int) $pjLama && ! $pipeline->done) {
+            $assignee = User::find($pjBaru);
+            if ($assignee) {
+                OkrNotifications::notifikasiPenugasanKartu($pipeline, $assignee, $request->user());
+            }
+        }
 
         return redirect()->back()->with('status', 'Entri diperbarui.');
     }
@@ -468,11 +509,17 @@ class PipelineController extends Controller
         $archiving = is_null($pipeline->archived_at);                 // sedang mengarsip?
         $pipeline->update(['archived_at' => $archiving ? now() : null]);
 
+        AuditLog::record($archiving ? 'archive' : 'restore', $pipeline);
+
         return redirect()->back()->with('status', $archiving ? 'Kartu diarsipkan.' : 'Kartu dikembalikan.');
     }
 
-    private function validated(Request $request): array
+    private function validated(Request $request, ?Pipeline $pipeline = null): array
     {
+        // UI hanya mengirim score untuk owner; pagar server ini mencegah role
+        // lain menyisipkannya lewat request manual.
+        abort_if($request->has('score') && $request->user()?->role !== 'owner', 403, 'Hanya owner yang boleh mengisi score.');
+
         $validProgress = BoardColumn::where('board_key', $request->category)->pluck('key')->all();
 
         $data = $request->validate([
@@ -486,13 +533,10 @@ class PipelineController extends Controller
             'kontak_wa' => 'nullable|string|max:40',
             'kontak_gmail' => 'nullable|string|max:255',
             'kontak_ig' => 'nullable|string|max:100',
-            // Satu label per kartu (pilih-satu, ala radio). max:1 ditegakkan di
-            // sini juga, bukan cuma di pemilih Vue: request langsung tetap
-            // tembus kalau gerbangnya hanya di frontend. Kartu lama yang
-            // terlanjur berlabel banyak tak tersentuh — validasi ini hanya
-            // berlaku untuk kiriman baru.
-            'labels' => 'nullable|array|max:1',
+            // Maksimal satu pilihan dari masing-masing kelompok kategori.
+            'labels' => 'nullable|array|max:2',
             'labels.*.name' => 'required_with:labels|string|max:50',
+            'labels.*.group' => 'required_with:labels|integer|in:1,2',
             'labels.*.color' => 'required_with:labels|string|max:40',
             'coaching' => 'nullable|string|max:255',
             'speaker' => 'nullable|string|max:255',
@@ -503,6 +547,7 @@ class PipelineController extends Controller
             'tanggal_posting' => 'nullable|date',
             'tanggal_payment' => 'nullable|date',
             'deadline' => 'nullable|date',
+            'score' => 'nullable|integer|min:0|max:100',
             'payment_status' => 'required|in:belum,dp,lunas',
             'amount_idr' => 'nullable|numeric|min:0',
             'amount_usd' => 'nullable|numeric|min:0',
@@ -513,6 +558,27 @@ class PipelineController extends Controller
             'outputs' => 'array',
             'outputs.*' => 'exists:outputs,id',
         ]);
+
+        $labelGroups = collect($data['labels'] ?? [])->pluck('group');
+        if ($labelGroups->duplicates()->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'labels' => 'Pilih maksimal satu label dari setiap kategori.',
+            ]);
+        }
+
+        $score = (int) ($data['score'] ?? 0);
+        if ($score > 0 && (empty($data['assigned_to']) || empty($data['deadline']))) {
+            throw ValidationException::withMessages([
+                'score' => 'Score memerlukan penanggung jawab dan deadline.',
+            ]);
+        }
+
+        if ($score > 0) {
+            if (! Category::where('key', $data['category'])->where('type', 'kanban')->exists()) {
+                throw ValidationException::withMessages(['score' => 'Score hanya berlaku untuk kartu Kanban.']);
+            }
+
+        }
 
         return $data;
     }

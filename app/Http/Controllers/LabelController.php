@@ -20,7 +20,7 @@ class LabelController extends Controller
         $this->pastikanOwner($request);
         Label::create($this->validated($request));
 
-        return back()->with('status', 'Label ditambahkan.');
+        return back()->with('status', 'Kategori ditambahkan.');
     }
 
     public function update(Request $request, Label $label)
@@ -28,7 +28,7 @@ class LabelController extends Controller
         $this->pastikanOwner($request);
         $label->update($this->validated($request));
 
-        return back()->with('status', 'Label diperbarui.');
+        return back()->with('status', 'Kategori diperbarui.');
     }
 
     public function destroy(Request $request, Label $label)
@@ -36,13 +36,14 @@ class LabelController extends Controller
         $this->pastikanOwner($request);
         $label->delete();
 
-        return back()->with('status', 'Label dihapus.');
+        return back()->with('status', 'Kategori dihapus.');
     }
 
     private function validated(Request $request): array
     {
         return $request->validate([
             'name'  => 'required|string|max:50',
+            'group' => 'required|integer|in:1,2',
             'color' => ['required', Rule::in(Label::COLORS)],
         ]);
     }

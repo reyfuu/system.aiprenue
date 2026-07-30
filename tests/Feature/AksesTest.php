@@ -129,7 +129,7 @@ class AksesTest extends TestCase
         $this->assertTrue($this->user('admin')->canSee('kanban'));
         $this->assertFalse($this->user('admin')->canSee('order'));
         $this->assertFalse($this->user('admin')->canSee('pembukuan'));
-        $this->assertFalse($this->user('it')->canSee('pembukuan'));
+        $this->assertTrue($this->user('it')->canSee('pembukuan'));
         $this->assertTrue($this->user('staff')->canSee('kanban'));
         $this->assertFalse($this->user('staff')->canSee('pembukuan'));
     }

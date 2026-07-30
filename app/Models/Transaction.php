@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Transaction extends Model
 {
-    protected $fillable = ['type', 'category', 'description', 'amount_idr', 'date'];
+    use Auditable;
+    protected $fillable = ['type', 'category', 'description', 'amount_idr', 'date', 'bukti_path'];
 
     protected $casts = [
         'date' => 'date',
@@ -14,4 +16,16 @@ class Transaction extends Model
     ];
 
     public const TYPES = ['pemasukan' => 'Pemasukan', 'pengeluaran' => 'Pengeluaran'];
+
+    /** Kategori umum transaksi — biar bisa dipilih dari dropdown. */
+    public const CATEGORIES = [
+        'Omzet',
+        'Biaya Operasional',
+        'Gaji / Honor',
+        'Marketing / Iklan',
+        'Sewa / Langganan',
+        'Peralatan',
+        'Transportasi',
+        'Lainnya',
+    ];
 }

@@ -28,10 +28,22 @@ const health = {
         <div class="p-6">
             <!-- Ringkasan lintas project untuk jawaban cepat di level owner. -->
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Project</p><p class="text-2xl font-bold text-brand-700 mt-1">{{ summary.boards }}</p></div>
-                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Total Kartu</p><p class="text-2xl font-bold text-slate-700 mt-1">{{ summary.cards }}</p></div>
-                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Selesai</p><p class="text-2xl font-bold text-emerald-600 mt-1">{{ summary.done }}</p></div>
-                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm"><p class="text-xs text-slate-400">Overdue</p><p class="text-2xl font-bold text-red-600 mt-1">{{ summary.overdue }}</p></div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm">
+                    <p class="text-xs text-slate-400">Project</p>
+                    <p class="text-2xl font-bold text-brand-700 mt-1">{{ summary.boards }}</p>
+                </div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm">
+                    <p class="text-xs text-slate-400">Total Kartu</p>
+                    <p class="text-2xl font-bold text-slate-700 mt-1">{{ summary.cards }}</p>
+                </div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm">
+                    <p class="text-xs text-slate-400">Selesai</p>
+                    <p class="text-2xl font-bold text-emerald-600 mt-1">{{ summary.done }}</p>
+                </div>
+                <div class="bg-white border border-brand-100 rounded-2xl p-4 shadow-sm">
+                    <p class="text-xs text-slate-400">Overdue</p>
+                    <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.overdue }}</p>
+                </div>
             </div>
 
             <p v-if="!tracking.length" class="text-center text-sm text-slate-400 py-16">Belum ada board Kanban untuk dilacak.</p>
@@ -44,13 +56,21 @@ const health = {
                             <h2 class="font-bold text-lg text-slate-700">{{ board.name }}</h2>
                             <p class="text-xs text-slate-400 mt-0.5">Aktivitas terakhir: {{ board.last_activity || 'belum ada' }}</p>
                         </div>
-                        <span :class="['inline-flex items-center gap-1.5 border rounded-full px-2.5 py-1 text-xs font-semibold', health[board.health].badge]">
+                        <span
+                            :class="[
+                                'inline-flex items-center gap-1.5 border rounded-full px-2.5 py-1 text-xs font-semibold',
+                                health[board.health].badge,
+                            ]"
+                        >
                             <span :class="['w-2 h-2 rounded-full', health[board.health].dot]"></span>{{ health[board.health].label }}
                         </span>
                     </div>
 
                     <div class="mt-5 flex items-end justify-between">
-                        <div><span class="text-3xl font-bold text-brand-700">{{ board.percent }}%</span><span class="text-xs text-slate-400 ml-2">{{ board.done }}/{{ board.total }} selesai</span></div>
+                        <div>
+                            <span class="text-3xl font-bold text-brand-700">{{ board.percent }}%</span
+                            ><span class="text-xs text-slate-400 ml-2">{{ board.done }}/{{ board.total }} selesai</span>
+                        </div>
                         <Link :href="board.url" class="text-xs font-semibold text-brand-700 hover:underline">Buka Kanban →</Link>
                     </div>
                     <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mt-2">
@@ -58,16 +78,29 @@ const health = {
                     </div>
 
                     <div class="grid grid-cols-3 gap-2 mt-4 text-center">
-                        <div class="rounded-xl bg-blue-50 p-2"><p class="text-lg font-bold text-blue-700">{{ board.active }}</p><p class="text-[10px] text-blue-600">Aktif</p></div>
-                        <div class="rounded-xl bg-red-50 p-2"><p class="text-lg font-bold text-red-700">{{ board.overdue }}</p><p class="text-[10px] text-red-600">Overdue</p></div>
-                        <div class="rounded-xl bg-amber-50 p-2"><p class="text-lg font-bold text-amber-700">{{ board.urgent }}</p><p class="text-[10px] text-amber-600">Urgent</p></div>
+                        <div class="rounded-xl bg-blue-50 p-2">
+                            <p class="text-lg font-bold text-blue-700">{{ board.active }}</p>
+                            <p class="text-[10px] text-blue-600">Aktif</p>
+                        </div>
+                        <div class="rounded-xl bg-red-50 p-2">
+                            <p class="text-lg font-bold text-red-700">{{ board.overdue }}</p>
+                            <p class="text-[10px] text-red-600">Overdue</p>
+                        </div>
+                        <div class="rounded-xl bg-amber-50 p-2">
+                            <p class="text-lg font-bold text-amber-700">{{ board.urgent }}</p>
+                            <p class="text-[10px] text-amber-600">Urgent</p>
+                        </div>
                     </div>
 
                     <!-- Distribusi menunjukkan "sekarang sampai mana" per tahap. -->
                     <div class="mt-4 pt-4 border-t border-slate-100">
                         <p class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold mb-2">Distribusi tahap</p>
                         <div class="flex flex-wrap gap-2">
-                            <span v-for="column in board.columns" :key="column.name" class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
+                            <span
+                                v-for="column in board.columns"
+                                :key="column.name"
+                                class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 border border-slate-200"
+                            >
                                 <span :class="['w-2 h-2 rounded-full', column.color]"></span>{{ column.name }} <b>{{ column.count }}</b>
                             </span>
                         </div>

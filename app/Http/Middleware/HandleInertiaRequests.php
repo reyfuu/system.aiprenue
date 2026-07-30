@@ -2,6 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Category;
+use App\Models\Pipeline;
+use App\Models\User;
+use App\Support\OkrNotifications;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -79,6 +83,7 @@ class HandleInertiaRequests extends Middleware
                         'upload' => $user->canSee('upload'),       // Upload konten multi-platform (template)
                         'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
                         'akses' => $user->canSee('akses'),       // Manajemen Akses
+                        'audit' => $user->canSee('audit'),       // Audit Log — owner + it
                     ],
                 ] : null,
             ],
@@ -89,8 +94,73 @@ class HandleInertiaRequests extends Middleware
                 'status' => fn () => $request->session()->get('status'),
             ],
 
+            // Reminder kerja personal: hanya kartu Kanban aktif yang ditugaskan
+            // ke user login, belum selesai, dan deadline-nya <= tiga hari lagi.
+            // Dibagikan global agar lonceng/notifikasi tetap hidup di semua halaman.
+            'workReminders' => fn () => $user
+                ? Pipeline::query()
+                    ->where('assigned_to', $user->id)
+                    ->whereIn('category', Category::where('type', 'kanban')->select('key'))
+                    ->whereNull('archived_at')
+                    ->whereNull('completed_at')
+                    ->where('done', false)
+                    ->whereNotNull('deadline')
+                    ->whereDate('deadline', '<=', today()->addDays(3))
+                    ->orderBy('deadline')
+                    ->limit(20)
+                    ->get(['id', 'category', 'endorse', 'deadline'])
+                    ->map(fn (Pipeline $card) => [
+                        'id' => $card->id,
+                        'title' => $card->endorse,
+                        'deadline' => $card->deadline->toDateString(),
+                        'days_left' => today()->diffInDays($card->deadline, false),
+                        'url' => route('pipelines.kanban', [
+                            'category' => $card->category,
+                            'card' => $card->id,
+                        ]),
+                    ])
+                : [],
+
+            // Riwayat notifikasi dari database server. Berbeda dari
+            // workReminders (hasil hitung deadline), item ini tetap ada sampai
+            // dibaca dan muncul untuk semua role di Layout global.
+            'serverNotifications' => fn () => $user ? $this->notifikasiServer($user) : [],
+            'unreadNotificationsCount' => fn () => $user
+                ? $user->unreadNotifications()->count()
+                : 0,
+
             // True saat owner sedang "masuk sebagai" peran lain → tampilkan bilah "Kembali".
             'impersonating' => $request->session()->has('impersonator_id'),
         ];
+    }
+
+    /**
+     * Riwayat notifikasi database untuk lonceng di Layout global.
+     *
+     *  Pengingat deadline kartu OKR dibuat MALAS tepat sebelum membaca
+     *  (maks. 1/kartu/hari, lihat OkrNotifications::ingatkanDeadline):
+     *  shared hosting produksi tak menjalankan scheduler, jadi kunjungan
+     *  halamanlah pemicunya — dan karena dipicu duluan, pengingat baru
+     *  langsung terlihat pada respons yang sama.
+     *
+     *  @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function notifikasiServer(User $user)
+    {
+        OkrNotifications::ingatkanDeadline($user);
+
+        return $user->notifications()
+            ->latest()
+            ->limit(20)
+            ->get()
+            ->map(fn ($notification) => [
+                'id' => $notification->id,
+                'title' => $notification->data['title'] ?? 'Notifikasi',
+                'message' => $notification->data['message'] ?? '',
+                'url' => $notification->data['url'] ?? null,
+                'priority' => $notification->data['priority'] ?? null,
+                'read_at' => $notification->read_at?->toIso8601String(),
+                'created_at' => $notification->created_at?->toIso8601String(),
+            ]);
     }
 }

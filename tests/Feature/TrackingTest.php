@@ -51,9 +51,14 @@ class TrackingTest extends TestCase
         $this->actingAs($this->user('manager'))->get('/tracking')->assertOk();
     }
 
-    public function test_admin_it_dan_staff_tidak_bisa_melihat_tracking(): void
+    public function test_it_bisa_melihat_tracking_sebagai_super_admin(): void
     {
-        foreach (['admin', 'it', 'staff'] as $role) {
+        $this->actingAs($this->user('it'))->get('/tracking')->assertOk();
+    }
+
+    public function test_admin_dan_staff_tidak_bisa_melihat_tracking(): void
+    {
+        foreach (['admin', 'staff'] as $role) {
             $this->actingAs($this->user($role))->get('/tracking')->assertForbidden();
         }
     }

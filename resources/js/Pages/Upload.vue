@@ -6,7 +6,7 @@ import { ref, computed } from 'vue';
 import Layout from '../Layout.vue';
 
 const props = defineProps({
-    platforms: { type: Array, default: () => [] },   // { key, name, status: 'ready'|'soon' }
+    platforms: { type: Array, default: () => [] }, // { key, name, status: 'ready'|'soon' }
 });
 
 // Platform terpilih (default: yang 'ready' saja). 'soon' tak bisa dipilih.
@@ -40,7 +40,8 @@ const kirim = () => {
         <div class="px-6 py-6 max-w-2xl">
             <!-- Banner template — jujur soal status biar tak disangka sudah jalan. -->
             <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                <strong>Masih template.</strong> Jalur upload belum aktif. <strong>YouTube</strong> yang akan bisa dicoba lebih dulu; TikTok &amp; Instagram menyusul setelah izin/OAuth siap.
+                <strong>Masih template.</strong> Jalur upload belum aktif. <strong>YouTube</strong> yang akan bisa dicoba lebih dulu; TikTok
+                &amp; Instagram menyusul setelah izin/OAuth siap.
             </div>
 
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5 space-y-5">
@@ -48,14 +49,27 @@ const kirim = () => {
                 <div>
                     <p class="text-sm font-medium text-slate-600 mb-2">Publikasikan ke</p>
                     <div class="flex flex-wrap gap-2">
-                        <button v-for="p in platforms" :key="p.key" type="button"
-                            @click="togglePlatform(p)" :disabled="p.status !== 'ready'"
-                            :class="['px-4 py-2 rounded-xl border text-sm font-semibold transition flex items-center gap-2',
-                                     p.status !== 'ready' ? 'opacity-50 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50'
-                                     : dipilih.includes(p.key) ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-300'
-                                     : 'border-slate-200 text-slate-600 hover:bg-slate-50']">
+                        <button
+                            v-for="p in platforms"
+                            :key="p.key"
+                            type="button"
+                            :disabled="p.status !== 'ready'"
+                            :class="[
+                                'px-4 py-2 rounded-xl border text-sm font-semibold transition flex items-center gap-2',
+                                p.status !== 'ready'
+                                    ? 'opacity-50 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-50'
+                                    : dipilih.includes(p.key)
+                                      ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-300'
+                                      : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                            ]"
+                            @click="togglePlatform(p)"
+                        >
                             {{ p.name }}
-                            <span v-if="p.status !== 'ready'" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-500">Segera</span>
+                            <span
+                                v-if="p.status !== 'ready'"
+                                class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-500"
+                                >Segera</span
+                            >
                             <span v-else-if="dipilih.includes(p.key)">✓</span>
                         </button>
                     </div>
@@ -63,32 +77,55 @@ const kirim = () => {
 
                 <label class="block text-sm">
                     <span class="font-medium text-slate-600">Judul</span>
-                    <input v-model="form.judul" placeholder="Judul konten…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <input
+                        v-model="form.judul"
+                        placeholder="Judul konten…"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                 </label>
 
                 <label class="block text-sm">
                     <span class="font-medium text-slate-600">Deskripsi / caption</span>
-                    <textarea v-model="form.deskripsi" rows="4" placeholder="Caption, hashtag, deskripsi…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"></textarea>
+                    <textarea
+                        v-model="form.deskripsi"
+                        rows="4"
+                        placeholder="Caption, hashtag, deskripsi…"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    ></textarea>
                 </label>
 
                 <div class="text-sm">
                     <p class="font-medium text-slate-600 mb-1">File video</p>
-                    <input id="up-file" type="file" accept="video/*" @change="form.file = $event.target.files[0]" class="hidden" />
+                    <input id="up-file" type="file" accept="video/*" class="hidden" @change="form.file = $event.target.files[0]" />
                     <div class="flex items-center gap-2">
-                        <label for="up-file" class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold transition">Pilih video</label>
+                        <label
+                            for="up-file"
+                            class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold transition"
+                            >Pilih video</label
+                        >
                         <span class="flex-1 text-slate-500 truncate">{{ form.file ? form.file.name : 'Belum ada file dipilih' }}</span>
                     </div>
                 </div>
 
                 <label class="block text-sm">
-                    <span class="font-medium text-slate-600">Jadwal <span class="font-normal text-slate-400">(opsional — kosong = publish sekarang)</span></span>
-                    <input v-model="form.jadwal" type="datetime-local" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <span class="font-medium text-slate-600"
+                        >Jadwal <span class="font-normal text-slate-400">(opsional — kosong = publish sekarang)</span></span
+                    >
+                    <input
+                        v-model="form.jadwal"
+                        type="datetime-local"
+                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                    />
                 </label>
 
                 <div class="flex items-center justify-between pt-1">
                     <p class="text-xs text-slate-400">{{ dipilih.length }} platform dipilih</p>
-                    <button type="button" @click="kirim" :disabled="!bisaKirim"
-                        class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-50">
+                    <button
+                        type="button"
+                        :disabled="!bisaKirim"
+                        class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-50"
+                        @click="kirim"
+                    >
                         Upload
                     </button>
                 </div>

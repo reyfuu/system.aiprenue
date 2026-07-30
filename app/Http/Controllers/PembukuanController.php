@@ -81,6 +81,7 @@ class PembukuanController extends Controller
                 'description' => $t->description,
                 'amount_idr'  => $t->amount_idr,
                 'date'        => $t->date?->toDateString(),
+                'bukti_path'  => $t->bukti_path,
             ]),
             'inventories' => Inventory::orderByDesc('month')->orderBy('name')->get()->map(fn ($i) => [
                 'id'             => $i->id,
@@ -90,7 +91,8 @@ class PembukuanController extends Controller
                 'month'          => $i->month?->format('Y-m'),
                 'total_value'    => $i->total_value,
             ]),
-            'types' => Transaction::TYPES, // peta pemasukan/pengeluaran
+            'types' => Transaction::TYPES,
+            'categories' => Transaction::CATEGORIES,
         ]);
     }
 

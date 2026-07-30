@@ -130,7 +130,9 @@ const doughnutOpts = {
                                 <td class="px-3 py-2.5 text-slate-600">{{ m.label }}</td>
                                 <td class="px-3 py-2.5 text-right text-emerald-600">{{ rp(m.pemasukan) }}</td>
                                 <td class="px-3 py-2.5 text-right text-red-600">{{ rp(m.pengeluaran) }}</td>
-                                <td :class="'px-3 py-2.5 text-right font-semibold ' + (m.laba >= 0 ? 'text-slate-700' : 'text-red-600')">{{ rp(m.laba) }}</td>
+                                <td :class="'px-3 py-2.5 text-right font-semibold ' + (m.laba >= 0 ? 'text-slate-700' : 'text-red-600')">
+                                    {{ rp(m.laba) }}
+                                </td>
                             </tr>
                             <!-- Kosong: placeholder lintas 4 kolom -->
                             <tr v-if="!monthly.length">
@@ -143,7 +145,9 @@ const doughnutOpts = {
 
             <!-- Tabel inventaris barang -->
             <div class="bg-white rounded-2xl shadow-sm border border-brand-100 p-5">
-                <h2 class="text-sm font-bold text-slate-700 mb-3">Inventaris Barang <span class="font-normal text-slate-400">({{ summary.invMonthLabel }})</span></h2>
+                <h2 class="text-sm font-bold text-slate-700 mb-3">
+                    Inventaris Barang <span class="font-normal text-slate-400">({{ summary.invMonthLabel }})</span>
+                </h2>
                 <div class="overflow-hidden rounded-xl border border-brand-100">
                     <table class="min-w-full text-sm">
                         <thead>

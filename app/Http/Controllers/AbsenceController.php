@@ -78,6 +78,11 @@ class AbsenceController extends Controller
 
         $absence->update(['status' => $data['status']]);
 
+        \App\Models\AuditLog::record($data['status'] === 'approved' ? 'approve' : 'reject', $absence,
+            ['status' => $absence->getOriginal('status')],
+            ['status' => $data['status']]
+        );
+
         return back()->with('status', 'Status pengajuan diperbarui.');
     }
 

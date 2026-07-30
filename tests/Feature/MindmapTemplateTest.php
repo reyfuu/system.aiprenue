@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Mindmap;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 /** Template mindmap: kerangka siap pakai saat membuat mindmap baru. */
@@ -20,12 +21,12 @@ class MindmapTemplateTest extends TestCase
     public function test_galeri_mengirim_daftar_template(): void
     {
         $this->actingAs($this->user())->get('/mindmaps')->assertOk()
-            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->assertInertia(fn (AssertableInertia $page) => $page
                 ->has('templates')
                 ->where('templates.0.key', 'kosong'));   // kosong selalu pertama
     }
 
-    /** Template kosong = perilaku lama: data null, frontend pakai MindElixir.new(). */
+    /** Template kosong = data null, frontend membuat satu root default. */
     public function test_template_kosong_tak_mengisi_data(): void
     {
         $this->actingAs($this->user())->post('/mindmaps', ['template' => 'kosong'])->assertRedirect();
@@ -33,26 +34,25 @@ class MindmapTemplateTest extends TestCase
         $this->assertNull(Mindmap::latest('id')->first()->data);
     }
 
-    /** Yang penting bukan cuma "tersimpan", tapi bentuknya DIPAHAMI mind-elixir:
-     *  wajib ada nodeData + root true + children. Salah bentuk = kanvas kosong
+    /** Yang penting bukan cuma "tersimpan", tapi bentuknya dipahami renderer:
+     *  wajib ada data.text + children. Salah bentuk = kanvas kosong
      *  padahal datanya ada. */
-    public function test_template_berisi_menghasilkan_struktur_mind_elixir(): void
+    public function test_template_berisi_menghasilkan_struktur_simple_mind_map(): void
     {
         $this->actingAs($this->user())->post('/mindmaps', ['template' => 'swot'])->assertRedirect();
 
         $data = Mindmap::latest('id')->first()->data;
 
         $this->assertIsArray($data);
-        $this->assertArrayHasKey('nodeData', $data);
-        $this->assertTrue($data['nodeData']['root']);
-        $this->assertSame('SWOT Brand', $data['nodeData']['topic']);
+        $this->assertArrayHasKey('data', $data);
+        $this->assertSame('SWOT Brand', $data['data']['text']);
 
-        $cabang = collect($data['nodeData']['children']);
-        $this->assertSame(['Kekuatan', 'Kelemahan', 'Peluang', 'Ancaman'], $cabang->pluck('topic')->all());
+        $cabang = collect($data['children']);
+        $this->assertSame(['Kekuatan', 'Kelemahan', 'Peluang', 'Ancaman'], $cabang->pluck('data.text')->all());
         $this->assertNotEmpty($cabang->first()['children'], 'tiap cabang harus punya anak');
     }
 
-    /** Id node wajib unik — mind-elixir memakainya untuk menautkan node, id kembar
+    /** Id node wajib unik — renderer memakainya untuk menautkan node, id kembar
      *  bikin node saling menimpa saat diedit. */
     public function test_semua_id_node_unik(): void
     {
@@ -60,12 +60,12 @@ class MindmapTemplateTest extends TestCase
 
         $ids = [];
         $kumpulkan = function ($node) use (&$kumpulkan, &$ids) {
-            $ids[] = $node['id'];
+            $ids[] = $node['data']['uid'];
             foreach ($node['children'] ?? [] as $anak) {
                 $kumpulkan($anak);
             }
         };
-        $kumpulkan($data['nodeData']);
+        $kumpulkan($data);
 
         $this->assertGreaterThan(5, count($ids), 'template harus punya banyak node');
         $this->assertSame(count($ids), count(array_unique($ids)), 'id node tak boleh kembar');
@@ -75,9 +75,9 @@ class MindmapTemplateTest extends TestCase
     public function test_cabang_terbagi_dua_sisi(): void
     {
         $data = Mindmap::dataDariTemplate('kampanye', 'Rencana Kampanye');
-        $arah = collect($data['nodeData']['children'])->pluck('direction')->unique()->values();
+        $arah = collect($data['children'])->pluck('data.dir')->unique()->values();
 
-        $this->assertEqualsCanonicalizing([0, 1], $arah->all(), 'harus ada cabang kiri DAN kanan');
+        $this->assertEqualsCanonicalizing(['left', 'right'], $arah->all(), 'harus ada cabang kiri DAN kanan');
     }
 
     public function test_template_ngawur_ditolak(): void

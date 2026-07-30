@@ -1,30 +1,26 @@
 <script setup>
 // Halaman Dashboard — ringkasan atas + kartu per modul (Pipeline, Kanban, Order, Mindmap, Script, Pembukuan).
-import { computed } from 'vue';               // computed untuk turunan reaktif
+import { computed } from 'vue'; // computed untuk turunan reaktif
 import { Link, router, usePage } from '@inertiajs/vue3'; // Link nav, router utk filter, usePage shared props
-import Layout from '../Layout.vue';           // Layout sudah render sidebar + flash toast
-import '../scripts/lib/charts';               // registrasi elemen Chart.js (dipakai bareng Pembukuan)
-import { Line } from 'vue-chartjs';           // komponen chart siap pakai
-import { barWidth, barColor } from './okr/helpers.js';  // meter progress OKR — dipakai ulang, jangan disalin
+import Layout from '../Layout.vue'; // Layout sudah render sidebar + flash toast
+import '../scripts/lib/charts'; // registrasi elemen Chart.js (dipakai bareng Pembukuan)
+import { Line } from 'vue-chartjs'; // komponen chart siap pakai
 
 // Props dari DashboardController — satu objek per modul
 const props = defineProps({
-    rate: [Number, String],                             // kurs USD→IDR
-    monthly: { type: Array, default: () => [] },        // omzet per bulan: { label, perAccount, total }
-    accounts: { type: Object, default: () => ({}) },    // key→label akun (urutan seri grafik)
-    summary: { type: Object, default: () => ({}) },     // ringkasan atas (grandIdr, total, lunas, outstanding)
-    pipeline: { type: Object, default: () => ({}) },    // { total, grandIdr, perCategory, categories }
-    kanban: { type: Object, default: () => ({}) },      // { total, done, boards, perProgress, progresses }
-    order: { type: Object, default: () => ({}) },       // { total, urgent, dp, nilai, perTipe, tipeOrder }
-    mindmap: { type: Object, default: () => ({}) },     // { total, latest }
-    script: { type: Object, default: () => ({}) },      // { folders, files }
-    pembukuan: { type: Object, default: () => ({}) },   // { pemasukan, pengeluaran, laba, transaksi, invTotal }
-    insight: { type: Object, default: () => ({}) },     // { konten, views, followerGain, top[] } — IG & YouTube
-    // { quarterKey, label, objectives, keyResults, progress, onTrack, atRisk, sorot[] }
-    // null = peran ini tak boleh melihat OKR (server tak mengirim angkanya sama sekali)
-    okr: { type: Object, default: null },
+    rate: [Number, String], // kurs USD→IDR
+    monthly: { type: Array, default: () => [] }, // omzet per bulan: { label, perAccount, total }
+    accounts: { type: Object, default: () => ({}) }, // key→label akun (urutan seri grafik)
+    summary: { type: Object, default: () => ({}) }, // ringkasan atas (grandIdr, total, lunas, outstanding)
+    pipeline: { type: Object, default: () => ({}) }, // { total, grandIdr, perCategory, categories }
+    kanban: { type: Object, default: () => ({}) }, // { total, done, boards, perProgress, progresses }
+    order: { type: Object, default: () => ({}) }, // { total, urgent, dp, nilai, perTipe, tipeOrder }
+    mindmap: { type: Object, default: () => ({}) }, // { total, latest }
+    script: { type: Object, default: () => ({}) }, // { folders, files }
+    pembukuan: { type: Object, default: () => ({}) }, // { pemasukan, pengeluaran, laba, transaksi, invTotal }
+    insight: { type: Object, default: () => ({}) }, // { konten, views, followerGain, top[] } — IG & YouTube
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
-    daftar: { type: Object, default: null },            // drill-down: null = tampilkan grafik
+    daftar: { type: Object, default: null }, // drill-down: null = tampilkan grafik
 });
 
 // Satu pintu untuk semua navigasi dashboard. `bulan` dan `lihat` harus selalu
@@ -33,10 +29,10 @@ const props = defineProps({
 // jadi bug yang membingungkan karena angkanya berubah tanpa sebab yang terlihat.
 const pindah = (ubah) => {
     const q = { bulan: props.filter.bulan, lihat: props.daftar?.kunci ?? '', ...ubah };
-    router.get('/dashboard',
-        Object.fromEntries(Object.entries(q).filter(([, v]) => v && v !== 'semua')),
-        { preserveScroll: true, preserveState: false },
-    );
+    router.get('/dashboard', Object.fromEntries(Object.entries(q).filter(([, v]) => v && v !== 'semua')), {
+        preserveScroll: true,
+        preserveState: false,
+    });
 };
 
 // preserveState:false disengaja: seluruh angka halaman datang dari server & harus
@@ -52,12 +48,12 @@ const bukaDaftar = (kunci) => pindah({ lihat: props.daftar?.kunci === kunci ? ''
 // utuh": tutup drill-down apa pun, kembalikan grafik. Dijaga `props.daftar` —
 // tanpa itu, klik saat grafik sudah tampil memicu round-trip ke server yang
 // hasilnya sama persis dengan yang sedang dilihat.
-const tutupDaftar = () => { if (props.daftar) pindah({ lihat: '' }); };
+const tutupDaftar = () => {
+    if (props.daftar) pindah({ lihat: '' });
+};
 
 // Label periode aktif untuk penanda di samping dropdown
-const labelBulanAktif = computed(
-    () => props.filter.opsi.find((o) => o.value === props.filter.bulan)?.label ?? props.filter.bulan,
-);
+const labelBulanAktif = computed(() => props.filter.opsi.find((o) => o.value === props.filter.bulan)?.label ?? props.filter.bulan);
 
 // Peta menu yang boleh dilihat user → kartu modul ikut digating seperti sidebar
 const page = usePage();
@@ -87,18 +83,18 @@ const lineData = computed(() => ({
             label,
             data: props.monthly.map((m) => m.perAccount?.[key] ?? 0),
             borderColor: warna,
-            backgroundColor: warna,   // warna titik & kotak legend
+            backgroundColor: warna, // warna titik & kotak legend
             borderWidth: 2,
             pointRadius: 3,
             pointHoverRadius: 5,
-            tension: 0.3,             // sedikit melengkung; 0 bikin patah-patah
+            tension: 0.3, // sedikit melengkung; 0 bikin patah-patah
         };
     }),
 }));
 const lineOpts = {
     responsive: true,
-    maintainAspectRatio: false,   // wajib false agar chart mengikuti tinggi container
-    interaction: { mode: 'index', intersect: false },   // hover di mana saja pada bulan itu → dua garis sekaligus
+    maintainAspectRatio: false, // wajib false agar chart mengikuti tinggi container
+    interaction: { mode: 'index', intersect: false }, // hover di mana saja pada bulan itu → dua garis sekaligus
     plugins: {
         legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, usePointStyle: true } },
         tooltip: {
@@ -113,7 +109,7 @@ const lineOpts = {
     scales: {
         x: { grid: { display: false } },
         y: {
-            beginAtZero: true,   // tanpa ini sumbu mulai dari nilai terendah & selisihnya terlihat berlebihan
+            beginAtZero: true, // tanpa ini sumbu mulai dari nilai terendah & selisihnya terlihat berlebihan
             ticks: { callback: (v) => 'Rp ' + Number(v).toLocaleString('id-ID') },
             grid: { color: '#eef2ff' },
         },
@@ -165,8 +161,8 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <label class="text-sm font-medium text-slate-600">Periode</label>
                 <select
                     :value="filter.bulan"
-                    @change="gantiBulan($event.target.value)"
                     class="border border-brand-100 bg-white rounded-xl px-3 py-2 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-brand-400 outline-none"
+                    @change="gantiBulan($event.target.value)"
                 >
                     <option value="semua">Semua bulan</option>
                     <option v-for="o in filter.opsi" :key="o.value" :value="o.value">{{ o.label }}</option>
@@ -174,18 +170,23 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
                 <!-- Penanda periode aktif: tanpa ini, angka yang mengecil gampang
                      disangka data hilang, bukan hasil filter. -->
-                <span v-if="filter.bulan !== 'semua'" class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold pl-2.5 pr-1 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-100">
+                <span
+                    v-if="filter.bulan !== 'semua'"
+                    class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold pl-2.5 pr-1 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-100"
+                >
                     Menampilkan {{ labelBulanAktif }}
                     <!-- Sasaran klik minimal 24x24 (w-6 h-6). Dulu cuma glyph &times;
                          telanjang tanpa padding — lebarnya ~8px, praktis mustahil
                          dikenai di trackpad. Padding kanan chip dikurangi (pr-1)
                          supaya tombol yang membesar tak bikin chip terlihat gemuk. -->
                     <button
-                        @click="gantiBulan('semua')"
                         title="Tampilkan semua bulan"
                         aria-label="Hapus filter periode"
                         class="inline-flex items-center justify-center w-6 h-6 rounded-md text-base leading-none text-brand-500 hover:text-brand-800 hover:bg-brand-100 focus:ring-2 focus:ring-brand-400 outline-none"
-                    >&times;</button>
+                        @click="gantiBulan('semua')"
+                    >
+                        &times;
+                    </button>
                 </span>
                 <span v-else class="text-xs text-slate-400">Semua order sejak awal</span>
             </div>
@@ -204,10 +205,15 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                      tombolnya sengaja tidak memberi isyarat bisa diklik (cursor-default,
                      tanpa hover) — kalau tidak, orang mengkliknya lalu tak terjadi apa-apa
                      dan mengira ada yang rusak. -->
-                <button @click="tutupDaftar" :disabled="!daftar"
-                     :title="daftar ? 'Kembali ke grafik omzet' : null"
-                     :class="['text-left bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white outline-none transition',
-                              daftar ? 'cursor-pointer hover:shadow-md hover:brightness-110 focus:ring-2 focus:ring-brand-300' : 'cursor-default']">
+                <button
+                    :disabled="!daftar"
+                    :title="daftar ? 'Kembali ke grafik omzet' : null"
+                    :class="[
+                        'text-left bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl shadow-sm p-4 text-white outline-none transition',
+                        daftar ? 'cursor-pointer hover:shadow-md hover:brightness-110 focus:ring-2 focus:ring-brand-300' : 'cursor-default',
+                    ]"
+                    @click="tutupDaftar"
+                >
                     <p class="text-xs text-brand-100 font-medium">
                         Grand Omzet (IDR)
                         <span v-if="daftar" class="ml-1 opacity-80">· ← grafik</span>
@@ -217,11 +223,16 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <!-- Omzet per akun: pecahan Grand Omzet, jadi ditaruh tepat di sebelahnya.
                      FK + AI Preneur selalu = Grand Omzet. Dirender dari daftar akun, bukan
                      dua blok disalin — nambah akun cukup di Order::ACCOUNTS. -->
-                <button v-for="(akun, key) in summary.perAccount" :key="key"
-                     @click="bukaDaftar(key)"
-                     :aria-pressed="daftar?.kunci === key"
-                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
-                              daftar?.kunci === key ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
+                <button
+                    v-for="(akun, key) in summary.perAccount"
+                    :key="key"
+                    :aria-pressed="daftar?.kunci === key"
+                    :class="[
+                        'text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                        daftar?.kunci === key ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100',
+                    ]"
+                    @click="bukaDaftar(key)"
+                >
                     <p class="text-xs text-slate-500 font-medium">Omzet {{ akun.label }}</p>
                     <!-- JANGAN pasang `truncate` di angka uang. "Rp 91.046.8..."
                          terlihat seperti angka utuh padahal digitnya hilang —
@@ -231,23 +242,40 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                     <p class="text-[10px] text-slate-400 mt-0.5">{{ akun.total }} order</p>
                 </button>
                 <!-- Total order -->
-                <button @click="bukaDaftar('all')" :aria-pressed="daftar?.kunci === 'all'"
-                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
-                              daftar?.kunci === 'all' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
+                <button
+                    :aria-pressed="daftar?.kunci === 'all'"
+                    :class="[
+                        'text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                        daftar?.kunci === 'all' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100',
+                    ]"
+                    @click="bukaDaftar('all')"
+                >
                     <p class="text-xs text-slate-500 font-medium">Total Order</p>
                     <p class="text-2xl font-bold text-brand-700 mt-1">{{ summary.total }}</p>
                 </button>
                 <!-- Lunas = tipe pembayaran Full (Order tak kenal status 'belum') -->
-                <button @click="bukaDaftar('full')" :aria-pressed="daftar?.kunci === 'full'"
-                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
-                              daftar?.kunci === 'full' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
+                <button
+                    :aria-pressed="daftar?.kunci === 'full'"
+                    :class="[
+                        'text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                        daftar?.kunci === 'full' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100',
+                    ]"
+                    @click="bukaDaftar('full')"
+                >
                     <p class="text-xs text-slate-500 font-medium">Lunas (Full)</p>
-                    <p class="text-2xl font-bold text-emerald-600 mt-1">{{ summary.lunas }}<span class="text-sm text-slate-400 font-medium"> / {{ summary.total }}</span></p>
+                    <p class="text-2xl font-bold text-emerald-600 mt-1">
+                        {{ summary.lunas }}<span class="text-sm text-slate-400 font-medium"> / {{ summary.total }}</span>
+                    </p>
                 </button>
                 <!-- Outstanding = order yang baru DP -->
-                <button @click="bukaDaftar('dp')" :aria-pressed="daftar?.kunci === 'dp'"
-                     :class="['text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
-                              daftar?.kunci === 'dp' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100']">
+                <button
+                    :aria-pressed="daftar?.kunci === 'dp'"
+                    :class="[
+                        'text-left bg-white rounded-2xl shadow-sm border p-4 transition hover:border-brand-300 hover:shadow focus:ring-2 focus:ring-brand-400 outline-none',
+                        daftar?.kunci === 'dp' ? 'border-brand-500 ring-2 ring-brand-200' : 'border-brand-100',
+                    ]"
+                    @click="bukaDaftar('dp')"
+                >
                     <p class="text-xs text-slate-500 font-medium">Outstanding (DP)</p>
                     <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.outstanding }}</p>
                 </button>
@@ -272,7 +300,7 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                             </span>
                         </p>
                     </div>
-                    <button @click="tutupDaftar" class="text-xs font-medium text-slate-500 hover:text-brand-700 whitespace-nowrap">
+                    <button class="text-xs font-medium text-slate-500 hover:text-brand-700 whitespace-nowrap" @click="tutupDaftar">
                         Tutup, tampilkan grafik
                     </button>
                 </div>
@@ -297,21 +325,25 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                                 <td class="px-1 py-2 text-slate-500">{{ b.tipeOrder }}</td>
                                 <td class="px-1 py-2 text-slate-500">{{ b.akun }}</td>
                                 <td class="px-1 py-2">
-                                    <span :class="['text-xs font-semibold px-2 py-0.5 rounded-md',
-                                                   b.bayar === 'Full' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700']">
+                                    <span
+                                        :class="[
+                                            'text-xs font-semibold px-2 py-0.5 rounded-md',
+                                            b.bayar === 'Full' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700',
+                                        ]"
+                                    >
                                         {{ b.bayar }}
                                     </span>
                                 </td>
                                 <!-- tabular-nums: angka rata secara vertikal biar mudah dibandingkan -->
-                                <td class="px-1 py-2 text-right font-semibold text-brand-700 tabular-nums whitespace-nowrap">{{ rp(b.totalIdr) }}</td>
+                                <td class="px-1 py-2 text-right font-semibold text-brand-700 tabular-nums whitespace-nowrap">
+                                    {{ rp(b.totalIdr) }}
+                                </td>
                                 <td class="px-1 py-2 text-right text-slate-400 tabular-nums whitespace-nowrap">{{ b.tanggal || '—' }}</td>
                             </tr>
                             <!-- Kosong itu hasil yang sah (mis. belum ada DP bulan ini),
                                  jadi katakan, jangan tampilkan tabel kosong tanpa kata. -->
                             <tr v-if="!daftar.baris.length">
-                                <td colspan="6" class="px-1 py-6 text-center text-sm text-slate-400">
-                                    Tidak ada order pada kriteria ini.
-                                </td>
+                                <td colspan="6" class="px-1 py-6 text-center text-sm text-slate-400">Tidak ada order pada kriteria ini.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -323,7 +355,9 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 <div class="flex items-baseline justify-between gap-3 mb-4">
                     <div>
                         <h2 class="text-sm font-bold text-slate-700">Omzet per Bulan</h2>
-                        <p class="text-xs text-slate-400 mt-0.5">Order per tanggal bayar, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}</p>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            Order per tanggal bayar, satu garis per akun · USD dikonversi kurs {{ rp(rate) }}
+                        </p>
                     </div>
                     <span class="text-xs text-slate-400 whitespace-nowrap">{{ monthly.length }} bulan</span>
                 </div>
@@ -336,53 +370,29 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
             <!-- ===== Kartu ringkasan per modul ===== -->
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-                <!-- ---- OKR: progress target kuartal berjalan ----
-                     Ditaruh paling depan: ini pertanyaan tingkat perusahaan
-                     ("target kuartal ini sejauh mana"), sedangkan kartu lain
-                     bicara per modul. `okr` null utk peran yg tak boleh melihat,
-                     jadi v-if-nya ke datanya — bukan cuma ke menus. -->
-                <Link v-if="okr" :href="`/okr?q=${okr.quarterKey}`" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
-                    <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-sm font-bold text-slate-700">OKR · {{ okr.label }}</h2>
-                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
-                    </div>
-                    <p class="text-3xl font-bold text-brand-700">
-                        {{ okr.progress === null ? '—' : okr.progress + '%' }}
-                        <span class="text-sm text-slate-400 font-medium">progress</span>
-                    </p>
-                    <p class="text-xs text-slate-400 mt-1">
-                        {{ okr.objectives }} objective · {{ okr.keyResults }} KR ·
-                        <span class="text-emerald-600 font-semibold">{{ okr.onTrack }} on track</span> ·
-                        <span class="text-amber-600 font-semibold">{{ okr.atRisk }} at risk</span>
-                    </p>
-                    <!-- Sorotan: objective dgn progress terendah (paling perlu ditengok) -->
-                    <div v-if="okr.sorot.length" class="mt-4 space-y-2.5">
-                        <div v-for="o in okr.sorot" :key="o.id">
-                            <div class="flex items-center justify-between text-xs mb-1 gap-2">
-                                <span class="text-slate-500 truncate">{{ o.title }}</span>
-                                <span class="font-semibold text-slate-700 tabular-nums whitespace-nowrap">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
-                            </div>
-                            <div class="h-1.5 rounded-full bg-brand-50 overflow-hidden">
-                                <div :class="'h-full ' + barColor(o.progress)" :style="{ width: barWidth(o.progress) }"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <p v-else class="mt-4 text-xs text-slate-400">Belum ada Objective untuk kuartal ini.</p>
-                </Link>
-
                 <!-- ---- Insight: performa konten IG & YouTube (ringkas) ---- -->
-                <Link v-if="menus.insight" href="/insight" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.insight"
+                    href="/insight"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Insight</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ ringkas(insight.views) }} <span class="text-sm text-slate-400 font-medium">views</span></p>
-                    <p class="text-xs text-slate-400 mt-1">{{ insight.konten ?? 0 }} konten · <span class="text-emerald-600 font-semibold">+{{ ringkas(insight.followerGain) }}</span> follower</p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ ringkas(insight.views) }} <span class="text-sm text-slate-400 font-medium">views</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ insight.konten ?? 0 }} konten ·
+                        <span class="text-emerald-600 font-semibold">+{{ ringkas(insight.followerGain) }}</span> follower
+                    </p>
                     <!-- Top 3 konten. Skor RELATIF thd kumpulan (sama spt menu Insight). -->
                     <div v-if="insight.top && insight.top.length" class="mt-4 space-y-2">
                         <div v-for="(k, i) in insight.top" :key="i" class="flex items-center gap-2 text-sm">
-                            <span :class="['w-2 h-2 rounded-full flex-shrink-0', k.platform === 'youtube' ? 'bg-red-500' : 'bg-pink-500']"></span>
+                            <span
+                                :class="['w-2 h-2 rounded-full flex-shrink-0', k.platform === 'youtube' ? 'bg-red-500' : 'bg-pink-500']"
+                            ></span>
                             <span class="flex-1 text-slate-600 truncate">{{ k.judul || '(tanpa judul)' }}</span>
                             <span class="text-xs font-bold text-brand-700 tabular-nums">{{ k.skor }}</span>
                         </div>
@@ -391,12 +401,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Pipeline: entri per board + omzet ---- -->
-                <Link v-if="menus.pipeline" href="/pipelines" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.pipeline"
+                    href="/pipelines"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Pipeline</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ pipeline.total }} <span class="text-sm text-slate-400 font-medium">entri</span></p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ pipeline.total }} <span class="text-sm text-slate-400 font-medium">entri</span>
+                    </p>
                     <!-- "Estimasi", bukan "Omzet": ini nilai corong Sales & bisa batal.
                          Omzet nyata = Order (ringkasan atas). Dua-duanya bernama Omzet
                          bikin angkanya terlihat saling bertentangan. -->
@@ -411,12 +427,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Kanban: task per progress ---- -->
-                <Link v-if="menus.kanban" href="/pipelines/kanban" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.kanban"
+                    href="/pipelines/kanban"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Kanban</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ kanban.done }} <span class="text-sm text-slate-400 font-medium">/ {{ kanban.total }} done</span></p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ kanban.done }} <span class="text-sm text-slate-400 font-medium">/ {{ kanban.total }} done</span>
+                    </p>
                     <p class="text-xs text-slate-400 mt-1">{{ kanban.boards }} board</p>
                     <div class="mt-4 space-y-2.5">
                         <!-- Loop progress standar (label pv, key pk) -->
@@ -436,12 +458,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Order: nilai pembayaran + order per tipe ---- -->
-                <Link v-if="menus.order" href="/orders" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.order"
+                    href="/orders"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Order</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ order.total }} <span class="text-sm text-slate-400 font-medium">order</span></p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ order.total }} <span class="text-sm text-slate-400 font-medium">order</span>
+                    </p>
                     <p class="text-xs text-slate-400 mt-1">Nilai {{ rp(order.nilai) }}</p>
                     <div class="mt-4 space-y-2">
                         <!-- Loop tipe order (label tv, key tk) -->
@@ -460,12 +488,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Mindmap ---- -->
-                <Link v-if="menus.mindmap" href="/mindmaps" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.mindmap"
+                    href="/mindmaps"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Mindmap</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ mindmap.total }} <span class="text-sm text-slate-400 font-medium">mindmap</span></p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ mindmap.total }} <span class="text-sm text-slate-400 font-medium">mindmap</span>
+                    </p>
                     <div class="mt-4 space-y-2 text-sm">
                         <div class="flex items-center justify-between">
                             <span class="text-slate-500">Terakhir diubah</span>
@@ -476,12 +510,18 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Script ---- -->
-                <Link v-if="menus.script" href="/script" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.script"
+                    href="/script"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Script</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
                     </div>
-                    <p class="text-3xl font-bold text-brand-700">{{ script.files }} <span class="text-sm text-slate-400 font-medium">naskah</span></p>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ script.files }} <span class="text-sm text-slate-400 font-medium">naskah</span>
+                    </p>
                     <div class="mt-4 space-y-2 text-sm">
                         <div class="flex items-center justify-between">
                             <span class="text-slate-500">Folder</span>
@@ -493,7 +533,11 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                 </Link>
 
                 <!-- ---- Pembukuan: dari transaksi, bukan omzet pipeline ---- -->
-                <Link v-if="menus.pembukuan" href="/pembukuan" class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition">
+                <Link
+                    v-if="menus.pembukuan"
+                    href="/pembukuan"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-sm font-bold text-slate-700">Pembukuan</h2>
                         <span class="text-xs text-brand-600 font-semibold">Lihat →</span>

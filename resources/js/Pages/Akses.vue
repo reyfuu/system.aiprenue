@@ -2,9 +2,9 @@
 // Halaman Manajemen Akses: matriks centang peran × menu.
 // Sumber kebenaran hak akses ada di tabel `role_menu_access` (lihat User::canSee),
 // halaman ini yang mengubahnya — jadi aturan bisa diganti tanpa deploy ulang.
-import { computed } from 'vue';                          // computed: cek peran user login
+import { computed, ref } from 'vue'; // computed: cek peran user login; ref: pesan gagal simpan
 import { useForm, usePage, router } from '@inertiajs/vue3'; // useForm matriks, usePage auth, router aksi
-import Layout from '../Layout.vue';                      // layout bersama (sidebar + toast)
+import Layout from '../Layout.vue'; // layout bersama (sidebar + toast)
 
 // Hanya owner asli yang boleh "masuk sebagai" (gerbang sebenarnya di server).
 const page = usePage();
@@ -13,26 +13,22 @@ const isOwner = computed(() => page.props.auth?.user?.role === 'owner');
 const masukSebagai = (role) => router.post('/impersonate/' + role);
 
 const props = defineProps({
-    roles:    Object,   // key peran -> label ("owner" -> "Owner")
-    menus:    Object,   // key menu  -> label ("kanban" -> "Kanban")
-    akses:    Object,   // matriks saat ini: peran -> [menu yang dicentang]
-    kelola:   Object,   // matriks menu dengan level CRUD
-    terkunci: Array,    // peran yang tak bisa diubah (owner) — pagar anti-kekunci
+    roles: Object, // key peran -> label ("owner" -> "Owner")
+    menus: Object, // key menu  -> label ("kanban" -> "Kanban")
+    akses: Object, // matriks saat ini: peran -> [menu yang dicentang]
+    kelola: Object, // matriks menu dengan level CRUD
+    terkunci: Array, // peran yang tak bisa diubah (owner) — pagar anti-kekunci
 });
 
 // Salinan matriks untuk diedit. Wajib disalin: prop Inertia readonly, dan
 // centang/hapus di bawah memutasi arraynya langsung.
 // Field TOP-LEVEL `akses` (bukan form.data.akses) sesuai konvensi useForm repo ini.
 const form = useForm({
-    akses: Object.fromEntries(
-        Object.keys(props.roles).map((r) => [r, [...(props.akses[r] || [])]]),
-    ),
-    kelola: Object.fromEntries(
-        Object.keys(props.roles).map((r) => [r, [...(props.kelola[r] || [])]]),
-    ),
+    akses: Object.fromEntries(Object.keys(props.roles).map((r) => [r, [...(props.akses[r] || [])]])),
+    kelola: Object.fromEntries(Object.keys(props.roles).map((r) => [r, [...(props.kelola[r] || [])]])),
 });
 
-const dikunci = (role) => props.terkunci.includes(role);          // owner: selalu penuh
+const dikunci = (role) => props.terkunci.includes(role); // owner: selalu penuh
 const dicentang = (role, menu) => dikunci(role) || form.akses[role].includes(menu);
 const izinTetap = (role, menu) => menu === 'pembukuan';
 const izinTetapAktif = (role, menu) => menu === 'pembukuan' && ['owner', 'manager'].includes(role);
@@ -71,7 +67,19 @@ const toggleBaris = (role) => {
     if (kosongkan) form.kelola[role] = [];
 };
 
-const simpan = () => form.put('/akses', { preserveScroll: true });
+// Umpan balik gagal simpan. Tanpa ini halaman diam saat server MENOLAK simpan:
+// centang optimistis bertahan lalu "hilang" setelah refresh — persis keluhan yang
+// muncul kalau bundle/izin/migrasi server tak sinkron. Sukses tetap lewat toast Layout.
+const pesanGagal = ref(null);
+const simpan = () => {
+    pesanGagal.value = null;
+    form.put('/akses', {
+        preserveScroll: true,
+        onError: (errors) => {
+            pesanGagal.value = Object.values(errors)[0] || 'Gagal menyimpan hak akses. Coba muat ulang halaman lalu simpan lagi.';
+        },
+    });
+};
 </script>
 
 <template>
@@ -83,14 +91,31 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
                     <h1 class="text-2xl font-bold tracking-tight">MANAJEMEN AKSES</h1>
                     <p class="text-brand-100 text-sm">Atur menu yang boleh dilihat tiap peran</p>
                 </div>
-                <button @click="simpan" :disabled="form.processing"
-                        class="bg-white text-brand-700 hover:bg-brand-50 text-sm font-semibold px-5 py-2.5 rounded-xl shadow transition disabled:opacity-60">
+                <button
+                    :disabled="form.processing"
+                    class="bg-white text-brand-700 hover:bg-brand-50 text-sm font-semibold px-5 py-2.5 rounded-xl shadow transition disabled:opacity-60"
+                    @click="simpan"
+                >
                     {{ form.processing ? 'Menyimpan…' : 'Simpan perubahan' }}
                 </button>
             </div>
         </header>
 
         <div class="p-6">
+            <!-- Umpan balik gagal simpan: tanpa ini penolakan server tak terlihat. -->
+            <div
+                v-if="pesanGagal"
+                class="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
+                <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 9v4m0 4h.01M10.29 3.86l-8.48 14.7A1 1 0 002.67 20h18.66a1 1 0 00.86-1.44l-8.48-14.7a1 1 0 00-1.72 0z"
+                    />
+                </svg>
+                <span>{{ pesanGagal }}</span>
+            </div>
             <!-- Matriks. overflow-x-auto: 10 kolom menu lebih lebar dari layar sempit,
                  dan tabel TIDAK boleh bikin seluruh halaman geser mendatar. -->
             <div class="bg-white border border-brand-100 rounded-2xl shadow-sm overflow-x-auto">
@@ -98,8 +123,13 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
                     <thead>
                         <tr class="border-b border-brand-100 bg-brand-50/60">
                             <th class="text-left font-semibold text-slate-600 px-4 py-3 sticky left-0 bg-brand-50/60">Peran</th>
-                            <th v-for="(label, key) in menus" :key="key"
-                                class="px-3 py-3 font-semibold text-slate-600 text-center whitespace-nowrap">{{ label }}</th>
+                            <th
+                                v-for="(label, key) in menus"
+                                :key="key"
+                                class="px-3 py-3 font-semibold text-slate-600 text-center whitespace-nowrap"
+                            >
+                                {{ label }}
+                            </th>
                             <th class="px-3 py-3"></th>
                         </tr>
                     </thead>
@@ -109,34 +139,53 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
                                 {{ labelRole }}
                                 <!-- Kenapa owner dikunci: kalau aksesnya bisa dicabut, satu centang salah
                                      bisa bikin TAK ADA yang bisa membuka halaman ini lagi. -->
-                                <span v-if="dikunci(role)" class="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                                <span
+                                    v-if="dikunci(role)"
+                                    class="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"
+                                >
                                     selalu penuh
                                 </span>
                             </td>
                             <td v-for="(label, key) in menus" :key="key" class="px-3 py-3 text-center">
                                 <!-- Content memakai level akses, menu lama tetap checkbox lihat/tidak. -->
-                                <select v-if="key === 'content'" :value="levelContent(role)" :disabled="dikunci(role)"
-                                        @change="setLevelContent(role, $event.target.value)"
-                                        class="border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white disabled:opacity-50">
+                                <select
+                                    v-if="key === 'content'"
+                                    :value="levelContent(role)"
+                                    :disabled="dikunci(role)"
+                                    class="border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white disabled:opacity-50"
+                                    @change="setLevelContent(role, $event.target.value)"
+                                >
                                     <option value="off">Nonaktif</option>
                                     <option value="view">Lihat saja</option>
                                     <option value="crud">CRUD</option>
                                 </select>
-                                <input v-else type="checkbox" class="accent-brand-600 w-4 h-4 disabled:opacity-40"
-                                       :checked="izinTetap(role, key) ? izinTetapAktif(role, key) : dicentang(role, key)"
-                                       :disabled="dikunci(role) || izinTetap(role, key)"
-                                       :aria-label="`${labelRole} boleh lihat ${label}`"
-                                       @change="toggle(role, key)" />
+                                <input
+                                    v-else
+                                    type="checkbox"
+                                    class="accent-brand-600 w-4 h-4 disabled:opacity-40"
+                                    :checked="izinTetap(role, key) ? izinTetapAktif(role, key) : dicentang(role, key)"
+                                    :disabled="dikunci(role) || izinTetap(role, key)"
+                                    :aria-label="`${labelRole} boleh lihat ${label}`"
+                                    @change="toggle(role, key)"
+                                />
                             </td>
                             <td class="px-3 py-3 text-right whitespace-nowrap">
                                 <div class="flex items-center justify-end gap-3">
                                     <!-- Masuk sebagai contoh user peran ini (owner saja, bukan baris owner). -->
-                                    <button v-if="isOwner && role !== 'owner'" type="button" @click="masukSebagai(role)"
-                                            class="text-xs font-medium text-amber-600 hover:text-amber-800 whitespace-nowrap">
+                                    <button
+                                        v-if="isOwner && role !== 'owner'"
+                                        type="button"
+                                        class="text-xs font-medium text-amber-600 hover:text-amber-800 whitespace-nowrap"
+                                        @click="masukSebagai(role)"
+                                    >
                                         masuk sebagai
                                     </button>
-                                    <button v-if="!dikunci(role)" type="button" @click="toggleBaris(role)"
-                                            class="text-xs font-medium text-brand-600 hover:text-brand-800 whitespace-nowrap">
+                                    <button
+                                        v-if="!dikunci(role)"
+                                        type="button"
+                                        class="text-xs font-medium text-brand-600 hover:text-brand-800 whitespace-nowrap"
+                                        @click="toggleBaris(role)"
+                                    >
                                         semua / kosong
                                     </button>
                                 </div>
@@ -147,9 +196,8 @@ const simpan = () => form.put('/akses', { preserveScroll: true });
             </div>
 
             <p class="text-xs text-slate-500 mt-3">
-                Perubahan berlaku begitu disimpan. Owner sengaja tak bisa diubah supaya tak ada
-                keadaan semua orang terkunci di luar. ProdPilot itu tautan ke aplikasi lain —
-                mencabutnya hanya menyembunyikan menunya di sini.
+                Perubahan berlaku begitu disimpan. Owner sengaja tak bisa diubah supaya tak ada keadaan semua orang terkunci di luar.
+                ProdPilot itu tautan ke aplikasi lain — mencabutnya hanya menyembunyikan menunya di sini.
             </p>
         </div>
     </Layout>

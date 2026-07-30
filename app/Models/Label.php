@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 /** Definisi label kartu (dikelola owner). Lihat migrasi create_labels_table. */
 class Label extends Model
 {
-    protected $fillable = ['name', 'color'];
+    protected $fillable = ['name', 'group', 'color'];
 
     /**
      * Palet warna label. WAJIB subset dari safelist di resources/css/app.css

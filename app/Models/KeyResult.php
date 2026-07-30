@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use App\Support\OkrMetrics;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,24 +11,26 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Satu Key Result: bagian OKR yang benar-benar terukur. */
 class KeyResult extends Model
 {
+    use Auditable;
     protected $fillable = [
-        'objective_id', 'title', 'source', 'metric', 'target', 'actual_manual', 'unit', 'position',
+        'objective_id', 'title', 'description', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
         'owner_id', 'created_by',
     ];
 
     protected $casts = [
         'target' => 'decimal:2',
         'actual_manual' => 'decimal:2',
+        'priority' => 'array',
         'position' => 'integer',
     ];
 
     /** Dari mana realisasinya berasal.
      *  `auto`   — dihitung dari Insight/Pembukuan, tak bisa diketik tangan.
      *  `manual` — diperbarui sendiri; untuk target tanpa sumber data.
-     *  `kartu`  — dihitung dari kartu Kanban todolist yang ditautkan ke KR ini
-     *             & sudah selesai. Otomatis seperti `auto`, tapi sumbernya
-     *             pekerjaan di papan, bukan modul Insight/Pembukuan. */
-    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kartu Todolist'];
+     *  `kartu`  — dihitung dari card Kanban yang ditautkan ke KR ini dan sudah
+     *             selesai. Otomatis seperti `auto`, tetapi sumbernya pekerjaan
+     *             pada board pilihan, bukan modul Insight/Pembukuan. */
+    public const SOURCES = ['auto' => 'Otomatis', 'manual' => 'Manual', 'kartu' => 'Kanban'];
 
     /** Satuan, dipakai UI untuk memformat angka. */
     public const UNITS = ['angka' => 'Angka', 'rupiah' => 'Rupiah', 'persen' => 'Persen'];

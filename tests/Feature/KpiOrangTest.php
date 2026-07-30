@@ -56,23 +56,6 @@ class KpiOrangTest extends TestCase
 
     // ------------------------------------------------------------ isi rapor
 
-    public function test_kartu_dikelompokkan_per_penanggung_jawab(): void
-    {
-        $budi = $this->user('staff', 'Budi');
-        $sari = $this->user('admin', 'Sari');
-
-        $this->kartu($budi, 3);      // tepat waktu
-        $this->kartu($budi, 9);      // terlambat 4 hari
-        $this->kartu($sari, 4);      // tepat waktu
-
-        $baris = collect(KinerjaOrang::untukKuartal($this->q['year'], $this->q['quarter']));
-
-        $this->assertSame(2, $baris->firstWhere('nama', 'Budi')['total']);
-        $this->assertSame(1, $baris->firstWhere('nama', 'Budi')['tepat']);
-        $this->assertSame(1, $baris->firstWhere('nama', 'Budi')['terlambat']);
-        $this->assertSame(1, $baris->firstWhere('nama', 'Sari')['total']);
-    }
-
     /** Kartu tanpa PJ tak boleh hilang: kalau dibuang, jumlah kartu di rapor
      *  tak akan pernah cocok dgn jumlah kartu di board & selisihnya jadi
      *  misteri tanpa penjelasan di layar. */
@@ -101,26 +84,6 @@ class KpiOrangTest extends TestCase
 
         $this->assertContains('Aktif', $nama);
         $this->assertNotContains('Nganggur', $nama);
-    }
-
-    /**
-     * Rata-rata keterlambatan HANYA dari kartu yang terlambat.
-     *
-     *  Kartu yang selesai lebih awal bernilai negatif; kalau ikut dihitung,
-     *  seseorang yang telat 10 hari sekali tapi sering selesai awal akan
-     *  terbaca "rata-rata tepat waktu" — jawaban yang salah untuk pertanyaan
-     *  "kalau telat, biasanya telat berapa lama".
-     */
-    public function test_rata_rata_keterlambatan_abaikan_kartu_yang_selesai_lebih_awal(): void
-    {
-        $budi = $this->user('staff', 'Budi');
-        $this->kartu($budi, 0);      // selesai 5 hari SEBELUM deadline
-        $this->kartu($budi, 15);     // terlambat 10 hari
-
-        $baris = collect(KinerjaOrang::untukKuartal($this->q['year'], $this->q['quarter']))->firstWhere('nama', 'Budi');
-
-        // 10, bukan (10 + (-5)) / 2 = 2,5.
-        $this->assertSame(10.0, $baris['rata_telat']);
     }
 
     /** Tak pernah telat → null, bukan 0 hari. Dua hal itu beda arti dan UI

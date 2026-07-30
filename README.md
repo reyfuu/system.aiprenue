@@ -14,7 +14,7 @@ Dokumen terkait: [PRD.md](docs/PRD.md) · [DESIGN.md](docs/DESIGN.md) · [SKILLS
 | **Sales** (Pipeline) | Tabel lengkap per board: account, endorse, output, progress, tanggal, payment, jumlah IDR/USD, kontak (WA/Gmail/DM IG), notes. Filter + CRUD via modal + report PDF. |
 | **Kanban** | Papan bergaya Trello. Board & kolom **dinamis** (bukan enum tetap), drag-drop kartu & kolom, label warna. Detail fitur kartu di bawah. |
 | **Order** | Pencatatan order & output produksi. |
-| **Mindmap** | Papan mindmap (mind-elixir) dengan 5 kerangka siap pakai: Kosong, Brainstorm Konten, SWOT Brand, Rencana Kampanye, Alur Produksi. |
+| **Mindmap** | Papan mindmap (simple-mind-map) dengan 5 kerangka siap pakai: Kosong, Brainstorm Konten, SWOT Brand, Rencana Kampanye, Alur Produksi. |
 | **Script** | Naskah harian per brand (Raveloux, Rave Tailor, Freddie Kashawan). Diisi agen luar lewat `POST /api/scripts` — lihat [Integrasi agen Script](#integrasi-agen-script). |
 | **Pembukuan** | Rekap keuangan Vue + **Chart.js**: pemasukan/pengeluaran per bulan, laba, inventaris, report PDF. |
 | **User** | CRUD user + peran. |
@@ -73,7 +73,7 @@ Reset password butuh SMTP aktif di `.env` produksi, dan `APP_URL` **wajib** doma
 | Backend | Laravel 13, PHP 8.5 |
 | Frontend | **Inertia.js + Vue 3** (SPA, `<script setup>`), Tailwind CSS v4, Vite |
 | Grafik | Chart.js via vue-chartjs (khusus modul Pembukuan) |
-| Mindmap | mind-elixir |
+| Mindmap | simple-mind-map |
 | Database | **MySQL / MariaDB** (dev & produksi) |
 | PDF | barryvdh/laravel-dompdf (report Sales & Pembukuan) |
 | Kurs | open.er-api.com (gratis, tanpa API key; cache 12 jam, fallback Rp 16.000) |

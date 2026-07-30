@@ -3,6 +3,35 @@
 Semua perubahan penting pada proyek ini dicatat di sini.
 Format mengikuti gaya [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
+## [Belum dirilis] — branch `feat/okr-omzet-notifications`
+
+Target omzet pindah dari KR semu ke Objective, dan seluruh alur OKR kini
+tersambung ke notifikasi server: penugasan, koreksi penugasan, laporan
+penyelesaian, dan pengingat deadline.
+
+### Ditambahkan
+
+- **Target omzet pada Objective** — disimpan langsung di Objective (bukan KR
+  lagi), lengkap dengan PIC yang menerima notifikasi penugasan.
+- **Notifikasi OKR menyeluruh** (`app/Support/OkrNotifications.php`) — satu
+  tempat untuk semua aturan; `data.kind` membedakan jenisnya:
+  - `okr_assignment` — penugasan PIC omzet, PIC card eksekusi, dan kini juga
+    **penanggung jawab KR tanpa card** (sebelumnya diam saja).
+  - `okr_perubahan` — koreksi PIC/target omzet lewat edit Objective dan
+    koreksi PIC/deadline card utama lewat edit KR; PIC lama diberi tahu
+    dialihkan/dicabut, PIC baru menerima penugasan.
+  - `okr_selesai` — pemilik OKR (PJ & pembuat KR) menerima laporan saat kartu
+    tertaut KR selesai, lewat drag, tombol selesai, maupun tuntasnya semua
+    tugas kartu.
+  - `okr_deadline` — pengingat deadline kartu OKR untuk PIC, maks. 1/kartu/
+    hari, dibuat malas saat ia membuka halaman (tanpa cron/queue).
+- Notifikasi tak pernah dikirim ke pelaku perubahannya sendiri.
+
+### Diperbaiki
+
+- Kolom `is_kr_master` tak ikut terpilih di query kartu OKR, jadi semua kartu
+  terbaca bukan master dan prefill board di form edit KR selalu meleset.
+
 ## [Belum dirilis] — branch `feature/okr-kpi-kinerja`
 
 Menambahkan tiga modul strategi & kinerja tim (OKR, KPI, rapor per orang),

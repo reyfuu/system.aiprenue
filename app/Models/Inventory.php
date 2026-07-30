@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 class Inventory extends Model
 {
+    use Auditable;
     protected $fillable = ['name', 'qty', 'unit_value_idr', 'month'];
 
     protected $casts = [

@@ -5,8 +5,8 @@ import { Link } from '@inertiajs/vue3';
 import Layout from '../Layout.vue';
 
 defineProps({
-    brand: Object,                              // { key, name }
-    packs: { type: Array, default: () => [] },  // [{ date, label, count, name, pdf }]
+    brand: Object, // { key, name }
+    packs: { type: Array, default: () => [] }, // [{ date, label, count, name, pdf }]
 });
 </script>
 
@@ -16,7 +16,9 @@ defineProps({
         <header class="bg-gradient-to-r from-brand-700 to-brand-600 text-white shadow-lg">
             <div class="px-6 py-5 flex items-center gap-3">
                 <Link href="/script" title="Semua brand" class="text-brand-100 hover:text-white transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
                 </Link>
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight">{{ brand.name.toUpperCase() }}</h1>
@@ -27,14 +29,18 @@ defineProps({
 
         <div class="px-6 py-6">
             <!-- Kosong: brand tetap terlihat di galeri walau agen belum mengirim paket. -->
-            <p v-if="!packs.length" class="text-sm text-slate-400 py-12 text-center">
-                Belum ada paket PDF untuk brand ini.
-            </p>
+            <p v-if="!packs.length" class="text-sm text-slate-400 py-12 text-center">Belum ada paket PDF untuk brand ini.</p>
 
             <!-- Satu kartu = satu PDF utuh berisi seluruh naskah pada tanggal itu. -->
             <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                <a v-for="pack in packs" :key="pack.date" :href="pack.pdf" target="_blank" rel="noopener"
-                   class="group block bg-white rounded-2xl border border-brand-100 shadow-sm hover:border-brand-300 hover:shadow-md transition overflow-hidden">
+                <a
+                    v-for="pack in packs"
+                    :key="pack.date"
+                    :href="pack.pdf"
+                    target="_blank"
+                    rel="noopener"
+                    class="group block bg-white rounded-2xl border border-brand-100 shadow-sm hover:border-brand-300 hover:shadow-md transition overflow-hidden"
+                >
                     <!-- Pratinjau visual sederhana seperti kartu berkas di Drive; isi PDF
                          tidak di-embed agar browser tidak mengunduh dokumen dua kali. -->
                     <div class="h-44 bg-slate-100 p-5 flex items-center justify-center">
@@ -47,7 +53,11 @@ defineProps({
                         </div>
                     </div>
                     <div class="p-4 flex items-start gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-[10px] font-black flex-shrink-0">PDF</div>
+                        <div
+                            class="w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                        >
+                            PDF
+                        </div>
                         <div class="min-w-0">
                             <p class="text-sm font-semibold text-slate-700 truncate group-hover:text-brand-700">{{ pack.name }}</p>
                             <p class="text-xs text-slate-400 mt-1">{{ pack.label }} · {{ pack.count }} naskah</p>

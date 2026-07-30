@@ -3,6 +3,7 @@
 use App\Http\Controllers\AbsenceController;
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
@@ -14,10 +15,12 @@ use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KpiController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\MindmapController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
+use App\Http\Controllers\PipelineTaskController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -25,6 +28,7 @@ use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -40,6 +44,13 @@ Route::middleware('throttle:6,1')->group(function () {
 });
 
 Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->homeRoute() : 'login'));
+
+// Notifikasi personal bukan menu dan harus dapat dipakai semua role, termasuk
+// staff yang menerima penugasan OKR tetapi tidak boleh membuka halaman OKR.
+Route::middleware('auth')->group(function () {
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+});
 
 // Pipeline (butuh login) + batasan akses per role
 Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
@@ -66,7 +77,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines/{pipeline}/comments', [CommentController::class, 'store'])->name('comments.store');
     Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])->name('comments.destroy');
 
-    // Lampiran kartu — hanya super admin/IT (dibatasi EnsureMenuAccess)
+    // Lampiran kartu — mengikuti izin pengelola struktur di EnsureMenuAccess.
     Route::post('/pipelines/{pipeline}/attachments', [AttachmentController::class, 'store'])->name('attachments.store');
     Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
 
@@ -91,6 +102,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/pipelines', [PipelineController::class, 'store'])->name('pipelines.store');
     Route::put('/pipelines/{pipeline}', [PipelineController::class, 'update'])->name('pipelines.update');
     Route::delete('/pipelines/{pipeline}', [PipelineController::class, 'destroy'])->name('pipelines.destroy');
+    Route::post('/pipelines/{pipeline}/tasks', [PipelineTaskController::class, 'store'])->name('pipeline-tasks.store');
+    Route::patch('/pipeline-tasks/{task}', [PipelineTaskController::class, 'update'])->name('pipeline-tasks.update');
+    Route::delete('/pipeline-tasks/{task}', [PipelineTaskController::class, 'destroy'])->name('pipeline-tasks.destroy');
 
     // Order (pesanan) — tabel + CRUD modal. Mutasi dibatasi EnsureMenuAccess.
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
@@ -98,7 +112,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/orders/{order}', [OrderController::class, 'update'])->name('orders.update');
     Route::delete('/orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
 
-    // Mindmap (mind-elixir) — galeri + editor + simpan/hapus
+    // Mindmap (simple-mind-map) — galeri + editor + simpan/hapus
     Route::get('/mindmaps', [MindmapController::class, 'index'])->name('mindmaps.index');
     Route::post('/mindmaps', [MindmapController::class, 'store'])->name('mindmaps.store');
     Route::get('/mindmaps/{mindmap}', [MindmapController::class, 'show'])->name('mindmaps.show');
@@ -125,14 +139,12 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::put('/content/{content}', [ContentController::class, 'update'])->name('content.update');
     Route::delete('/content/{content}', [ContentController::class, 'destroy'])->name('content.destroy');
 
-    // Tracking — ringkasan read-only lintas board untuk Owner dan Manager.
+    // Tracking — read-only lintas board untuk owner, manager, dan IT super admin.
     Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking.index');
 
-
-    // OKR perusahaan (view/subscriber/omset). TERKUNCI owner & manager di
-    // User::canSee() — isinya omset, sejajar pembukuan & tracking.
+    // OKR perusahaan (view/subscriber/omset) untuk owner, manager, dan IT
+    // super admin lewat User::canSee().
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
-    Route::get('/okr/objectives/{objective}', [OkrController::class, 'show'])->name('okr.objectives.show');
     Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
     Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
     Route::put('/okr/objectives/{objective}', [OkrController::class, 'updateObjective'])->name('okr.objectives.update');
@@ -145,13 +157,17 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/okr/key-results/{keyResult}/kartu', [OkrController::class, 'storeKartu'])->name('okr.key-results.kartu.store');
     Route::post('/okr/key-results/{keyResult}/attach', [OkrController::class, 'attachKartu'])->name('okr.key-results.kartu.attach');
     Route::delete('/okr/key-results/{keyResult}/kartu/{pipeline}', [OkrController::class, 'detachKartu'])->name('okr.key-results.kartu.detach');
+    // Susun OKR dengan AI — kirim arahan ke 9router (ChatGPT + Claude) lalu
+    // kembalikan usulan Objective & Key Result untuk ditinjau sebelum disimpan.
+    Route::post('/okr/ai/generate', [OkrController::class, 'generateAi'])->name('okr.ai.generate');
+    // Simpan usulan OKR hasil AI ke database — buat Objective + KR + kartu.
+    Route::post('/okr/ai/save', [OkrController::class, 'saveAi'])->name('okr.ai.save');
 
     // KPI board Kanban — data operasional, audiens lebih luas (izin dinamis
     // lewat menu 'kpi'). Penetapan target dibatasi canManage() di
     // EnsureMenuAccess (kpi.targets.* terdaftar sbg route mutasi di sana).
     Route::get('/kpi', [KpiController::class, 'index'])->name('kpi.index');
     Route::post('/kpi/targets', [KpiController::class, 'storeTarget'])->name('kpi.targets.store');
-
 
     // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
     // Approve/tolak dibatasi canManage() di dalam AbsenceController.
@@ -182,4 +198,8 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // menu 'akses' (owner/manager/it) + akses.update butuh canManage.
     Route::get('/akses', [AksesController::class, 'index'])->name('akses.index');
     Route::put('/akses', [AksesController::class, 'update'])->name('akses.update');
+
+    // Audit Log — read-only riwayat semua mutasi. Hanya owner & it
+    // (gate peran ketat di controller, bukan cuma menu).
+    Route::get('/audit', [AuditLogController::class, 'index'])->name('audit.index');
 });

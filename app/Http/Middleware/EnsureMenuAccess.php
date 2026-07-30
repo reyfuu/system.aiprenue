@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Pipeline;
+use App\Models\PipelineTask;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -59,6 +60,11 @@ class EnsureMenuAccess
 
             return $p?->category;
         }
+        if (($task = $request->route('task')) !== null) {
+            $task = $task instanceof PipelineTask ? $task : PipelineTask::find($task);
+
+            return $task?->pipeline?->category;
+        }
         if ($name === 'pipelines.store') {
             return $request->input('category');
         }
@@ -78,6 +84,7 @@ class EnsureMenuAccess
         return in_array($name, [
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
             'pipelines.reorder', 'pipelines.todos', 'pipelines.archive', 'pipelines.done',
+            'pipeline-tasks.store', 'pipeline-tasks.update', 'pipeline-tasks.destroy',
         ], true);
     }
 
@@ -88,6 +95,7 @@ class EnsureMenuAccess
             'pipelines.store', 'pipelines.update', 'pipelines.destroy',
             'pipelines.reorder', 'pipelines.todos', 'pipelines.archive',
             'pipelines.done',   // mutasi juga — sebelumnya lolos cek canManage()
+            'pipeline-tasks.store', 'pipeline-tasks.update', 'pipeline-tasks.destroy',
         ], true)
             || str_starts_with($name, 'boards.')
             || str_starts_with($name, 'columns.')
@@ -149,6 +157,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'upload.') => ['upload'],
             str_starts_with($name, 'akses.') => ['akses'],   // Manajemen Akses
             str_starts_with($name, 'okr.') => ['okr'],        // OKR
+            str_starts_with($name, 'audit.') => ['audit'],    // Audit Log
             default => null,
         };
     }
