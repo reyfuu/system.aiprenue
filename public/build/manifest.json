@@ -1,84 +1,84 @@
 {
-  "_Base-BeeqO3La": {
-    "file": "/build-test/assets/Base-BeeqO3La",
+  "_Base-B3kZ2ZfS.js": {
+    "file": "assets/Base-B3kZ2ZfS.js",
     "name": "Base",
     "imports": [
       "resources/js/app.js"
     ]
   },
   "_fonts-DkuEHybc.css": {
-    "file": "/build-test/assets/fonts-DkuEHybc.css",
+    "file": "assets/fonts-DkuEHybc.css",
     "src": "_fonts-DkuEHybc.css"
   },
   "_instrument-sans-400-normal-D1W7dsQl.woff": {
-    "file": "/build-test/assets/instrument-sans-400-normal-D1W7dsQl.woff",
+    "file": "assets/instrument-sans-400-normal-D1W7dsQl.woff",
     "src": "_instrument-sans-400-normal-D1W7dsQl.woff"
   },
   "_instrument-sans-400-normal-DRC__1Mx.woff2": {
-    "file": "/build-test/assets/instrument-sans-400-normal-DRC__1Mx.woff2",
+    "file": "assets/instrument-sans-400-normal-DRC__1Mx.woff2",
     "src": "_instrument-sans-400-normal-DRC__1Mx.woff2"
   },
   "_instrument-sans-400-normal-Q_nF8v4l.woff2": {
-    "file": "/build-test/assets/instrument-sans-400-normal-Q_nF8v4l.woff2",
+    "file": "assets/instrument-sans-400-normal-Q_nF8v4l.woff2",
     "src": "_instrument-sans-400-normal-Q_nF8v4l.woff2"
   },
   "_instrument-sans-400-normal-r32jotim.woff": {
-    "file": "/build-test/assets/instrument-sans-400-normal-r32jotim.woff",
+    "file": "assets/instrument-sans-400-normal-r32jotim.woff",
     "src": "_instrument-sans-400-normal-r32jotim.woff"
   },
   "_instrument-sans-500-normal-CAxz3nsc.woff": {
-    "file": "/build-test/assets/instrument-sans-500-normal-CAxz3nsc.woff",
+    "file": "assets/instrument-sans-500-normal-CAxz3nsc.woff",
     "src": "_instrument-sans-500-normal-CAxz3nsc.woff"
   },
   "_instrument-sans-500-normal-CTEe1bJa.woff2": {
-    "file": "/build-test/assets/instrument-sans-500-normal-CTEe1bJa.woff2",
+    "file": "assets/instrument-sans-500-normal-CTEe1bJa.woff2",
     "src": "_instrument-sans-500-normal-CTEe1bJa.woff2"
   },
   "_instrument-sans-500-normal-Dk9ku72i.woff2": {
-    "file": "/build-test/assets/instrument-sans-500-normal-Dk9ku72i.woff2",
+    "file": "assets/instrument-sans-500-normal-Dk9ku72i.woff2",
     "src": "_instrument-sans-500-normal-Dk9ku72i.woff2"
   },
   "_instrument-sans-500-normal-Z6ESRlEs.woff": {
-    "file": "/build-test/assets/instrument-sans-500-normal-Z6ESRlEs.woff",
+    "file": "assets/instrument-sans-500-normal-Z6ESRlEs.woff",
     "src": "_instrument-sans-500-normal-Z6ESRlEs.woff"
   },
   "_instrument-sans-600-normal-B7fBEWYG.woff2": {
-    "file": "/build-test/assets/instrument-sans-600-normal-B7fBEWYG.woff2",
+    "file": "assets/instrument-sans-600-normal-B7fBEWYG.woff2",
     "src": "_instrument-sans-600-normal-B7fBEWYG.woff2"
   },
   "_instrument-sans-600-normal-B9e8oLYv.woff": {
-    "file": "/build-test/assets/instrument-sans-600-normal-B9e8oLYv.woff",
+    "file": "assets/instrument-sans-600-normal-B9e8oLYv.woff",
     "src": "_instrument-sans-600-normal-B9e8oLYv.woff"
   },
   "_instrument-sans-600-normal-BsaQcF38.woff2": {
-    "file": "/build-test/assets/instrument-sans-600-normal-BsaQcF38.woff2",
+    "file": "assets/instrument-sans-600-normal-BsaQcF38.woff2",
     "src": "_instrument-sans-600-normal-BsaQcF38.woff2"
   },
   "_instrument-sans-600-normal-DMks36a2.woff": {
-    "file": "/build-test/assets/instrument-sans-600-normal-DMks36a2.woff",
+    "file": "assets/instrument-sans-600-normal-DMks36a2.woff",
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "node_modules/simple-mind-map/index.js": {
-    "file": "/build-test/assets/simple-mind-map-Bvk820ze",
+    "file": "assets/simple-mind-map-4huDyHCG.js",
     "name": "simple-mind-map",
     "src": "node_modules/simple-mind-map/index.js",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_Base-BeeqO3La"
+      "_Base-B3kZ2ZfS.js"
     ]
   },
   "node_modules/simple-mind-map/src/plugins/Drag.js": {
-    "file": "/build-test/assets/Drag-D798DTlb",
+    "file": "assets/Drag-8-qbG4hY.js",
     "name": "Drag",
     "src": "node_modules/simple-mind-map/src/plugins/Drag.js",
     "isDynamicEntry": true,
     "imports": [
-      "_Base-BeeqO3La"
+      "_Base-B3kZ2ZfS.js"
     ]
   },
   "resources/css/app.css": {
-    "file": "/build-test/assets/app-BQNs9gAw.css",
+    "file": "assets/app-DOu8JOXU.css",
     "name": "app",
     "names": [
       "app.css"
@@ -87,7 +87,7 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "/build-test/assets/app-246s_47R.js",
+    "file": "assets/app-BtQNmGLg.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
@@ -96,8 +96,8 @@
       "node_modules/simple-mind-map/src/plugins/Drag.js"
     ],
     "css": [
-      "/build-test/assets/app-KM5RKyGl.css",
-      "/build-test/assets/app-BQNs9gAw.css"
+      "assets/app-DYwVO9P8.css",
+      "assets/app-DOu8JOXU.css"
     ]
   }
 }
