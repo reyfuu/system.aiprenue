@@ -13,28 +13,33 @@ const props = defineProps({
     transactions: Array,    // daftar transaksi mentah
     inventories: Array,     // daftar inventaris mentah
     types: Object,          // peta pemasukan/pengeluaran
+    categories: { type: Array, default: () => [] }, // daftar kategori transaksi
 });
 
+const asset = (path) => path ? '/storage/' + path : null;
+
 // ---- Modal Transaksi ----
-const txOpen = ref(false);                           // buka/tutup modal transaksi
-// CATATAN (berlaku utk txForm & invForm): reset() WAJIB di dalam onSuccess, bukan cuma
-// di openTxCreate()/openInvCreate(). Inertia v3 menjadikan data yang barusan dikirim sbg
-// `defaults` baru setelah submit sukses — dan form ini dipakai bersama create & edit, jadi
-// tanpa reset, tombol "Tambah" setelah mengedit akan memunculkan record yang barusan diedit.
-// Callback onSuccess jalan SEBELUM Inertia menyimpan defaults barunya, jadi yg tertangkap = kosong.
-const txEditId = ref(null);                          // id transaksi yg diedit (null = create)
-const txForm = useForm({ type: 'pemasukan', category: '', description: '', amount_idr: '', date: '' });
-const openTxCreate = () => { txEditId.value = null; txForm.reset(); txForm.clearErrors(); txOpen.value = true; };
-const openTxEdit = (t) => {                           // isi form dari baris
+const txOpen = ref(false);
+const txEditId = ref(null);
+const txBuktiInput = ref(null);
+const txForm = useForm({
+    type: 'pemasukan', category: '', description: '', amount_idr: '', date: '',
+    bukti: null,
+});
+const openTxCreate = () => { txEditId.value = null; txForm.reset(); txForm.clearErrors(); if (txBuktiInput.value) txBuktiInput.value.value = ''; txOpen.value = true; };
+const openTxEdit = (t) => {
     txEditId.value = t.id;
     txForm.type = t.type; txForm.category = t.category; txForm.description = t.description ?? '';
-    txForm.amount_idr = t.amount_idr; txForm.date = t.date;
-    txForm.clearErrors(); txOpen.value = true;
+    txForm.amount_idr = t.amount_idr; txForm.date = t.date; txForm.bukti = null;
+    txForm.clearErrors(); if (txBuktiInput.value) txBuktiInput.value.value = ''; txOpen.value = true;
 };
 const submitTx = () => {
-    const done = { onSuccess: () => { txOpen.value = false; txForm.reset(); }, preserveScroll: true };
-    if (txEditId.value) txForm.put('/transactions/' + txEditId.value, done); // update
-    else txForm.post('/transactions', done);                                 // create
+    const done = { forceFormData: true, onSuccess: () => { txOpen.value = false; txForm.reset(); }, preserveScroll: true };
+    if (txEditId.value) {
+        txForm.transform((d) => ({ ...d, _method: 'put' })).post('/transactions/' + txEditId.value, done);
+    } else {
+        txForm.post('/transactions', done);
+    }
 };
 const delTx = (t) => { if (confirm('Hapus transaksi ini?')) router.delete('/transactions/' + t.id, { preserveScroll: true }); };
 
@@ -97,6 +102,7 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                                 <th class="px-3 py-2.5 text-left">Kategori</th>
                                 <th class="px-3 py-2.5 text-left">Keterangan</th>
                                 <th class="px-3 py-2.5 text-right">Jumlah</th>
+                                <th class="px-3 py-2.5 text-center">Bukti</th>
                                 <th class="px-3 py-2.5 text-right">Aksi</th>
                             </tr>
                         </thead>
@@ -109,6 +115,13 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                                 <td class="px-3 py-2.5 text-slate-600">{{ t.category }}</td>
                                 <td class="px-3 py-2.5 text-slate-500">{{ t.description || '—' }}</td>
                                 <td class="px-3 py-2.5 text-right font-medium" :class="t.type === 'pemasukan' ? 'text-emerald-600' : 'text-red-600'">{{ rp(t.amount_idr) }}</td>
+                                <td class="px-3 py-2.5 text-center">
+                                    <a v-if="t.bukti_path" :href="asset(t.bukti_path)" target="_blank" rel="noreferrer"
+                                       class="inline-block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 hover:border-brand-400 transition">
+                                        <img :src="asset(t.bukti_path)" class="w-full h-full object-cover" alt="Bukti" />
+                                    </a>
+                                    <span v-else class="text-xs text-slate-300">—</span>
+                                </td>
                                 <td class="px-3 py-2.5 text-right whitespace-nowrap">
                                     <button @click="openTxEdit(t)" class="text-slate-400 hover:text-brand-600 mr-2" title="Edit">
                                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.4-9.4a2 2 0 112.8 2.8L11.8 15.6 8 16.6l1-3.8 8.6-8.6z" /></svg>
@@ -118,7 +131,7 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="transactions.length === 0"><td colspan="6" class="px-3 py-6 text-center text-slate-400">Belum ada transaksi.</td></tr>
+                            <tr v-if="transactions.length === 0"><td colspan="7" class="px-3 py-6 text-center text-slate-400">Belum ada transaksi.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -181,7 +194,12 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                     </select>
                 </label>
                 <label class="block font-medium text-slate-600">Kategori
-                    <input v-model="txForm.category" required placeholder="mis. Endorse, Gaji, Iklan…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
+                    <select v-model="txForm.category" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none">
+                        <option value="" disabled>Pilih kategori…</option>
+                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                        <option value="__lainnya__">✏️ Lainnya (tulis manual)…</option>
+                    </select>
+                    <input v-if="txForm.category === '__lainnya__'" v-model="txForm.category" required placeholder="Tulis kategori…" class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                     <span v-if="txForm.errors.category" class="text-xs text-red-600">{{ txForm.errors.category }}</span>
                 </label>
                 <label class="block font-medium text-slate-600">Keterangan (opsional)
@@ -195,6 +213,18 @@ const delInv = (i) => { if (confirm('Hapus inventaris ini?')) router.delete('/in
                     <input type="date" v-model="txForm.date" required class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none" />
                     <span v-if="txForm.errors.date" class="text-xs text-red-600">{{ txForm.errors.date }}</span>
                 </label>
+                <!-- Upload bukti pembayaran/nota -->
+                <div>
+                    <label class="block font-medium text-slate-600 mb-1">Bukti (foto nota / screenshot)</label>
+                    <div v-if="txEditId && transactions.find(t => t.id === txEditId)?.bukti_path && !txForm.bukti" class="mb-2">
+                        <img :src="asset(transactions.find(t => t.id === txEditId).bukti_path)" class="w-24 h-24 object-cover rounded-lg border border-slate-200" alt="Bukti lama" />
+                        <p class="text-[10px] text-slate-400 mt-0.5">Upload baru untuk mengganti</p>
+                    </div>
+                    <input ref="txBuktiInput" type="file" accept="image/*" @change="txForm.bukti = $event.target.files[0]"
+                           class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:font-semibold hover:file:bg-brand-100" />
+                    <p class="text-[10px] text-slate-400 mt-0.5">JPG/PNG/WebP, maks 5MB. Opsional.</p>
+                    <span v-if="txForm.errors.bukti" class="text-xs text-red-600">{{ txForm.errors.bukti }}</span>
+                </div>
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" @click="txOpen = false" class="px-5 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
                     <button type="submit" :disabled="txForm.processing" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold transition disabled:opacity-60">Simpan</button>
