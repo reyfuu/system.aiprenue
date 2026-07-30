@@ -76,6 +76,43 @@ class OkrNotifications
     }
 
     /**
+     * Beri tahu pengguna bahwa ia ditugaskan ke kartu Kanban.
+     *
+     * Dipanggil saat kartu baru dibuat dengan penanggung jawab, atau saat
+     * penanggung jawab kartu diubah ke orang lain. Kartu yang SUDAH selesai
+     * (done=1) dilewat — tidak ada gunanya memberi tahu pekerjaan yang sudah
+     * rampung.
+     */
+    public static function notifikasiPenugasanKartu(Pipeline $kartu, User $penerima, ?User $pelaku): void
+    {
+        if ($kartu->done) {
+            return;
+        }
+
+        if ($pelaku && (int) $penerima->id === (int) $pelaku->id) {
+            return;
+        }
+
+        $board = $kartu->category;
+        $url = route('pipelines.kanban', ['category' => $board, 'card' => $kartu->id]);
+
+        $penerima->notify(new OkrAssignmentNotification(
+            title: 'Kartu Kanban ditugaskan ke Anda',
+            message: sprintf(
+                '“%s” — board %s%s.',
+                $kartu->endorse,
+                $board,
+                $pelaku ? ' (dari '.$pelaku->name.')' : '',
+            ),
+            url: $url,
+            objectiveId: 0,
+            keyResultId: null,
+            kind: 'kanban_assignment',
+            pipelineId: $kartu->id,
+        ));
+    }
+
+    /**
      * Pengingat deadline harian untuk kartu OKR yang ditugaskan ke user.
      *
      * Dibuat MALAS saat user membuka halaman (dipicu dari

@@ -447,6 +447,14 @@ class PipelineController extends Controller
         $pipeline = Pipeline::create($data + ['created_by' => $request->user()?->id]);
         $pipeline->outputs()->sync($request->input('outputs', []));
 
+        // Notifikasi: kartu baru dengan penanggung jawab → beri tahu ybs.
+        if (! empty($data['assigned_to']) && ! $pipeline->done) {
+            $assignee = User::find($data['assigned_to']);
+            if ($assignee) {
+                OkrNotifications::notifikasiPenugasanKartu($pipeline, $assignee, $request->user());
+            }
+        }
+
         // Lampiran opsional saat membuat kartu (jpeg/pdf/dll). Kartu belum punya id
         // sebelum dibuat, jadi filenya ikut di request buat-kartu — bukan endpoint
         // /attachments terpisah. Logika sama dgn AttachmentController::store.
@@ -469,8 +477,20 @@ class PipelineController extends Controller
     {
         $data = $this->validated($request, $pipeline);
 
+        // Catat PJ sebelum update, lalu bandingkan dgn PJ sesudah update.
+        $pjLama = $pipeline->assigned_to;
+
         $pipeline->update($data);
         $pipeline->outputs()->sync($request->input('outputs', []));
+
+        // Notifikasi: PJ berubah ke orang lain & kartu belum selesai.
+        $pjBaru = $data['assigned_to'] ?? null;
+        if ($pjBaru && (int) $pjBaru !== (int) $pjLama && ! $pipeline->done) {
+            $assignee = User::find($pjBaru);
+            if ($assignee) {
+                OkrNotifications::notifikasiPenugasanKartu($pipeline, $assignee, $request->user());
+            }
+        }
 
         return redirect()->back()->with('status', 'Entri diperbarui.');
     }
