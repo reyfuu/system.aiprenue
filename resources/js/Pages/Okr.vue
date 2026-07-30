@@ -24,6 +24,43 @@ const props = defineProps({
     kuartalLaluLabel: { type: String, default: '' },
 });
 
+// Mode tampilan: 'landing' (overview awal), 'detail' (rincian OKR), atau 'ai_form' (form susun OKR dengan AI)
+const viewMode = ref('landing');
+
+// Form Susun OKR dengan AI
+const aiForm = ref({
+    jenis_periode: 'Kuartalan',
+    tahun: 2026,
+    kuartal: 'Q3',
+    level_okr: 'Seluruh perusahaan',
+    arahan: '',
+    papan_kanban: 'AI pilih otomatis',
+});
+
+const submitAiForm = () => {
+    alert('AI sedang memproses usulan OKR berdasarkan arahan Anda...');
+    viewMode.value = 'detail';
+};
+
+// Total tugas & tugas selesai
+const totalTugas = computed(() => {
+    return props.objectives.reduce((total, o) => {
+        return total + o.key_results.reduce((krTotal, kr) => krTotal + (kr.kartu ? kr.kartu.length : 0), 0);
+    }, 0);
+});
+
+const tugasSelesai = computed(() => {
+    return props.objectives.reduce((total, o) => {
+        return total + o.key_results.reduce((krTotal, kr) => {
+            return krTotal + (kr.kartu ? kr.kartu.filter(k => k.selesai).length : 0);
+        }, 0);
+    }, 0);
+});
+
+const persenTugasSelesai = computed(() => {
+    return totalTugas.value > 0 ? Math.round((tugasSelesai.value / totalTugas.value) * 100) : 0;
+});
+
 const nfFull = new Intl.NumberFormat('id-ID');
 const fmtFull = (n, unit) => (unit === 'rupiah' ? 'Rp' : '') + nfFull.format(Number(n || 0)) + (unit === 'persen' ? '%' : '');
 
@@ -134,30 +171,222 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
 
 <template>
     <Layout title="OKR">
-        <!-- Top Bar Header -->
-        <header class="bg-white border-b border-slate-200 sticky top-0 z-10 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
-            <div>
-                <h1 class="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
-                    OKR — {{ quarter.label }}
-                    <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
-                        {{ range.start }} s/d {{ range.end }}
-                    </span>
-                </h1>
-            </div>
-            <div class="flex items-center gap-3">
+        <!-- =========================================================================
+             AI FORM VIEW (Tampilan Susun OKR dengan AI 100% Sesuai Screenshot)
+             ========================================================================= -->
+        <div v-if="viewMode === 'ai_form'" class="min-h-screen bg-slate-50 flex flex-col justify-between">
+            <!-- Header Topbar AI Form -->
+            <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
+                <div class="flex items-center gap-3">
+                    <button class="p-1 rounded hover:bg-slate-100 text-slate-500" @click="viewMode = 'landing'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </button>
+                    <h1 class="text-base font-extrabold text-slate-900 tracking-tight">Susun OKR dengan AI</h1>
+                </div>
                 <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
-                <select
-                    :value="quarter.key"
-                    class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    @change="gantiKuartal($event.target.value)"
-                >
-                    <option v-for="o in quarterOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
-                </select>
-                <button v-if="canManage" class="bg-blue-600 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold hover:bg-blue-700 shadow-xs" @click="bukaObjective()">
-                    + Edit Objective
-                </button>
-            </div>
-        </header>
+            </header>
+
+            <!-- Main Content AI Form -->
+            <main class="p-8 max-w-7xl w-full mx-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="space-y-6">
+                    <!-- Blue Banner Info Box -->
+                    <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-5 space-y-2">
+                        <h3 class="text-xs font-extrabold text-blue-900 flex items-center gap-1.5">
+                            Panel CMO + CFO + COO AI bekerja bersama
+                            <span class="text-amber-400">✨</span>
+                        </h3>
+                        <p class="text-[11px] text-blue-700 leading-relaxed">
+                            Setiap spesialis membaca Pengetahuan AI dan data aktual bidangnya. AI Orchestrator kemudian menyelaraskan usulan mereka, membagi pekerjaan ke anggota aktif, serta memilih papan/kolom Kanban. Hasilnya tetap menjadi draf sebelum satu pun kartu dibuat.
+                        </p>
+                        <a href="#" class="text-[11px] font-bold text-blue-800 underline block pt-1 hover:text-blue-900">Periksa Pengetahuan AI</a>
+                    </div>
+
+                    <!-- Step 1: Periode -->
+                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                        <h3 class="text-xs font-extrabold text-slate-900">1. Periode</h3>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Jenis periode</label>
+                                <select v-model="aiForm.jenis_periode" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="Kuartalan">Kuartalan</option>
+                                    <option value="Tahunan">Tahunan</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tahun</label>
+                                <input v-model="aiForm.tahun" type="number" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Kuartal</label>
+                                <select v-model="aiForm.kuartal" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="Q1">Q1</option>
+                                    <option value="Q2">Q2</option>
+                                    <option value="Q3">Q3</option>
+                                    <option value="Q4">Q4</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Cakupan -->
+                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                        <h3 class="text-xs font-extrabold text-slate-900">2. Cakupan</h3>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Level OKR</label>
+                            <select v-model="aiForm.level_okr" class="w-full md:w-1/2 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="Seluruh perusahaan">Seluruh perusahaan</option>
+                                <option value="Departemen">Departemen</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Arahan awal -->
+                    <div class="bg-white border border-slate-200/90 rounded-2xl p-6 space-y-4 shadow-2xs">
+                        <h3 class="text-xs font-extrabold text-slate-900">3. Arahan awal</h3>
+                        <div class="space-y-2">
+                            <label class="block text-xs font-extrabold text-slate-800">Apa hasil bisnis yang ingin dicapai?</label>
+                            <p class="text-[11px] text-slate-400">Tidak perlu menyusun format OKR. Tulis sasaran, masalah, baseline, batasan, atau prioritas; AI yang memecahkannya.</p>
+                            <textarea 
+                                v-model="aiForm.arahan" 
+                                rows="4" 
+                                placeholder="Contoh: Q3 fokus menaikkan penjualan TikTok 30%, memperbaiki konsistensi konten, dan mengurangi order dengan SKU belum dipetakan. Beban kerja harus merata..." 
+                                class="w-full border border-slate-200 rounded-xl p-4 text-xs text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                            ></textarea>
+                        </div>
+
+                        <div class="pt-2 space-y-1">
+                            <label class="block text-[11px] font-semibold text-slate-500">Papan Kanban utama <span class="text-slate-400 font-normal">(opsional)</span></label>
+                            <select v-model="aiForm.papan_kanban" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="AI pilih otomatis">AI pilih otomatis</option>
+                                <option v-for="b in kanbanBoards" :key="b.key" :value="b.key">{{ b.name }}</option>
+                            </select>
+                        </div>
+                        
+                        <button class="w-full bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2" @click="submitAiForm">
+                            <svg class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                            Susun Usulan OKR dengan AI
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Column Right Empty/Help spacer -->
+                <div></div>
+            </main>
+
+            <!-- Footer AI Form -->
+            <footer class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium">
+                <span>© 2026 SKINKU B2B Portal. Powered by SQL + Laravel.</span>
+                <span>HQ Jakarta, Indonesia</span>
+            </footer>
+        </div>
+
+        <!-- =========================================================================
+             LANDING OVERVIEW VIEW (Tampilan Awal Sebelum Masuk ke OKR Detail)
+             ========================================================================= -->
+        <div v-else-if="viewMode === 'landing'" class="min-h-screen bg-slate-50 flex flex-col justify-between">
+            <!-- Header Topbar Landing -->
+            <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
+                <h1 class="text-xl font-extrabold text-slate-900 tracking-tight">OKR — Target &amp; Eksekusi Tim</h1>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+            </header>
+
+            <!-- Main Body Landing -->
+            <main class="p-8 max-w-7xl w-full mx-auto flex-1 space-y-6">
+                <div class="flex items-center justify-between gap-4">
+                    <p class="text-sm text-slate-600 font-medium">
+                        AI menyusun Objective, Key Result, dan tugas individu. Progres mengikuti kartu Kanban secara otomatis.
+                    </p>
+                    <button class="bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer" @click="viewMode = 'ai_form'">
+                        <svg class="w-4 h-4 fill-current text-amber-300" viewBox="0 0 24 24"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                        Susun OKR dengan AI
+                    </button>
+                </div>
+
+                <!-- OKR Card Container (Sesuai Gambar Screenshot 100%) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                    <div 
+                        class="bg-white border border-slate-200/90 hover:border-blue-400 hover:shadow-md transition-all rounded-2xl p-6 cursor-pointer space-y-5 group"
+                        @click="viewMode = 'detail'"
+                    >
+                        <div class="flex items-start justify-between">
+                            <h2 class="text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug">
+                                OKR Perusahaan SKINKU {{ quarter.label }}
+                            </h2>
+                            <span class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 uppercase tracking-wider">
+                                AKTIF
+                            </span>
+                        </div>
+
+                        <p class="text-xs font-semibold text-slate-400">
+                            {{ quarter.label }} · Perusahaan
+                        </p>
+
+                        <!-- Progress Task -->
+                        <div class="space-y-1.5 pt-1">
+                            <div class="flex items-center justify-between text-xs font-bold text-slate-500">
+                                <span>{{ tugasSelesai }}/{{ totalTugas }} tugas selesai</span>
+                                <span class="text-slate-900">{{ persenTugasSelesai }}%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-slate-200 h-full rounded-full transition-all" :style="{ width: persenTugasSelesai + '%' }"></div>
+                            </div>
+                        </div>
+
+                        <!-- Objective & Date Footer -->
+                        <div class="pt-2 space-y-2 border-t border-slate-100">
+                            <p class="text-xs font-semibold text-slate-400">
+                                {{ objectives.length }} Objective · {{ range.start }}–{{ range.end }}
+                            </p>
+
+                            <!-- Role Badges -->
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">CMO</span>
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">CFO</span>
+                                <span class="text-[9px] font-extrabold px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">COO</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Footer Landing -->
+            <footer class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium">
+                <span>© 2026 SKINKU B2B Portal. Powered by SQL + Laravel.</span>
+                <span>HQ Jakarta, Indonesia</span>
+            </footer>
+        </div>
+
+        <!-- =========================================================================
+             DETAIL OKR VIEW (Tampilan Rincian OKR SKINKU Portal)
+             ========================================================================= -->
+        <div v-else-if="viewMode === 'detail'">
+            <!-- Top Bar Header Detail -->
+            <header class="bg-white border-b border-slate-200 sticky top-0 z-10 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+                <div class="flex items-center gap-4">
+                    <button class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors" title="Kembali ke Overview" @click="viewMode = 'landing'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </button>
+                    <h1 class="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+                        OKR — {{ quarter.label }}
+                        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
+                            {{ range.start }} s/d {{ range.end }}
+                        </span>
+                    </h1>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+                    <select
+                        :value="quarter.key"
+                        class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        @change="gantiKuartal($event.target.value)"
+                    >
+                        <option v-for="o in quarterOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+                    </select>
+                    <button v-if="canManage" class="bg-blue-600 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold hover:bg-blue-700 shadow-xs" @click="bukaObjective()">
+                        + Edit Objective
+                    </button>
+                </div>
+            </header>
 
         <!-- Main Content Area -->
         <div class="p-8 max-w-7xl mx-auto space-y-8">
@@ -346,6 +575,7 @@ const simpanAktual = () => aktualForm.patch('/okr/key-results/' + aktualModal.va
                     </div>
                 </div>
             </div>
+        </div>
         </div>
 
         <!-- Modal Objective -->
