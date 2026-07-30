@@ -756,19 +756,6 @@ class="ml-3"
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Objective</p>
-                            <p class="text-2xl font-extrabold text-slate-800">{{ ringkasan.objectives || objectives.length }}</p>
-                        </div>
-                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Key Result</p>
-                            <p class="text-2xl font-extrabold text-slate-800">
-                                {{
-                                    ringkasan.key_results ||
-                                    objectives.reduce((acc, o) => acc + (o.key_results ? o.key_results.length : 0), 0)
-                                }}
-                            </p>
-                        </div>
-                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
                             <p class="text-2xl font-extrabold text-slate-800">
                                 {{ ringkasan.omset_target > 0 ? 'Rp ' + nfFull.format(ringkasan.omset_target) : '—' }}
@@ -779,6 +766,19 @@ class="ml-3"
                                     Rp {{ nfFull.format(ringkasan.omset_actual || 0) }}
                                 </span>
                                 <span v-if="ringkasan.omset_percent !== null" class="ml-1">({{ ringkasan.omset_percent }}%)</span>
+                            </p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Objective</p>
+                            <p class="text-2xl font-extrabold text-slate-800">{{ ringkasan.objectives || objectives.length }}</p>
+                        </div>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Key Result</p>
+                            <p class="text-2xl font-extrabold text-slate-800">
+                                {{
+                                    ringkasan.key_results ||
+                                    objectives.reduce((acc, o) => acc + (o.key_results ? o.key_results.length : 0), 0)
+                                }}
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
