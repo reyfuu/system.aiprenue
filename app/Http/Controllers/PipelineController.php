@@ -49,7 +49,7 @@ class PipelineController extends Controller
             'rate'        => $rate,
             'lunas'       => (clone $base)->where('payment_status', 'lunas')->count(),
             'outstanding' => (clone $base)->whereIn('payment_status', ['belum', 'dp'])->count(),
-            'done'        => (clone $base)->where('progress', 'done')->count(),
+            'done'        => (clone $base)->where('done', 1)->count(),
             'total'       => (clone $base)->count(),
         ];
 

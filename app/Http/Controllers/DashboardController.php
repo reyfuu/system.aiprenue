@@ -26,7 +26,7 @@ class DashboardController extends Controller
             'grandIdr'    => $totalIdr + $totalUsd * $rate,
             'lunas'       => $all->where('payment_status', 'lunas')->count(),
             'outstanding' => $all->whereIn('payment_status', ['belum', 'dp'])->count(),
-            'done'        => $all->where('progress', 'done')->count(),
+            'done'        => $all->where('done', 1)->count(),
             'perCategory' => $countBy('category'),   // Pipeline
             'perProgress' => $countBy('progress'),    // Kanban
             'categories'  => Pipeline::categories(),  // key => nama board
