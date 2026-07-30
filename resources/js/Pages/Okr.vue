@@ -999,19 +999,21 @@ class="ml-3"
                                     <span>Tenggat: <strong class="text-slate-900">30 Sep 2026</strong></span>
                                 </div>
 
-                                <!-- Deskripsi + Kanban link untuk kartu workstream -->
+                                <!-- Deskripsi + link ke board terkait -->
                                 <div v-if="kr.kartu && kr.kartu.length" class="pt-2">
                                     <p v-if="kr.kartu[0]?.description" class="text-xs text-slate-500 leading-relaxed mb-2">
                                         {{ kr.kartu[0].description }}
                                     </p>
                                     <a
-                                        :href="`/pipelines/kanban?category=${kr.kartu[0]?.board || 'todolist'}&card=${kr.kartu[0]?.id}`"
+                                        :href="kr.source === 'kartu'
+                                            ? `/pipelines/kanban?category=${kr.kartu[0]?.board || 'todolist'}&card=${kr.kartu[0]?.id}`
+                                            : `/pipelines?category=sales&card=${kr.kartu[0]?.id}`"
                                         class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 transition-colors"
                                     >
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                         </svg>
-                                        Buka di Kanban →
+                                        {{ kr.source === 'kartu' ? 'Buka di Kanban →' : 'Buka di Sales →' }}
                                     </a>
                                 </div>
                             </div>
