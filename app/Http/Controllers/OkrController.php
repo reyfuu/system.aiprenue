@@ -124,6 +124,7 @@ class OkrController extends Controller
                     return [
                         'id' => $kr->id,
                         'title' => $kr->title,
+                        'description' => $kr->description,
                         'source' => $kr->source,
                         'source_label' => $kr->source === 'auto'
                             ? (OkrMetrics::METRICS[$kr->metric] ?? 'Otomatis')
@@ -1095,6 +1096,7 @@ class OkrController extends Controller
         $data = $request->validate([
             'objective_id' => [$existing ? 'nullable' : 'required', 'exists:objectives,id'],
             'title' => 'required|string|max:255',
+            'description' => 'nullable|string|max:2000',
             'source' => ['required', Rule::in(array_keys(KeyResult::SOURCES))],
             'board_key' => [
                 'nullable',
