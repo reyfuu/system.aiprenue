@@ -13,11 +13,6 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 
-    /* Serif untuk halaman OKR (gaya "laporan eksekutif"): display & naratif.
-       Georgia = font sistem lintas platform, jadi tak ada risiko gagal-muat
-       (produksi shared hosting tak boleh bergantung font CDN). */
-    --font-serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
-
     /* Palet brand — gaya "Content Engine":
        50–100 = tint biru muda (pill, chip, hover)
        400–700 = biru elektrik (tombol, aksen, link, state aktif)
