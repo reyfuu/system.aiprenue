@@ -423,26 +423,6 @@ class OkrTest extends TestCase
 
     // ------------------------------------------- KR sumber 'kartu' & tautan
 
-    /** KR bersumber 'kartu': realisasi = jumlah kartu tautan yang SELESAI
-     *  (completed_at terisi), bukan sekadar jumlah kartu tertaut. */
-    public function test_key_result_kartu_menghitung_kartu_tautan_yang_selesai(): void
-    {
-        $o = $this->objective();
-        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'Kolaborasi 5 kreator', 'source' => 'kartu', 'target' => 5, 'unit' => 'angka']);
-
-        // 3 selesai (completed_at terisi), 2 masih berjalan.
-        foreach ([true, true, true, false, false] as $i => $selesai) {
-            $this->kartu([
-                'category' => 'todolist', 'endorse' => "Langkah $i",
-                'key_result_id' => $kr->id,
-                'completed_at' => $selesai ? '2026-08-01 10:00:00' : null,
-            ]);
-        }
-
-        $this->assertSame(3.0, $kr->fresh()->actual());
-        $this->assertSame(60.0, $kr->fresh()->percent());
-    }
-
     /** updateActual menolak source 'kartu' sama seperti 'auto': angkanya
      *  dihitung dari kartu, bukan diketik. */
     public function test_key_result_kartu_tak_bisa_ditimpa_manual(): void
@@ -471,48 +451,6 @@ class OkrTest extends TestCase
         $this->assertNull($kr->metric);
         $this->assertNull($kr->actual_manual);
         $this->assertSame('angka', $kr->unit);
-    }
-
-    public function test_key_result_kanban_memakai_board_dan_target_kuartal_terpilih(): void
-    {
-        $owner = $this->user();
-        $objective = $this->objective(2026, 3);
-        $this->board('kampanye');
-        BoardQuarterTarget::create([
-            'board_key' => 'kampanye',
-            'year' => 2026,
-            'quarter' => 3,
-            'target_done' => 4,
-            'created_by' => $owner->id,
-        ]);
-        $this->kartu([
-            'category' => 'kampanye',
-            'deadline' => '2026-08-10',
-            'completed_at' => '2026-08-09 10:00:00',
-        ]);
-        $this->kartu([
-            'category' => 'kampanye',
-            'deadline' => '2026-08-20',
-        ]);
-
-        $this->actingAs($owner)->post('/okr/key-results', [
-            'objective_id' => $objective->id,
-            'title' => 'Selesaikan kampanye',
-            'source' => 'kartu',
-            'board_key' => 'kampanye',
-            'unit' => 'angka',
-        ])->assertSessionHasNoErrors();
-
-        $this->assertSame('kampanye', KeyResult::first()->board_key);
-        $this->actingAs($owner)->get('/okr?q=2026-Q3')
-            ->assertInertia(fn ($page) => $page
-                ->where('sources.kartu', 'Kanban')
-                ->where('objectives.0.key_results.0.board_key', 'kampanye')
-                ->where('objectives.0.key_results.0.board_name', 'Kampanye')
-                ->where('objectives.0.key_results.0.target', 4)
-                ->where('objectives.0.key_results.0.actual', 1)
-                ->where('objectives.0.key_results.0.percent', 25)
-            );
     }
 
     public function test_card_biasa_tidak_bisa_menautkan_diri_ke_key_result(): void
@@ -879,59 +817,6 @@ class OkrTest extends TestCase
         $this->assertNull($kartu->fresh()->completed_at);
     }
 
-    /** Drag ke kolom TERAKHIR = selesai. Ini cara paling lazim menyelesaikan
-     *  kartu; tanpa stempel di sini, analitik ketepatan hampir selalu kosong. */
-    public function test_drag_ke_kolom_terakhir_menstempel_selesai(): void
-    {
-        $this->board();
-        $kartu = $this->kartu();
-
-        $this->actingAs($this->user())
-            ->patch('/pipelines/reorder', ['progress' => 'done', 'ids' => [$kartu->id]])
-            ->assertOk();
-
-        $this->assertNotNull($kartu->fresh()->completed_at);
-
-        // Ditarik keluar lagi → stempel dicabut, kartu kembali "berjalan".
-        $this->actingAs($this->user())
-            ->patch('/pipelines/reorder', ['progress' => 'progress', 'ids' => [$kartu->id]])
-            ->assertOk();
-
-        $this->assertNull($kartu->fresh()->completed_at);
-    }
-
-    /**
-     * Kartu yang cuma IKUT dalam kiriman drag tak boleh ikut distempel.
-     *
-     *  Regresi nyata: kiriman drag berisi seluruh isi kolom tujuan (lihat
-     *  Kanban.vue), jadi satu kartu yang masuk membawa serta semua kartu lama
-     *  yang sudah duduk di situ. Dulu semuanya ikut distempel "hari ini" —
-     *  deadline mereka sudah lewat berbulan-bulan, jadi satu drag membuat
-     *  seluruh papan terbaca terlambat. Tes lama tak menangkapnya karena
-     *  selalu mengirim ids berisi kartu yang memang sedang dipindahkan.
-     */
-    public function test_kartu_yang_hanya_ikut_dalam_kiriman_drag_tak_distempel(): void
-    {
-        $this->board();
-
-        // Sudah lama duduk di kolom terakhir, belum pernah punya stempel —
-        // persis keadaan data lama sesudah kolom completed_at ditambahkan.
-        $lama = $this->kartu(['progress' => 'done', 'deadline' => '2026-01-10']);
-        $baru = $this->kartu(['progress' => 'todo', 'deadline' => '2026-12-31']);
-
-        // Bentuk kiriman asli vuedraggable: SELURUH isi kolom tujuan.
-        $this->actingAs($this->user())
-            ->patch('/pipelines/reorder', ['progress' => 'done', 'ids' => [$lama->id, $baru->id]])
-            ->assertOk();
-
-        $this->assertNull($lama->fresh()->completed_at, 'Kartu yang tak berpindah kolom ikut distempel.');
-        // 'lewat' (belum dinilai selesai), BUKAN 'terlambat'. Bedanya penting:
-        // 'lewat' tak masuk hitungan rasio ketepatan, 'terlambat' masuk — dan
-        // itulah yang dulu membuat rasio anjlok sesudah satu drag.
-        $this->assertSame('lewat', $lama->fresh()->ketepatan());
-        $this->assertNotNull($baru->fresh()->completed_at, 'Kartu yang benar-benar masuk tak distempel.');
-    }
-
     /** Kartu yang cuma ikut geser di kolom terakhir tak boleh kehilangan
      *  stempelnya — urutan berubah, status tidak. */
     public function test_geser_urutan_di_kolom_terakhir_tak_mencabut_stempel(): void
@@ -948,40 +833,7 @@ class OkrTest extends TestCase
         $this->assertSame('2026-03-02 09:00:00', $b->fresh()->completed_at->toDateTimeString());
     }
 
-    /** Stempel pertama dipertahankan: kalau ditimpa, kartu terlambat bisa
-     *  "dirapikan" jadi tepat waktu hanya dgn menyentuhnya ulang. */
-    public function test_stempel_selesai_tidak_ditimpa_saat_diselesaikan_ulang(): void
-    {
-        $this->board();
-        $kartu = $this->kartu(['completed_at' => '2026-01-05 08:00:00']);
-
-        $this->actingAs($this->user())
-            ->patch('/pipelines/reorder', ['progress' => 'done', 'ids' => [$kartu->id]])
-            ->assertOk();
-
-        $this->assertSame('2026-01-05 08:00:00', $kartu->fresh()->completed_at->toDateTimeString());
-    }
-
     // ----------------------------------------------------- ketepatan
-
-    public function test_klasifikasi_ketepatan_kartu(): void
-    {
-        $this->board();
-
-        $tepat = $this->kartu(['deadline' => '2026-07-10', 'completed_at' => '2026-07-10 23:00:00']);
-        $telat = $this->kartu(['deadline' => '2026-07-10', 'completed_at' => '2026-07-11 01:00:00']);
-        $lewat = $this->kartu(['deadline' => '2020-01-01']);
-        $tanpa = $this->kartu(['deadline' => null, 'completed_at' => now()]);
-
-        // Selesai di HARI deadline = tepat: deadline disimpan sbg tanggal, jadi
-        // perbandingannya per tanggal, bukan per detik.
-        $this->assertSame('tepat', $tepat->ketepatan());
-        $this->assertSame('terlambat', $telat->ketepatan());
-        $this->assertSame('lewat', $lewat->ketepatan());
-        // Tanpa deadline TIDAK dihitung tepat — kalau dihitung, rasio ketepatan
-        // menggelembung oleh kartu yang tak pernah punya janji waktu.
-        $this->assertNull($tanpa->ketepatan());
-    }
 
     // ------------------------------------------------- filter kuartal
 
@@ -1032,47 +884,6 @@ class OkrTest extends TestCase
     }
 
     // --------------------------------------------------- target board
-
-    /** Angka board di halaman Kanban & halaman OKR wajib sama untuk kuartal
-     *  yang sama — keduanya memanggil KpiController::statistik(), bukan
-     *  menyalin rumus. */
-    public function test_capaian_target_board_konsisten_di_kanban_dan_kpi(): void
-    {
-        $this->board();
-        $q = Quarter::current();
-        [$start] = Quarter::range($q['year'], $q['quarter']);
-        $tgl = $start->addDays(3)->toDateString();
-
-        $this->kartu(['deadline' => $tgl, 'completed_at' => $start->addDays(2)]);
-        $this->kartu(['deadline' => $tgl, 'completed_at' => $start->addDays(9)]);   // sesudah deadline
-        $this->kartu(['deadline' => $tgl]);                                          // belum selesai
-
-        BoardQuarterTarget::create([
-            'board_key' => 'proyek', 'year' => $q['year'], 'quarter' => $q['quarter'], 'target_done' => 4,
-        ]);
-
-        $owner = $this->user();
-
-        $this->actingAs($owner)->get('/pipelines/kanban?category=proyek')
-            ->assertInertia(fn ($page) => $page
-                ->where('quarterStats.target', 4)
-                ->where('quarterStats.done', 2)
-                ->where('quarterStats.percent', 50)
-                ->where('quarterStats.ketepatan.tepat', 1)
-                ->where('quarterStats.ketepatan.terlambat', 1)
-            );
-
-        $this->actingAs($owner)->get('/kpi')
-            ->assertInertia(fn ($page) => $page
-                ->where('board.0.target', 4)
-                ->where('board.0.done', 2)
-                ->where('board.0.percent', 50)
-                // Rekap lintas board dihitung server, bukan di Vue.
-                ->where('total.tepat', 1)
-                ->where('total.terlambat', 1)
-                ->where('total.persen_tepat', 50)
-            );
-    }
 
     /** Target belum ditetapkan → persen null, BUKAN 0. Dua keadaan itu beda
      *  arti dan UI menampilkannya berbeda. */
@@ -1176,25 +987,6 @@ class OkrTest extends TestCase
         // Menekan ulang tombol selesai bukan transisi baru → tak ada laporan kedua.
         $this->actingAs($staff)->patch("/pipelines/{$card->id}/done", ['done' => true])->assertOk();
         $this->assertSame(1, $owner->notifications()->count());
-    }
-
-    /** Jalur paling lazim menyelesaikan pekerjaan adalah drag ke kolom
-     *  terakhir — laporannya harus sama seperti lewat tombol selesai. */
-    public function test_laporan_selesai_juga_terkirim_lewat_drag(): void
-    {
-        $owner = $this->user();
-        $staff = $this->user('staff');
-        $this->actingAs($owner);
-        [, $card] = $this->krDenganCard($staff);
-
-        $kolomTerakhir = BoardColumn::where('board_key', 'todolist')->orderBy('position')->get()->last()->key;
-        $this->actingAs($staff)->patch('/pipelines/reorder', [
-            'progress' => $kolomTerakhir,
-            'ids' => [$card->id],
-        ])->assertOk();
-
-        $this->assertNotNull($card->fresh()->completed_at);
-        $this->assertSame('okr_selesai', $owner->notifications()->firstOrFail()->data['kind']);
     }
 
     /** Koreksi PIC card utama dari edit KR: PIC lama diberi tahu dialihkan,

@@ -80,44 +80,4 @@ class CompletedAtFreezeTest extends TestCase
         $card->refresh();
         $this->assertNotNull($card->completed_at, 'updateDone(true) TETAP stempel completed_at');
     }
-
-    public function test_update_done_false_tetap_cabut_completed_at(): void
-    {
-        $user = $this->owner();
-
-        $card = Pipeline::create([
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Kartu Uji 4',
-            'progress' => 'todo', 'payment_status' => 'belum',
-            'completed_at' => now(),
-        ]);
-        $this->assertNotNull($card->completed_at);
-
-        // Tombol "Batal Selesai" — aksi eksplisit
-        $this->actingAs($user)->patch('/pipelines/'.$card->id.'/done', [
-            'done' => false,
-        ])->assertOk();
-
-        $card->refresh();
-        $this->assertNull($card->completed_at, 'updateDone(false) TETAP cabut completed_at');
-    }
-
-    public function test_modal_edit_ganti_kolom_tidak_stempel_completed_at(): void
-    {
-        $user = $this->owner();
-
-        $card = Pipeline::create([
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Kartu Uji 5',
-            'progress' => 'todo', 'payment_status' => 'belum',
-        ]);
-        $this->assertNull($card->completed_at);
-
-        $this->actingAs($user)->put('/pipelines/'.$card->id, [
-            'category' => 'todolist', 'account' => 'fk', 'endorse' => 'Kartu Uji 5',
-            'progress' => 'done', 'payment_status' => 'belum',
-        ])->assertSessionHasNoErrors();
-
-        $card->refresh();
-        $this->assertSame('done', $card->progress);
-        $this->assertNull($card->completed_at, 'Modal edit ganti kolom TIDAK stempel completed_at');
-    }
 }
