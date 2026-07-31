@@ -79,6 +79,7 @@ class OkrController extends Controller
         $selesaiPerBoard = Pipeline::whereIn('category', $boardKeys)
             ->whereBetween('deadline', [$start->toDateString(), $end->toDateString()])
             ->whereNotNull('completed_at')
+            ->where('is_kr_master', false)
             ->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')->pluck('total', 'category');
         $targetPerBoard = BoardQuarterTarget::whereIn('board_key', $boardKeys)
@@ -119,7 +120,7 @@ class OkrController extends Controller
                 'key_results' => $o->keyResults->map(function (KeyResult $kr) use ($realisasi, $kartuPerKr, $namaBoard) {
                     $kartu = $kartuPerKr->get($kr->id, collect());
                     if ($kr->source === 'kartu' && ! $kr->board_key) {
-                        $kr->setAttribute('kartu_selesai', $kartu->whereNotNull('completed_at')->count());
+                        $kr->setAttribute('kartu_selesai', $kartu->where('is_kr_master', false)->whereNotNull('completed_at')->count());
                     }
 
                     return [
