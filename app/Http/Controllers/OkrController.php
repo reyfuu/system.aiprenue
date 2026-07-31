@@ -146,6 +146,7 @@ class OkrController extends Controller
                             'id' => $p->id,
                             'judul' => $p->endorse,
                             'board' => $p->category,
+                            'board_name' => $namaBoard[$p->category] ?? (Category::where('key', $p->category)->value('name') ?? $p->category),
                             'is_master' => (bool) $p->is_kr_master,
                             'pic' => $p->assignee?->name,
                             // id & tanggal mentah untuk mengisi form edit KR;

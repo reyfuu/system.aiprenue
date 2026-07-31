@@ -607,8 +607,8 @@ const simpanAktual = () =>
                                             :href="`/pipelines/kanban?category=${card.board || 'todo'}&card=${card.id}`"
                                             class="hover:underline flex items-center gap-1"
                                         >
-                                            Kanban: Todolist Tim &gt; {{ card.pic || 'Tim' }}
-                                            <svg class="w-3 h-3 text-blue-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            Kanban: {{ card.board_name || 'Board' }} &gt; {{ card.pic || 'Tim' }}
+                                            <svg class="w-3.5 h-3.5 text-blue-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path
                                                     stroke-linecap="round"
                                                     stroke-linejoin="round"
