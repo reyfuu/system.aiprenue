@@ -186,6 +186,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store'])->name('transactions.store');
     Route::put('/transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
     Route::delete('/transactions/{transaction}', [TransactionController::class, 'destroy'])->name('transactions.destroy');
+    Route::post('/inventories/ocr', [InventoryController::class, 'ocr'])->name('inventories.ocr'); // OCR foto barang → JSON prefill form
     Route::post('/inventories', [InventoryController::class, 'store'])->name('inventories.store');
     Route::put('/inventories/{inventory}', [InventoryController::class, 'update'])->name('inventories.update');
     Route::delete('/inventories/{inventory}', [InventoryController::class, 'destroy'])->name('inventories.destroy');
