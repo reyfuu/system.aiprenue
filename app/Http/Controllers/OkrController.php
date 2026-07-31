@@ -77,7 +77,6 @@ class OkrController extends Controller
         $boardKeys = $daftar->flatMap->keyResults->where('source', 'kartu')
             ->pluck('board_key')->filter()->unique()->values();
         $selesaiPerBoard = Pipeline::whereIn('category', $boardKeys)
-            ->whereBetween('deadline', [$start->toDateString(), $end->toDateString()])
             ->whereNotNull('completed_at')
             ->where('is_kr_master', false)
             ->selectRaw('category, COUNT(*) as total')
