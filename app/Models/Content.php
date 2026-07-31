@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Content extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = [
         'comp', 'jenis_postingan', 'kategori', 'referensi', 'inti_pesan',
         'hook_material', 'brief_original', 'opsi_brief', 'script_remake',

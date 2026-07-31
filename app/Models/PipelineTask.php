@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PipelineTask extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = ['pipeline_id', 'title', 'assigned_to', 'deadline', 'completed_at', 'position'];
     protected $casts = ['deadline' => 'date', 'completed_at' => 'datetime'];
 

@@ -796,10 +796,10 @@ class="ml-3"
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
                             <p class="text-2xl font-extrabold text-emerald-600">
-                                {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 9.5B' }}
+                                {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
                             <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 9500000000)">
-                                Rp {{ nfFull.format(ringkasan.omset_target || 9500000000) }}
+                                Rp {{ nfFull.format(ringkasan.omset_target || 0) }}
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">

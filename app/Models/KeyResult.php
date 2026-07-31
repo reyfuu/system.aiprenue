@@ -7,11 +7,12 @@ use App\Support\OkrMetrics;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /** Satu Key Result: bagian OKR yang benar-benar terukur. */
 class KeyResult extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = [
         'objective_id', 'title', 'description', 'source', 'board_key', 'metric', 'target', 'actual_manual', 'unit', 'priority', 'position',
         'owner_id', 'created_by',

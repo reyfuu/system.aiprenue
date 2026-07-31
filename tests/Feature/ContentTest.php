@@ -55,8 +55,11 @@ class ContentTest extends TestCase
         ]))->assertRedirect();
         $this->assertDatabaseHas('contents', ['id' => $content->id, 'progress' => 'published', 'caption' => 'Caption revisi.']);
 
+        // Hapus kini soft delete: hilang dari query normal, tapi barisnya
+        // tetap ada di tabel supaya bisa dipulihkan.
         $this->actingAs($manager)->delete('/content/'.$content->id)->assertRedirect();
-        $this->assertDatabaseMissing('contents', ['id' => $content->id]);
+        $this->assertNull(Content::find($content->id));
+        $this->assertSoftDeleted($content);
     }
 
     public function test_filter_minggu_memakai_senin_sampai_minggu(): void

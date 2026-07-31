@@ -6,12 +6,36 @@ use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 
 /** Satu Objective kuartalan: tujuan utama, termasuk target omzet bila ada. */
 class Objective extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
+
+    /**
+     * Dulu `key_results.objective_id` cascadeOnDelete di skema — DB yang
+     * membereskan anak saat induk dihapus. Soft delete = UPDATE `deleted_at`,
+     * bukan DELETE, jadi FK cascade tidak pernah terpicu. Kita tiru manual:
+     * hapus Objective → ikut soft-delete semua Key Result-nya; restore
+     * Objective → kembalikan (hanya) yang ikut hilang bareng dia, bukan yang
+     * memang sudah dihapus terpisah sebelumnya.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (Objective $objective) {
+            if ($objective->isForceDeleting()) {
+                return;
+            }
+            $objective->keyResults()->delete();
+        });
+
+        static::restoring(function (Objective $objective) {
+            $objective->keyResults()->onlyTrashed()->restore();
+        });
+    }
+
     protected $fillable = [
         'year', 'quarter', 'title', 'description', 'priority',
         'omset_target', 'omset_owner_id', 'position', 'created_by',

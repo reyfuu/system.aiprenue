@@ -263,7 +263,13 @@ class PipelineController extends Controller
             $kartuKuartal = Pipeline::where('category', $category)
                 ->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()])
                 ->get(['id', 'deadline', 'completed_at']);
-            $selesaiKuartal = $kartuKuartal->whereNotNull('completed_at')->count();
+            // "Selesai" dihitung dari completed_at DI DALAM kuartal, TANPA syarat
+            // deadline — kartu tanpa deadline (mis. board Sales) yang diselesaikan
+            // di kuartal ini tetap terhitung. $kartuKuartal (total/ketepatan) tetap
+            // berbasis deadline, sama seperti KpiController::statistik().
+            $selesaiKuartal = Pipeline::where('category', $category)
+                ->whereBetween('completed_at', [$qStart, $qEnd])
+                ->count();
             $target = (int) (BoardQuarterTarget::for($category, $quarterPanel['year'], $quarterPanel['quarter'])?->target_done ?? 0);
 
             $quarterStats = [
@@ -412,6 +418,12 @@ class PipelineController extends Controller
 
         if ($baruSelesai && $pipeline->key_result_id) {
             OkrNotifications::laporkanKartuSelesai($pipeline, $request->user());
+        }
+
+        // Tombol di board (Inertia) butuh redirect agar props ke-refresh; MCP/test
+        // memakai JSON. X-Inertia menandai request datang dari router.patch.
+        if ($request->header('X-Inertia')) {
+            return back();
         }
 
         return response()->json(['ok' => true]);

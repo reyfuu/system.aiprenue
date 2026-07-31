@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Mindmap extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = ['user_id', 'title', 'data'];
 
     protected $casts = ['data' => 'array']; // JSON node simple-mind-map ↔ array PHP

@@ -16,6 +16,7 @@ return new class extends Migration
             $table->unsignedTinyInteger('quarter');
             $table->string('title');
             $table->timestamps();
+            $table->softDeletes(); // OkrPeriod pakai SoftDeletes — lihat migrasi add_soft_deletes_to_domain_tables
             $table->unique(['year', 'quarter']); // satu judul per periode
         });
     }

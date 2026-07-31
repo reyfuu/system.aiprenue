@@ -3,10 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /** Definisi label kartu (dikelola owner). Lihat migrasi create_labels_table. */
 class Label extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = ['name', 'group', 'color'];
 
     /**

@@ -16,6 +16,8 @@ class PipelineTaskController extends Controller
             'assigned_to' => 'nullable|exists:users,id',
             'deadline' => 'nullable|date',
         ]);
+        // Default: todo ikut penanggung jawab kartunya (sesuai kolom/kartu) bila tak dipilih manual.
+        $data['assigned_to'] = $data['assigned_to'] ?? $pipeline->assigned_to;
         $pipeline->tasks()->create($data + ['position' => $pipeline->tasks()->max('position') + 1]);
         $this->sync($pipeline);
         return back()->with('status', 'Tugas ditambahkan.');
