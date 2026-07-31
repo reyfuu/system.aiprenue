@@ -47,8 +47,8 @@ final class OkrMetrics
             'view' => self::totalView($start, $end),
             'subscriber' => self::totalSubscriber($end),
             'omset' => self::totalOmset($start, $end),
-            'omset_fk' => self::totalOmsetAccount('fk', $start, $end),
-            'omset_aipreneur' => self::totalOmsetAccount('aipreneur', $start, $end),
+            'omset_fk' => self::totalOmsetAccount(['fk'], $start, $end),
+            'omset_aipreneur' => self::totalOmsetAccount(['ai_preneur', 'aipreneur'], $start, $end),
         ];
     }
 
@@ -101,7 +101,7 @@ final class OkrMetrics
             ->whereBetween('date', [$start, $end])->sum('amount_idr');
 
         $rate = ExchangeRate::usdToIdr();
-        $orders = \App\Models\Order::all()->filter(function ($o) use ($start, $end) {
+        $orders = Order::all()->filter(function ($o) use ($start, $end) {
             $t = $o->tanggal_bayar ?? $o->created_at;
             return $t && $t->gte($start) && $t->lte($end);
         });
@@ -110,10 +110,10 @@ final class OkrMetrics
         return max($pembukuan, $orderTotal);
     }
 
-    private static function totalOmsetAccount(string $accountKey, $start, $end): float
+    private static function totalOmsetAccount(array $accountKeys, $start, $end): float
     {
         $rate = ExchangeRate::usdToIdr();
-        $orders = \App\Models\Order::where('account', $accountKey)->get()->filter(function ($o) use ($start, $end) {
+        $orders = Order::whereIn('account', $accountKeys)->get()->filter(function ($o) use ($start, $end) {
             $t = $o->tanggal_bayar ?? $o->created_at;
             return $t && $t->gte($start) && $t->lte($end);
         });
