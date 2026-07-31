@@ -282,13 +282,13 @@ const simpanAktual = () =>
                                 {{ ringkasan.progress === null || ringkasan.progress === undefined ? '—' : ringkasan.progress + '%' }}
                             </p>
                         </div>
-                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
+                        <div class="bg-white border border-emerald-200 bg-emerald-50/20 rounded-xl p-4 shadow-2xs space-y-1">
+                            <p class="text-xs font-semibold text-emerald-800 uppercase tracking-wider">Target Omzet Kuartal</p>
                             <p class="text-2xl font-extrabold text-emerald-600">
                                 {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
-                            <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 0)">
-                                Total Seluruh Objective
+                            <p class="text-[10px] text-emerald-700 font-semibold truncate">
+                                Per Bulan: {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target / 3) : 'Rp 0' }}
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
@@ -311,6 +311,38 @@ const simpanAktual = () =>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Off Track / Tertinggal</p>
                             <p class="text-2xl font-extrabold text-amber-600">{{ ringkasan.tertinggal || 0 }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Omzet Breakdown per Bisnis (FK & Aipreneur) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div class="bg-white border border-emerald-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
+                                <h4 class="text-xs font-bold text-slate-800 mt-1">Lini Produk Fashion &amp; Konsumen</h4>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-base font-extrabold text-emerald-600">
+                                    {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
+                                </p>
+                                <p class="text-[10px] font-semibold text-slate-500">
+                                    Bulanan: {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="bg-white border border-indigo-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
+                                <h4 class="text-xs font-bold text-slate-800 mt-1">Ekosistem Portal &amp; Subskripsi</h4>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-base font-extrabold text-indigo-600">
+                                    {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
+                                </p>
+                                <p class="text-[10px] font-semibold text-slate-500">
+                                    Bulanan: {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -409,8 +441,9 @@ const simpanAktual = () =>
                                 <span v-if="o.omset_owner_name" class="text-xs text-slate-500">
                                     Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
                                 </span>
-                                <span class="text-xs text-slate-500 flex items-center gap-1">
-                                    Target Omzet: <strong class="text-emerald-700">Rp {{ nfFull.format(o.omset_target || 0) }}</strong>
+                                <span class="text-xs text-slate-500 flex items-center gap-1.5">
+                                    Target Omzet: <strong class="text-emerald-700">Rp {{ nfFull.format(o.omset_target || 0) }} / Qtr</strong>
+                                    <span class="text-[11px] text-slate-400 font-semibold">(~Rp {{ nfFull.format(Math.round((o.omset_target || 0) / 3)) }} / bln)</span>
                                     <button
                                         v-if="canManage"
                                         class="ml-1 text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"

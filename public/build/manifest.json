@@ -1,6 +1,6 @@
 {
-  "_Base-D_koCkx0.js": {
-    "file": "assets/Base-D_koCkx0.js",
+  "_Base-BGcceg3x.js": {
+    "file": "assets/Base-BGcceg3x.js",
     "name": "Base",
     "imports": [
       "resources/js/app.js"
@@ -59,26 +59,26 @@
     "src": "_instrument-sans-600-normal-DMks36a2.woff"
   },
   "node_modules/simple-mind-map/index.js": {
-    "file": "assets/simple-mind-map-B9Aq_9Ye.js",
+    "file": "assets/simple-mind-map-R9TxUumA.js",
     "name": "simple-mind-map",
     "src": "node_modules/simple-mind-map/index.js",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_Base-D_koCkx0.js"
+      "_Base-BGcceg3x.js"
     ]
   },
   "node_modules/simple-mind-map/src/plugins/Drag.js": {
-    "file": "assets/Drag--TAabSsY.js",
+    "file": "assets/Drag-BimwQcaJ.js",
     "name": "Drag",
     "src": "node_modules/simple-mind-map/src/plugins/Drag.js",
     "isDynamicEntry": true,
     "imports": [
-      "_Base-D_koCkx0.js"
+      "_Base-BGcceg3x.js"
     ]
   },
   "resources/css/app.css": {
-    "file": "assets/app-D0M2LoIb.css",
+    "file": "assets/app-Ctv_qMpz.css",
     "name": "app",
     "names": [
       "app.css"
@@ -87,7 +87,7 @@
     "isEntry": true
   },
   "resources/js/app.js": {
-    "file": "assets/app-CILRwc7m.js",
+    "file": "assets/app-CBMDXKuO.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
@@ -97,7 +97,7 @@
     ],
     "css": [
       "assets/app-Jwgxw2Lh.css",
-      "assets/app-D0M2LoIb.css"
+      "assets/app-Ctv_qMpz.css"
     ]
   }
 }
