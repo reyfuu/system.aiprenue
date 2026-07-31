@@ -457,10 +457,15 @@ const simpanAktual = () =>
                                 </div>
                             </div>
                             <div class="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-2">
-                                <span
-                                    >PIC: <strong class="text-slate-700">{{ o.omset_owner_name || '-' }}</strong></span
+                                <span>PIC: <strong class="text-slate-700">{{ o.omset_owner_name || '-' }}</strong></span>
+                                <span class="text-emerald-700 font-bold">Omzet: Rp {{ rpShort(o.omset_target || 0) }}</span>
+                                <button
+                                    v-if="canManage"
+                                    class="text-blue-600 hover:underline font-semibold"
+                                    @click="bukaObjective(o)"
                                 >
-                                <span>{{ o.key_results ? o.key_results.length : 0 }} Key Result</span>
+                                    Edit Omzet
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -512,6 +517,17 @@ const simpanAktual = () =>
                                 </span>
                                 <span v-if="o.omset_owner_name" class="text-xs text-slate-500">
                                     Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
+                                </span>
+                                <span class="text-xs text-slate-500 flex items-center gap-1">
+                                    Target Omzet: <strong class="text-emerald-700">Rp {{ nfFull.format(o.omset_target || 0) }}</strong>
+                                    <button
+                                        v-if="canManage"
+                                        class="ml-1 text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
+                                        title="Edit Omzet & PIC Objective"
+                                        @click="bukaObjective(o)"
+                                    >
+                                        ✏️ Edit
+                                    </button>
                                 </span>
                             </div>
                             <div v-if="canManage" class="flex items-center gap-1.5">
