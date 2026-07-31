@@ -158,11 +158,6 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::post('/okr/key-results/{keyResult}/kartu', [OkrController::class, 'storeKartu'])->name('okr.key-results.kartu.store');
     Route::post('/okr/key-results/{keyResult}/attach', [OkrController::class, 'attachKartu'])->name('okr.key-results.kartu.attach');
     Route::delete('/okr/key-results/{keyResult}/kartu/{pipeline}', [OkrController::class, 'detachKartu'])->name('okr.key-results.kartu.detach');
-    // Susun OKR dengan AI — kirim arahan ke 9router (ChatGPT + Claude) lalu
-    // kembalikan usulan Objective & Key Result untuk ditinjau sebelum disimpan.
-    Route::post('/okr/ai/generate', [OkrController::class, 'generateAi'])->name('okr.ai.generate');
-    // Simpan usulan OKR hasil AI ke database — buat Objective + KR + kartu.
-    Route::post('/okr/ai/save', [OkrController::class, 'saveAi'])->name('okr.ai.save');
 
     // KPI board Kanban — data operasional, audiens lebih luas (izin dinamis
     // lewat menu 'kpi'). Penetapan target dibatasi canManage() di
