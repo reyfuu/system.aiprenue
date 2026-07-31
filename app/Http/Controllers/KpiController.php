@@ -117,10 +117,13 @@ class KpiController extends Controller
 
         // "Selesai" dihitung dari completed_at DI DALAM kuartal, TANPA syarat
         // deadline — kartu tanpa deadline (mis. board Sales) yang diselesaikan
-        // di kuartal ini tetap terhitung. $kartu di atas (total/ketepatan) tetap
-        // berbasis deadline, itu tak berubah.
+        // di kuartal ini tetap terhitung. Kecualikan kartu master OKR (is_kr_master = true).
         $selesai = Pipeline::where('category', $boardKey)
-            ->whereBetween('completed_at', [$start, $end])
+            ->where('is_kr_master', false)
+            ->where(function ($q) use ($start, $end) {
+                $q->whereBetween('completed_at', [$start, $end])
+                  ->orWhereNotNull('completed_at');
+            })
             ->count();
         $target ??= (int) (BoardQuarterTarget::for($boardKey, $year, $quarter)?->target_done ?? 0);
 

@@ -268,7 +268,11 @@ class PipelineController extends Controller
             // di kuartal ini tetap terhitung. $kartuKuartal (total/ketepatan) tetap
             // berbasis deadline, sama seperti KpiController::statistik().
             $selesaiKuartal = Pipeline::where('category', $category)
-                ->whereBetween('completed_at', [$qStart, $qEnd])
+                ->where('is_kr_master', false)
+                ->where(function ($q) use ($qStart, $qEnd) {
+                    $q->whereBetween('completed_at', [$qStart, $qEnd])
+                      ->orWhereNotNull('completed_at');
+                })
                 ->count();
             $target = (int) (BoardQuarterTarget::for($category, $quarterPanel['year'], $quarterPanel['quarter'])?->target_done ?? 0);
 
