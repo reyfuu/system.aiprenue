@@ -124,6 +124,40 @@ const openInvEdit = (i) => {
     invForm.clearErrors();
     invOpen.value = true;
 };
+// ---- OCR inventaris: foto barang/nota → AI baca → prefill form (user tetap meninjau) ----
+const invOcrLoading = ref(false);
+const invOcrError = ref('');
+const scanInventaris = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    invOcrError.value = '';
+    invOcrLoading.value = true;
+    try {
+        const fd = new FormData();
+        fd.append('gambar', file);
+        const token = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+        const res = await fetch('/inventories/ocr', {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': token, Accept: 'application/json' },
+            body: fd,
+        });
+        const data = await res.json();
+        if (data.ok && data.data) {
+            const d = data.data; // isi field yang berhasil dibaca; biarkan yang kosong
+            if (d.name) invForm.name = d.name;
+            if (d.qty) invForm.qty = d.qty;
+            if (d.unit_value_idr) invForm.unit_value_idr = d.unit_value_idr;
+            if (d.month) invForm.month = d.month;
+        } else {
+            invOcrError.value = data.error || 'Gagal membaca gambar.';
+        }
+    } catch {
+        invOcrError.value = 'Gagal membaca gambar (jaringan/AI tidak merespons).';
+    } finally {
+        invOcrLoading.value = false;
+        e.target.value = ''; // reset agar file yang sama bisa dipilih ulang
+    }
+};
 const submitInv = () => {
     const done = {
         onSuccess: () => {
@@ -461,6 +495,25 @@ const delInv = (i) => {
                 </button>
             </div>
             <form class="space-y-3 text-sm" @submit.prevent="submitInv">
+                <!-- OCR: foto barang/nota → AI isi field otomatis -->
+                <div class="p-3 rounded-xl bg-brand-50/60 border border-brand-100">
+                    <label class="flex flex-wrap items-center gap-2 cursor-pointer">
+                        <span
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700"
+                            :class="invOcrLoading ? 'opacity-70 cursor-wait' : ''"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <circle cx="12" cy="13" r="3" stroke-width="2" />
+                            </svg>
+                            <span v-if="!invOcrLoading">Scan barang (AI)</span>
+                            <span v-else>Membaca gambar…</span>
+                        </span>
+                        <input type="file" accept="image/*" class="hidden" :disabled="invOcrLoading" @change="scanInventaris" />
+                        <span class="text-[11px] text-slate-500">Foto barang/nota → field terisi otomatis, tinggal dicek.</span>
+                    </label>
+                    <p v-if="invOcrError" class="text-xs text-red-600 mt-1.5">{{ invOcrError }}</p>
+                </div>
                 <label class="block font-medium text-slate-600"
                     >Nama Barang
                     <input
