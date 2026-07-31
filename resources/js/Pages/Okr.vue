@@ -651,8 +651,11 @@ const simpanAktual = () =>
                                         </button>
                                     </div>
 
-                                    <p v-if="card.description" class="text-xs text-slate-600 leading-relaxed pl-6">
+                                    <p v-if="card.description" class="text-xs text-slate-600 leading-relaxed pl-6 whitespace-pre-line">
                                         {{ card.description }}
+                                    </p>
+                                    <p v-else-if="card.is_master && kr.description" class="text-xs text-slate-500 leading-relaxed pl-6 italic">
+                                        {{ kr.description }}
                                     </p>
 
                                     <div
