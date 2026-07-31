@@ -318,7 +318,16 @@ const simpanAktual = () =>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                         <div class="bg-white border border-emerald-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
                             <div>
-                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
+                                    <button
+                                        v-if="canManage && objectives.find(o => o.priority?.name === 'FK')"
+                                        class="text-[10px] font-bold text-blue-600 hover:underline"
+                                        @click="bukaObjective(objectives.find(o => o.priority?.name === 'FK'))"
+                                    >
+                                        ✏️ Edit
+                                    </button>
+                                </div>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Lini Produk Fashion &amp; Konsumen</h4>
                             </div>
                             <div class="text-right">
@@ -332,7 +341,16 @@ const simpanAktual = () =>
                         </div>
                         <div class="bg-white border border-indigo-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
                             <div>
-                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
+                                    <button
+                                        v-if="canManage && objectives.find(o => o.priority?.name === 'AIPRENEUR')"
+                                        class="text-[10px] font-bold text-blue-600 hover:underline"
+                                        @click="bukaObjective(objectives.find(o => o.priority?.name === 'AIPRENEUR'))"
+                                    >
+                                        ✏️ Edit
+                                    </button>
+                                </div>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Ekosistem Portal &amp; Subskripsi</h4>
                             </div>
                             <div class="text-right">
@@ -381,14 +399,7 @@ const simpanAktual = () =>
                             </div>
                             <div class="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-2">
                                 <span>PIC: <strong class="text-slate-700">{{ o.omset_owner_name || '-' }}</strong></span>
-                                <span class="text-emerald-700 font-bold">Omzet: Rp {{ rpShort(o.omset_target || 0) }}</span>
-                                <button
-                                    v-if="canManage"
-                                    class="text-blue-600 hover:underline font-semibold"
-                                    @click="bukaObjective(o)"
-                                >
-                                    Edit Omzet
-                                </button>
+                                <span>{{ o.key_results ? o.key_results.length : 0 }} Key Result</span>
                             </div>
                         </div>
                     </div>
@@ -440,18 +451,6 @@ const simpanAktual = () =>
                                 </span>
                                 <span v-if="o.omset_owner_name" class="text-xs text-slate-500">
                                     Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
-                                </span>
-                                <span class="text-xs text-slate-500 flex items-center gap-1.5">
-                                    Target Omzet: <strong class="text-emerald-700">Rp {{ nfFull.format(o.omset_target || 0) }} / Qtr</strong>
-                                    <span class="text-[11px] text-slate-400 font-semibold">(~Rp {{ nfFull.format(Math.round((o.omset_target || 0) / 3)) }} / bln)</span>
-                                    <button
-                                        v-if="canManage"
-                                        class="ml-1 text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                                        title="Edit Omzet & PIC Objective"
-                                        @click="bukaObjective(o)"
-                                    >
-                                        ✏️ Edit
-                                    </button>
                                 </span>
                             </div>
                             <div v-if="canManage" class="flex items-center gap-1.5">
