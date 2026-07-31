@@ -72,7 +72,7 @@ class OkrController extends Controller
             ->orderBy('position')->orderBy('id')
             // is_kr_master WAJIB ikut terpilih: Vue mencari card utama lewat
             // flag ini; tanpanya semua kartu terbaca bukan master.
-            ->get(['id', 'key_result_id', 'category', 'assigned_to', 'endorse', 'progress', 'deadline', 'completed_at', 'is_kr_master'])
+            ->get(['id', 'key_result_id', 'category', 'assigned_to', 'endorse', 'description', 'progress', 'deadline', 'completed_at', 'is_kr_master'])
             ->groupBy('key_result_id');
         $boardKeys = $daftar->flatMap->keyResults->where('source', 'kartu')
             ->pluck('board_key')->filter()->unique()->values();
@@ -145,6 +145,7 @@ class OkrController extends Controller
                         'kartu' => $kartu->map(fn (Pipeline $p) => [
                             'id' => $p->id,
                             'judul' => $p->endorse,
+                            'description' => $p->description,
                             'board' => $p->category,
                             'board_name' => $namaBoard[$p->category] ?? (Category::where('key', $p->category)->value('name') ?? $p->category),
                             'is_master' => (bool) $p->is_kr_master,
