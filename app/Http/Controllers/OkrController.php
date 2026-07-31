@@ -144,7 +144,6 @@ class OkrController extends Controller
                         'kartu' => $kartu->map(fn (Pipeline $p) => [
                             'id' => $p->id,
                             'judul' => $p->endorse,
-                            'description' => $p->description,
                             'board' => $p->category,
                             'is_master' => (bool) $p->is_kr_master,
                             'pic' => $p->assignee?->name,
@@ -731,9 +730,6 @@ class OkrController extends Controller
             $master->update([
                 'assigned_to' => $execution['assigned_to'] ?? null,
                 'deadline' => $execution['deadline'] ?? null,
-                // Deskripsi tugas ikut deskripsi KR — satu field yang diedit
-                // user di modal, ditampilkan di kartu tugas OKR.
-                'description' => $data['description'] ?? null,
             ]);
 
             // Penanggung jawab KR mengikuti PIC card utama — invariant yang
