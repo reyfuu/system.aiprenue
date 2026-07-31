@@ -261,31 +261,20 @@ class PipelineController extends Controller
             // menyimpang, angka board di halaman Kanban & halaman KPI akan berselisih
             // untuk kuartal yang sama.
             $kartuKuartal = Pipeline::where('category', $category)
-                ->whereBetween('deadline', [$qStart->toDateString(), $qEnd->toDateString()])
-                ->get(['id', 'deadline', 'completed_at']);
-            // "Selesai" dihitung dari completed_at DI DALAM kuartal, TANPA syarat
-            // deadline — kartu tanpa deadline (mis. board Sales) yang diselesaikan
-            // di kuartal ini tetap terhitung. $kartuKuartal (total/ketepatan) tetap
-            // berbasis deadline, sama seperti KpiController::statistik().
-            $selesaiKuartal = Pipeline::where('category', $category)
                 ->where('is_kr_master', false)
-                ->where(function ($q) use ($qStart, $qEnd) {
-                    $q->whereBetween('completed_at', [$qStart, $qEnd])
-                      ->orWhereNotNull('completed_at');
-                })
-                ->count();
+                ->whereNull('archived_at')
+                ->get(['id', 'deadline', 'completed_at']);
+
+            $selesaiKuartal = $kartuKuartal->filter(fn ($p) => $p->completed_at !== null)->count();
             $target = (int) (BoardQuarterTarget::for($category, $quarterPanel['year'], $quarterPanel['quarter'])?->target_done ?? 0);
 
             $quarterStats = [
                 'total' => $kartuKuartal->count(),
                 'done' => $selesaiKuartal,
                 'target' => $target,
-                // null saat target belum ditetapkan — bedakan dari 0%, lihat KpiController.
                 'percent' => $target > 0 ? round($selesaiKuartal / $target * 100, 1) : null,
-                // Kartu tanpa deadline: tak masuk kuartal mana pun. Jumlahnya dikirim
-                // supaya UI bisa menjelaskan selisih antara isi board & isi panel —
-                // tanpa ini, filter kuartal terlihat seperti menghilangkan kartu.
                 'no_deadline' => Pipeline::where('category', $category)
+                    ->where('is_kr_master', false)
                     ->whereNull('archived_at')->whereNull('deadline')->count(),
                 'ketepatan' => KpiController::hitungKetepatan($kartuKuartal),
             ];
