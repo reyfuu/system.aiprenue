@@ -29,6 +29,10 @@ Thumbs.db
 
 # Dump SQL berisi data bisnis — jangan commit ke repo public
 /database/pipeline_dump.sql
+/database/*.sql
+/backup_*.sql*
+/u864765086_*.sql*
+*.sql.gz
 
 # Tooling lokal — tidak untuk repo
 /.github
