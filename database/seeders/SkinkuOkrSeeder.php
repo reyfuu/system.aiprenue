@@ -356,46 +356,67 @@ class SkinkuOkrSeeder extends Seeder
             ],
         ]);
 
-        // KR 3.4: Mencapai 30 distributor aktif
-        $kr3_4 = KeyResult::updateOrCreate(
-            ['objective_id' => $obj3->id, 'title' => 'Mencapai 30 distributor aktif'],
+        // ------------------------------------------------------------------------
+        // OBJECTIVE 4: Target Omzet FK (Fashion & Konsumen)
+        // ------------------------------------------------------------------------
+        $fkPriority = Label::where('name', 'FK')->first() ? ['name' => 'FK', 'color' => 'bg-emerald-600'] : ['name' => 'FK', 'color' => 'bg-emerald-600'];
+        $obj4 = Objective::updateOrCreate(
+            ['year' => $year, 'quarter' => $quarter, 'title' => 'Target Omzet Penjualan FK (Fashion & Konsumen)'],
             [
-                'source' => 'manual',
-                'metric' => null,
-                'target' => 30,
-                'actual_manual' => 0,
-                'unit' => 'angka',
-                'priority' => null,
+                'description' => 'Fokus pencapaian omzet lini produk FK Q3 2026 melalui kanal distribusi & penjualan langsung.',
+                'priority' => $fkPriority,
+                'omset_target' => 300000000,
+                'omset_owner_id' => $users['Bahtiar Tiar'] ?? $adminId,
                 'position' => 4,
-                'owner_id' => $users['Devrina'] ?? $adminId,
                 'created_by' => $adminId,
             ]
         );
 
-        $this->createCardsForKr($kr3_4->id, [
+        $kr4_1 = KeyResult::updateOrCreate(
+            ['objective_id' => $obj4->id, 'title' => 'Mencapai Omzet Lini FK Rp300.000.000 per Bulan'],
             [
-                'endorse' => 'Reaktivasi distributor lama',
-                'description' => 'Jalankan workstream ini berdasarkan diagnosis panel COO dan bukti sistem. Serahkan hasil terukur, catatan validasi, risiko, serta keputusan yang masih diperlukan.',
-                'assigned_to' => $users['Bahtiar Tiar'] ?? null,
-                'deadline' => '2026-09-30',
-                'progress' => 'todo',
-            ],
+                'source' => 'manual',
+                'metric' => null,
+                'target' => 300000000,
+                'actual_manual' => 0,
+                'unit' => 'rupiah',
+                'priority' => null,
+                'position' => 1,
+                'owner_id' => $users['Bahtiar Tiar'] ?? $adminId,
+                'created_by' => $adminId,
+            ]
+        );
+
+        // ------------------------------------------------------------------------
+        // OBJECTIVE 5: Target Omzet Aipreneur Portal & Ecosystem
+        // ------------------------------------------------------------------------
+        $aipreneurPriority = Label::where('name', 'AIPRENEUR')->first() ? ['name' => 'AIPRENEUR', 'color' => 'bg-indigo-600'] : ['name' => 'AIPRENEUR', 'color' => 'bg-indigo-600'];
+        $obj5 = Objective::updateOrCreate(
+            ['year' => $year, 'quarter' => $quarter, 'title' => 'Target Omzet Ekosistem Aipreneur Portal'],
             [
-                'endorse' => 'Program onboarding',
-                'description' => 'Jalankan workstream ini berdasarkan diagnosis panel COO dan bukti sistem. Serahkan hasil terukur, catatan validasi, risiko, serta keputusan yang masih diperlukan.',
-                'assigned_to' => $users['Agatha'] ?? null,
-                'deadline' => '2026-09-30',
-                'progress' => 'todo',
-            ],
+                'description' => 'Peningkatan omzet berlangganan & lisensi portal ekosistem Aipreneur di Q3 2026.',
+                'priority' => $aipreneurPriority,
+                'omset_target' => 750000000,
+                'omset_owner_id' => $users['Billy'] ?? $adminId,
+                'position' => 5,
+                'created_by' => $adminId,
+            ]
+        );
+
+        $kr5_1 = KeyResult::updateOrCreate(
+            ['objective_id' => $obj5->id, 'title' => 'Mencapai Omzet Portal Aipreneur Rp750.000.000 per Kuartal'],
             [
-                'endorse' => 'Review dan approval COO: Meningkatkan Omzet E-Commerce SKINKU',
-                'description' => 'Tinjau hasil kerja dan risiko lintas fungsi untuk Objective ini. Berikan keputusan, koreksi, atau approval tertulis sebelum tenggat Key Result.',
-                'assigned_to' => $users['Devrina'] ?? null,
-                'deadline' => '2026-09-30',
-                'progress' => 'todo',
-                'is_kr_master' => true,
-            ],
-        ]);
+                'source' => 'manual',
+                'metric' => null,
+                'target' => 750000000,
+                'actual_manual' => 0,
+                'unit' => 'rupiah',
+                'priority' => null,
+                'position' => 1,
+                'owner_id' => $users['Billy'] ?? $adminId,
+                'created_by' => $adminId,
+            ]
+        );
     }
 
     private function createCardsForKr(int $krId, array $cards): void

@@ -282,8 +282,18 @@ const simpanAktual = () =>
                                 {{ ringkasan.progress === null || ringkasan.progress === undefined ? '—' : ringkasan.progress + '%' }}
                             </p>
                         </div>
-                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
+                        <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1 relative group">
+                            <div class="flex items-center justify-between">
+                                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Omzet</p>
+                                <button
+                                    v-if="canManage && objectives.length"
+                                    class="text-[10px] font-bold text-blue-600 hover:underline"
+                                    title="Edit Omzet Objective"
+                                    @click="bukaObjective(objectives[0])"
+                                >
+                                    ✏️ Edit
+                                </button>
+                            </div>
                             <p class="text-2xl font-extrabold text-emerald-600">
                                 {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
