@@ -93,7 +93,7 @@ class KeyResult extends Model
     /** Hitung kartu tautan yang sudah selesai. Fallback anti-N+1, lihat actual(). */
     public function kartuSelesaiCount(): int
     {
-        return $this->cards()->whereNotNull('completed_at')->count();
+        return $this->cards()->where('is_kr_master', false)->whereNotNull('completed_at')->count();
     }
 
     /**
