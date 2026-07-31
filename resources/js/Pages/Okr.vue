@@ -659,7 +659,7 @@ const simpanAktual = () =>
                                     </p>
                                     <a
                                         :href="kr.source === 'kartu'
-                                            ? `/pipelines/kanban?category=${kr.kartu[0]?.board || 'todo'}&card=${kr.kartu[0]?.id}`
+                                            ? `/pipelines/kanban?category=${kr.kartu[0]?.board || 'todolist'}&card=${kr.kartu[0]?.id}`
                                             : `/pipelines?category=sales&card=${kr.kartu[0]?.id}`"
                                         class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 transition-colors"
                                     >
@@ -692,7 +692,7 @@ const simpanAktual = () =>
                                             class="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
                                             @click="bukaKr(o, kr)"
                                         >
-                                            Edit Tugas
+                                            Edit
                                         </button>
                                     </div>
 
