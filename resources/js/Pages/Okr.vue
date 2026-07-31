@@ -798,7 +798,7 @@ class="ml-3"
                             <p class="text-2xl font-extrabold text-emerald-600">
                                 {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
-                            <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 9500000000)">
+                            <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 0)">
                                 Rp {{ nfFull.format(ringkasan.omset_target || 0) }}
                             </p>
                         </div>
