@@ -3,7 +3,9 @@
 namespace App\Support;
 
 use App\Models\InsightContent;
+use App\Models\Order;
 use App\Models\Transaction;
+use App\Support\ExchangeRate;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,6 +47,8 @@ final class OkrMetrics
             'view' => self::totalView($start, $end),
             'subscriber' => self::totalSubscriber($end),
             'omset' => self::totalOmset($start, $end),
+            'omset_fk' => self::totalOmsetAccount('fk', $start, $end),
+            'omset_aipreneur' => self::totalOmsetAccount('aipreneur', $start, $end),
         ];
     }
 
@@ -93,7 +97,27 @@ final class OkrMetrics
      *  OKR adalah uang yang benar-benar masuk. */
     private static function totalOmset($start, $end): float
     {
-        return (float) Transaction::where('type', 'pemasukan')
+        $pembukuan = (float) Transaction::where('type', 'pemasukan')
             ->whereBetween('date', [$start, $end])->sum('amount_idr');
+
+        $rate = ExchangeRate::usdToIdr();
+        $orders = \App\Models\Order::all()->filter(function ($o) use ($start, $end) {
+            $t = $o->tanggal_bayar ?? $o->created_at;
+            return $t && $t->gte($start) && $t->lte($end);
+        });
+        $orderTotal = (float) $orders->sum('total_idr') + (float) $orders->sum('total_usd') * $rate;
+
+        return max($pembukuan, $orderTotal);
+    }
+
+    private static function totalOmsetAccount(string $accountKey, $start, $end): float
+    {
+        $rate = ExchangeRate::usdToIdr();
+        $orders = \App\Models\Order::where('account', $accountKey)->get()->filter(function ($o) use ($start, $end) {
+            $t = $o->tanggal_bayar ?? $o->created_at;
+            return $t && $t->gte($start) && $t->lte($end);
+        });
+
+        return (float) $orders->sum('total_idr') + (float) $orders->sum('total_usd') * $rate;
     }
 }

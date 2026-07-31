@@ -351,17 +351,20 @@ const simpanAktual = () =>
                                         class="text-[10px] font-bold text-blue-600 hover:underline"
                                         @click="editOmzetBrand('FK')"
                                     >
-                                        ✏️ Edit
+                                        ✏️ Edit Target
                                     </button>
                                 </div>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Lini Produk Fashion &amp; Konsumen</h4>
+                                <p class="text-[10px] text-slate-500 font-semibold mt-0.5">
+                                    Terkumpul: <strong class="text-emerald-700">Rp {{ nfFull.format(ringkasan.omset_fk_actual || 0) }}</strong> (Dashboard)
+                                </p>
                             </div>
                             <div class="text-right">
                                 <p class="text-base font-extrabold text-emerald-600">
                                     {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
                                 </p>
                                 <p class="text-[10px] font-semibold text-slate-500">
-                                    Bulanan: {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                    Per Bulan: {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
                                 </p>
                             </div>
                         </div>
@@ -374,17 +377,20 @@ const simpanAktual = () =>
                                         class="text-[10px] font-bold text-blue-600 hover:underline"
                                         @click="editOmzetBrand('AIPRENEUR')"
                                     >
-                                        ✏️ Edit
+                                        ✏️ Edit Target
                                     </button>
                                 </div>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Ekosistem Portal &amp; Subskripsi</h4>
+                                <p class="text-[10px] text-slate-500 font-semibold mt-0.5">
+                                    Terkumpul: <strong class="text-indigo-700">Rp {{ nfFull.format(ringkasan.omset_aipreneur_actual || 0) }}</strong> (Dashboard)
+                                </p>
                             </div>
                             <div class="text-right">
                                 <p class="text-base font-extrabold text-indigo-600">
                                     {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
                                 </p>
                                 <p class="text-[10px] font-semibold text-slate-500">
-                                    Bulanan: {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                    Per Bulan: {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
                                 </p>
                             </div>
                         </div>

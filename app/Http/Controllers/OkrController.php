@@ -332,6 +332,8 @@ class OkrController extends Controller
             'tertinggal' => $persenKr->filter(fn ($p) => $p < 60)->count(),
             'omset_target' => $omsetTarget,
             'omset_actual' => $omsetActual,
+            'omset_fk_actual' => (float) ($realisasi['omset_fk'] ?? 0),
+            'omset_aipreneur_actual' => (float) ($realisasi['omset_aipreneur'] ?? 0),
             'omset_percent' => $omsetTarget > 0 ? round($omsetActual / $omsetTarget * 100, 1) : null,
         ];
     }
