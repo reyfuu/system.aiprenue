@@ -706,10 +706,10 @@ const simpanAktual = () =>
 
                                     <div class="pl-6 text-xs text-blue-600 font-semibold">
                                         <a
-                                            :href="`/kanban?category=${card.board || 'skinku_management'}&card=${card.id}`"
+                                            :href="`/kanban?category=${card.board || 'todo'}&card=${card.id}`"
                                             class="hover:underline flex items-center gap-1"
                                         >
-                                            Kanban: Task SKINKU Management &gt; To Do List {{ card.pic || 'Devrina' }}
+                                            Kanban: Todolist Tim &gt; {{ card.pic || 'Tim' }}
                                             <svg class="w-3 h-3 text-blue-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path
                                                     stroke-linecap="round"
