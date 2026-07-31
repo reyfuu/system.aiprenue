@@ -362,10 +362,13 @@ const simpanAktual = () =>
                     </select>
                     <button
                         v-if="canManage"
-                        class="bg-blue-600 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold hover:bg-blue-700 shadow-xs"
+                        class="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition inline-flex items-center gap-1.5 shadow-sm"
                         @click="bukaObjective()"
                     >
-                        + Buat Objective
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Buat Objective
                     </button>
                 </div>
             </header>
