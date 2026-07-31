@@ -146,6 +146,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // super admin lewat User::canSee().
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
     Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
+    Route::put('/okr/title', [OkrController::class, 'updateTitle'])->name('okr.title.update'); // judul OKR per kuartal
     Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
     Route::put('/okr/objectives/{objective}', [OkrController::class, 'updateObjective'])->name('okr.objectives.update');
     Route::delete('/okr/objectives/{objective}', [OkrController::class, 'destroyObjective'])->name('okr.objectives.destroy');
@@ -181,6 +182,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/pembukuan/report', [PembukuanController::class, 'report'])->name('pembukuan.report');
 
     // CRUD transaksi & inventaris pembukuan (super admin/IT)
+    Route::post('/transactions/ocr', [TransactionController::class, 'ocr'])->name('transactions.ocr'); // OCR struk → JSON prefill form
     Route::post('/transactions', [TransactionController::class, 'store'])->name('transactions.store');
     Route::put('/transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
     Route::delete('/transactions/{transaction}', [TransactionController::class, 'destroy'])->name('transactions.destroy');

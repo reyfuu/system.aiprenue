@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\KeyResult;
 use App\Models\Label;
 use App\Models\Objective;
+use App\Models\OkrPeriod;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Notifications\OkrAssignmentNotification;
@@ -169,6 +170,10 @@ class OkrController extends Controller
 
         return Inertia::render('Okr', [
             'quarter' => ['year' => $year, 'quarter' => $quarter, 'key' => $year.'-Q'.$quarter, 'label' => Quarter::label($year, $quarter)],
+            // Judul OKR perusahaan bisa diedit bebas per kuartal; kalau belum
+            // pernah diedit (baris kosong), pakai judul default.
+            'okrTitle' => OkrPeriod::where('year', $year)->where('quarter', $quarter)->value('title')
+                ?? 'OKR Perusahaan SKINKU '.Quarter::label($year, $quarter),
             'quarterOptions' => Quarter::options(),
             'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
             'objectives' => $objectives,
@@ -204,6 +209,24 @@ class OkrController extends Controller
                 && Objective::where('year', $kuartalLalu['year'])->where('quarter', $kuartalLalu['quarter'])->exists(),
             'kuartalLaluLabel' => Quarter::label($kuartalLalu['year'], $kuartalLalu['quarter']),
         ]);
+    }
+
+    /**
+     * Ubah judul OKR perusahaan untuk kuartal yang sedang dibuka (bebas per
+     * kuartal). Kuartal diambil dari ?q (sama seperti index); kalau kosong →
+     * kuartal berjalan. Upsert: buat baris bila belum ada. Izin lewat middleware.
+     */
+    public function updateTitle(Request $request)
+    {
+        $q = Quarter::parse($request->input('q')) ?? Quarter::current();
+        $data = $request->validate(['title' => ['required', 'string', 'max:255']]);
+
+        OkrPeriod::updateOrCreate(
+            ['year' => $q['year'], 'quarter' => $q['quarter']],
+            ['title' => trim($data['title'])],
+        );
+
+        return back();
     }
 
     /** Kuartal sebelum yang diberikan, ikut mundur tahun saat menyeberang Q1. */

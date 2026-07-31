@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use App\Support\AiOrchestrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -32,6 +33,25 @@ class TransactionController extends Controller
         Transaction::create($data);
 
         return back()->with('status', 'Transaksi ditambahkan.');
+    }
+
+    /**
+     * OCR struk: baca gambar via AI (9router vision), balikan JSON untuk prefill form.
+     * Tidak menyimpan apa pun — user meninjau lalu submit lewat store() seperti biasa.
+     * Endpoint JSON (bukan Inertia) karena dipanggil via fetch dari modal transaksi.
+     */
+    public function ocr(Request $request, AiOrchestrator $ai)
+    {
+        $request->validate([
+            'bukti' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        ]);
+
+        $file = $request->file('bukti');
+        $base64 = base64_encode(file_get_contents($file->getRealPath()));
+
+        return response()->json(
+            $ai->bacaStruk($base64, $file->getMimeType(), Transaction::CATEGORIES)
+        );
     }
 
     public function update(Request $request, Transaction $transaction)

@@ -22,10 +22,24 @@ const props = defineProps({
     canManage: Boolean,
     bisaSalin: Boolean,
     kuartalLaluLabel: { type: String, default: '' },
+    okrTitle: { type: String, default: '' }, // judul OKR perusahaan (bebas per kuartal)
 });
 
 // Mode tampilan: 'detail' (rincian OKR langsung), 'landing' (overview landing), atau 'ai_form' (form susun OKR dengan AI)
 const viewMode = ref('detail');
+
+// ---- Edit judul OKR perusahaan (bebas per kuartal) ----
+const editJudul = ref(false); // true = tampil input inline
+const judulForm = useForm({ title: props.okrTitle, q: props.quarter.key });
+const mulaiEditJudul = () => {
+    judulForm.title = props.okrTitle; // selalu mulai dari judul kuartal aktif
+    judulForm.q = props.quarter.key;
+    editJudul.value = true;
+};
+const simpanJudul = () => {
+    if (!judulForm.title.trim()) return;
+    judulForm.put('/okr/title', { preserveScroll: true, onSuccess: () => { editJudul.value = false; } });
+};
 
 // Form Susun OKR dengan AI
 const aiForm = ref({
@@ -624,12 +638,49 @@ class="ml-3"
                         class="bg-white border border-slate-200/90 hover:border-blue-400 hover:shadow-md transition-all rounded-2xl p-6 cursor-pointer space-y-5 group"
                         @click="viewMode = 'detail'"
                     >
-                        <div class="flex items-start justify-between">
-                            <h2 class="text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug">
-                                OKR Perusahaan SKINKU {{ quarter.label }}
-                            </h2>
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex-1 min-w-0">
+                                <!-- Judul OKR: tampil biasa + pensil (canManage). Klik pensil → input inline.
+                                     @click.stop di kontrol edit supaya tidak ikut membuka detail (kartu clickable). -->
+                                <h2
+                                    v-if="!editJudul"
+                                    class="text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug"
+                                >
+                                    {{ okrTitle }}
+                                    <button
+                                        v-if="canManage"
+                                        type="button"
+                                        class="ml-1 align-middle text-slate-300 hover:text-blue-600"
+                                        title="Edit judul OKR"
+                                        @click.stop="mulaiEditJudul"
+                                    >
+                                        <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                </h2>
+                                <div v-else class="flex items-center gap-1.5" @click.stop>
+                                    <input
+                                        v-model="judulForm.title"
+                                        type="text"
+                                        maxlength="255"
+                                        class="flex-1 min-w-0 text-sm font-bold text-slate-800 border border-blue-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        @keyup.enter="simpanJudul"
+                                        @keyup.esc="editJudul = false"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg px-2 py-1"
+                                        :disabled="judulForm.processing"
+                                        @click.stop="simpanJudul"
+                                    >
+                                        Simpan
+                                    </button>
+                                    <button type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700 px-1" @click.stop="editJudul = false">Batal</button>
+                                </div>
+                            </div>
                             <span
-                                class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 uppercase tracking-wider"
+                                class="shrink-0 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 uppercase tracking-wider"
                             >
                                 AKTIF
                             </span>

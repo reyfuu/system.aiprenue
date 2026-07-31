@@ -68,6 +68,43 @@ const delTx = (t) => {
     if (confirm('Hapus transaksi ini?')) router.delete('/transactions/' + t.id, { preserveScroll: true });
 };
 
+// ---- OCR struk: foto struk → AI baca → prefill form (user tetap meninjau lalu simpan) ----
+const ocrLoading = ref(false); // true selama AI membaca gambar
+const ocrError = ref(''); // pesan error OCR untuk ditampilkan di modal
+const scanStruk = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    ocrError.value = '';
+    ocrLoading.value = true;
+    txForm.bukti = file; // gambar yang discan sekalian dipakai sebagai bukti transaksi
+    try {
+        const fd = new FormData();
+        fd.append('bukti', file);
+        const token = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+        const res = await fetch('/transactions/ocr', {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': token, Accept: 'application/json' },
+            body: fd,
+        });
+        const data = await res.json();
+        if (data.ok && data.data) {
+            const d = data.data; // isi field yang berhasil dibaca; biarkan yang kosong
+            if (d.type) txForm.type = d.type;
+            if (d.category) txForm.category = d.category;
+            if (d.amount_idr) txForm.amount_idr = d.amount_idr;
+            if (d.date) txForm.date = d.date;
+            if (d.description) txForm.description = d.description;
+        } else {
+            ocrError.value = data.error || 'Gagal membaca struk.';
+        }
+    } catch (err) {
+        ocrError.value = 'Gagal membaca struk (jaringan/AI tidak merespons).';
+    } finally {
+        ocrLoading.value = false;
+        e.target.value = ''; // reset input agar file sama bisa dipilih lagi
+    }
+};
+
 // ---- Modal Inventaris ----
 const invOpen = ref(false);
 const invEditId = ref(null);
@@ -298,6 +335,25 @@ const delInv = (i) => {
                 </button>
             </div>
             <form class="space-y-3 text-sm" @submit.prevent="submitTx">
+                    <!-- Scan struk (AI/OCR): baca foto struk → isi field otomatis, user tinggal cek & simpan -->
+                    <div class="rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3">
+                        <label class="flex flex-wrap items-center gap-2 cursor-pointer">
+                            <span
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700"
+                                :class="ocrLoading ? 'opacity-70 cursor-wait' : ''"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                    <circle cx="12" cy="13" r="3" stroke-width="2" />
+                                </svg>
+                                <span v-if="!ocrLoading">Scan struk (AI)</span>
+                                <span v-else>Membaca struk…</span>
+                            </span>
+                            <input type="file" accept="image/*" class="hidden" :disabled="ocrLoading" @change="scanStruk" />
+                            <span class="text-[11px] text-slate-500">Foto struk → field terisi otomatis, tinggal dicek.</span>
+                        </label>
+                        <p v-if="ocrError" class="text-xs text-red-600 mt-1.5">{{ ocrError }}</p>
+                    </div>
                 <label class="block font-medium text-slate-600"
                     >Tipe
                     <select

@@ -198,6 +198,81 @@ PROMPT;
     }
 
     /**
+     * OCR struk/nota: kirim gambar ke 9router (model vision) dan minta JSON transaksi.
+     * Dipakai halaman Pembukuan untuk prefill form dari foto struk (user tetap meninjau).
+     *
+     * @param  string  $base64  Isi gambar (base64, tanpa prefix data URI).
+     * @param  string  $mime    MIME gambar (image/jpeg, image/png, image/webp).
+     * @param  array   $kategori Daftar kategori valid untuk membatasi pilihan AI.
+     * @return array { ok: bool, data?: {type,category,amount_idr,date,description}, error?: string }
+     */
+    public function bacaStruk(string $base64, string $mime, array $kategori = []): array
+    {
+        $config = config('services.9router');
+
+        if (empty($config['url']) || empty($config['token'])) {
+            return ['ok' => false, 'error' => '9router belum dikonfigurasi (NINEROUTER_URL/NINEROUTER_TOKEN di .env).'];
+        }
+
+        $daftarKategori = $kategori ? implode(', ', $kategori) : 'bebas';
+        $prompt = <<<PROMPT
+        Baca struk/nota pada gambar ini. Jawab HANYA JSON valid tanpa markdown, format:
+        {"type":"pemasukan|pengeluaran","category":"...","amount_idr":0,"date":"YYYY-MM-DD","description":"..."}
+        Aturan:
+        - Struk belanja/pembelian = "pengeluaran". Bukti penjualan/pemasukan = "pemasukan".
+        - amount_idr = TOTAL akhir yang dibayar, angka bulat rupiah tanpa titik/koma/simbol.
+        - date = tanggal transaksi di struk (format YYYY-MM-DD). Kalau tak terbaca, isi "".
+        - category = pilih paling cocok dari daftar ini: {$daftarKategori}. Kalau ragu pakai "Biaya Operasional".
+        - description = nama toko/merchant atau ringkasan singkat belanja.
+        Semua teks Bahasa Indonesia.
+        PROMPT;
+
+        try {
+            $res = Http::timeout($config['timeout'])
+                ->withToken($config['token'])
+                ->withoutVerifying()
+                ->post(rtrim($config['url'], '/') . '/chat/completions', [
+                    'model'       => $config['chatgpt_model'],
+                    'temperature' => 0, // deterministik untuk ekstraksi
+                    'messages'    => [[
+                        'role'    => 'user',
+                        'content' => [
+                            ['type' => 'text', 'text' => $prompt],
+                            ['type' => 'image_url', 'image_url' => ['url' => "data:{$mime};base64,{$base64}"]],
+                        ],
+                    ]],
+                ]);
+
+            if (! $res->successful()) {
+                Log::warning("9router OCR HTTP {$res->status()}", ['body' => $res->body()]);
+
+                return ['ok' => false, 'error' => 'AI gagal membaca struk (HTTP ' . $res->status() . ').'];
+            }
+
+            $data = $this->parseJson($res->json('choices.0.message.content') ?? '');
+
+            if (empty($data)) {
+                return ['ok' => false, 'error' => 'AI tidak mengembalikan data yang bisa dibaca dari struk.'];
+            }
+
+            // Bersihkan & batasi ke nilai valid — jangan percaya output mentah LLM.
+            $tanggal = (string) ($data['date'] ?? '');
+
+            return ['ok' => true, 'data' => [
+                'type'        => in_array($data['type'] ?? '', ['pemasukan', 'pengeluaran'], true) ? $data['type'] : 'pengeluaran',
+                'category'    => (string) ($data['category'] ?? ''),
+                'amount_idr'  => (int) round((float) ($data['amount_idr'] ?? 0)),
+                'date'        => preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal) ? $tanggal : '',
+                'description' => (string) ($data['description'] ?? ''),
+            ]];
+        } catch (\Throwable $e) {
+            Log::warning('9router OCR error: ' . $e->getMessage());
+
+            return ['ok' => false, 'error' => 'Gagal menghubungi AI: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Response gagal — dipakai saat konfigurasi tidak lengkap atau LLM gagal.
      */
     private function gagal(string $pesan, array $draft = []): array
