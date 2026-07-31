@@ -173,7 +173,7 @@ class OkrController extends Controller
             // Judul OKR perusahaan bisa diedit bebas per kuartal; kalau belum
             // pernah diedit (baris kosong), pakai judul default.
             'okrTitle' => OkrPeriod::where('year', $year)->where('quarter', $quarter)->value('title')
-                ?? 'OKR Perusahaan SKINKU '.Quarter::label($year, $quarter),
+                ?? 'OKR Perusahaan '.Quarter::label($year, $quarter),
             'quarterOptions' => Quarter::options(),
             'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
             'objectives' => $objectives,

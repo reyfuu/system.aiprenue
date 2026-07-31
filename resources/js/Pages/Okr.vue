@@ -233,7 +233,7 @@ const simpanAktual = () =>
             <!-- Header Topbar Landing -->
             <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-2xs">
                 <h1 class="text-xl font-extrabold text-slate-900 tracking-tight">OKR — Target &amp; Eksekusi Tim</h1>
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Aipreneur</span>
             </header>
 
             <!-- Main Body Landing -->
@@ -330,13 +330,13 @@ const simpanAktual = () =>
             <footer
                 class="px-8 py-4 border-t border-slate-200 bg-white flex items-center justify-between text-xs text-slate-400 font-medium"
             >
-                <span>© 2026 SKINKU B2B Portal. Powered by SQL + Laravel.</span>
+                <span>© 2026 Aipreneur. Powered by SQL + Laravel.</span>
                 <span>HQ Jakarta, Indonesia</span>
             </footer>
         </div>
 
         <!-- =========================================================================
-             DETAIL OKR VIEW (Tampilan Rincian OKR SKINKU Portal)
+             DETAIL OKR VIEW (Tampilan Rincian OKR)
              ========================================================================= -->
         <div v-else-if="viewMode === 'detail'">
             <!-- Top Bar Header Detail -->
@@ -361,7 +361,7 @@ const simpanAktual = () =>
                     </h1>
                 </div>
                 <div class="flex items-center gap-3">
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">SKINKU B2B Distributor Portal</span>
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Aipreneur</span>
                     <select
                         :value="quarter.key"
                         class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -739,7 +739,7 @@ const simpanAktual = () =>
                     <input
                         v-model="objForm.title"
                         type="text"
-                        placeholder="Meningkatkan Omzet E-Commerce SKINKU"
+                        placeholder="Meningkatkan Omzet E-Commerce"
                         class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p v-if="objForm.errors.title" class="text-xs text-red-600 mt-1">{{ objForm.errors.title }}</p>
@@ -749,7 +749,7 @@ const simpanAktual = () =>
                     <textarea
                         v-model="objForm.description"
                         rows="4"
-                        placeholder="SKINKU berfokus pada peningkatan omzet e-commerce dan distributor..."
+                        placeholder="Fokus pada peningkatan omzet e-commerce dan pengembangan jaringan..."
                         class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     ></textarea>
                 </div>
