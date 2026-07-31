@@ -140,10 +140,11 @@ watch(
 const statistikAnggota = computed(() => {
     const per = new Map(); // nama PJ → agregat
     for (const kartu of Object.values(cols.value).flat()) {
+        if (kartu.is_kr_master) continue; // Abaikan kartu master OKR
         const nama = kartu.assignee || 'Belum ditugaskan';
         const s = per.get(nama) || { nama, total: 0, selesai: 0, telat: 0 };
         s.total += 1;
-        if (kartu.completed_at) s.selesai += 1;
+        if (kartu.completed_at || kartu.done) s.selesai += 1;
         if (kartu.ketepatan === 'lewat') s.telat += 1; // belum selesai & lewat deadline
         per.set(nama, s);
     }
