@@ -183,9 +183,8 @@ class OkrController extends Controller
             'objectives' => $objectives,
             'ringkasan' => $this->ringkasan($objectives, $realisasi, $periodOmsetTarget),
             'tren' => $this->tren($year, $quarter),
-            // Omzet sekarang target Objective. Pilihan KR otomatis hanya untuk
-            // metrik yang memang tetap menjadi hasil pendukung.
-            'metrics' => collect(OkrMetrics::METRICS)->except('omset')->all(),
+            // Metrik otomatis untuk Key Result (omset, view, subscriber)
+            'metrics' => OkrMetrics::METRICS,
             'sources' => KeyResult::SOURCES,
             'priorities' => Label::where('group', 2)
                 ->whereIn('name', self::PRIORITY_NAMES)

@@ -186,9 +186,21 @@ const showWorkstream = ref(false);
 const sourceOptions = [
     {
         value: 'kartu',
-        label: 'Kartu',
+        label: 'KPI Board / Kartu',
         desc: 'Realisasi = kartu Kanban yang selesai',
         icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+    },
+    {
+        value: 'auto',
+        label: 'Metrik Otomatis (Omzet / View)',
+        desc: 'Realisasi dari Pembukuan / Insight',
+        icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
+    },
+    {
+        value: 'manual',
+        label: 'Manual / Checklist Target',
+        desc: 'Realisasi diisi manual / dicentang per progres',
+        icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
     },
 ];
 
@@ -197,6 +209,29 @@ const unitOptions = [
     { value: 'rupiah', label: 'Rupiah (Rp)' },
     { value: 'persen', label: 'Persentase (%)' },
 ];
+
+const isKrComplete = (kr) => {
+    if (kr.percent !== null && kr.percent !== undefined) {
+        return kr.percent >= 100;
+    }
+    return kr.target > 0 && kr.actual >= kr.target;
+};
+
+const isObjectiveComplete = (o) => {
+    if (!o.key_results || o.key_results.length === 0) {
+        return o.progress !== null && o.progress >= 100;
+    }
+    return o.key_results.every((kr) => isKrComplete(kr));
+};
+
+const toggleKr = (kr) => {
+    if (kr.source === 'manual') {
+        const targetVal = isKrComplete(kr) ? 0 : (kr.target || 1);
+        router.patch(`/okr/key-results/${kr.id}/actual`, {
+            actual_manual: targetVal,
+        }, { preserveScroll: true });
+    }
+};
 
 watch(
     () => krForm.kanban_board_key,
@@ -212,11 +247,11 @@ const bukaKr = (objective, kr = null) => {
     krForm.objective_id = objective.id;
     krForm.title = kr?.title ?? '';
     krForm.description = kr?.description ?? '';
-    krForm.source = 'kartu';
+    krForm.source = kr?.source ?? 'kartu';
     krForm.board_key = kr?.board_key ?? '';
-    krForm.metric = kr?.metric ?? '';
+    krForm.metric = kr?.metric ?? (Object.keys(props.metrics)[0] || 'omset');
     krForm.target = kr?.target ?? 0;
-    krForm.unit = kr?.unit ?? 'angka';
+    krForm.unit = kr?.unit ?? (krForm.metric === 'omset' ? 'rupiah' : 'angka');
     krForm.priority_name = kr?.priority?.name ?? '';
     krForm.kanban_board_key = kr?.kartu?.find((k) => k.is_master)?.board ?? props.kanbanBoards[0]?.key ?? '';
     krForm.kanban_column_key = (props.kanbanColumns[krForm.kanban_board_key] ?? [])[0]?.key ?? '';
@@ -485,6 +520,16 @@ const simpanAktual = () =>
                                 <span v-if="o.omset_owner_name" class="text-xs text-slate-500">
                                     Penanggung jawab: <strong class="text-slate-800">{{ o.omset_owner_name }}</strong>
                                 </span>
+                                <span
+                                    v-if="isObjectiveComplete(o)"
+                                    class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                    title="Semua Key Result selesai! Objective tercentang otomatis."
+                                >
+                                    <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Objective Selesai (Otomatis Tercentang)
+                                </span>
                             </div>
                             <div v-if="canManage" class="flex items-center gap-1.5">
                                 <button
@@ -516,7 +561,17 @@ const simpanAktual = () =>
                             </div>
                         </div>
 
-                        <h2 class="text-xl font-extrabold text-slate-900 tracking-tight">{{ o.title }}</h2>
+                        <div class="flex items-center gap-3">
+                            <span
+                                v-if="isObjectiveComplete(o)"
+                                class="w-6 h-6 rounded-md bg-emerald-500 text-white flex items-center justify-center flex-shrink-0 font-extrabold text-xs"
+                            >
+                                ✓
+                            </span>
+                            <h2 :class="['text-xl font-extrabold tracking-tight', isObjectiveComplete(o) ? 'text-emerald-900 line-through' : 'text-slate-900']">
+                                {{ o.title }}
+                            </h2>
+                        </div>
 
                         <p v-if="o.description" class="text-xs text-slate-600 leading-relaxed whitespace-pre-line max-w-5xl">
                             {{ o.description }}
@@ -538,9 +593,24 @@ const simpanAktual = () =>
                             <!-- Key Result Header -->
                             <div class="space-y-2">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-blue-600"
-                                        >KEY RESULT {{ oIdx + 1 }}.{{ krIdx + 1 }}</span
-                                    >
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="flex items-center justify-center w-5 h-5 rounded border-2 transition-all flex-shrink-0"
+                                            :class="isKrComplete(kr)
+                                                ? 'bg-emerald-500 border-emerald-500 text-white shadow-xs'
+                                                : kr.source === 'manual' ? 'border-slate-300 bg-white hover:border-blue-500 text-transparent cursor-pointer' : 'border-slate-200 bg-slate-100 text-transparent cursor-default'"
+                                            :title="isKrComplete(kr) ? 'Key Result Selesai (Tercentang)' : (kr.source === 'manual' ? 'Klik untuk centang selesai' : 'Realisasi otomatis/kartu')"
+                                            @click="toggleKr(kr)"
+                                        >
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </button>
+                                        <span class="text-xs font-bold uppercase tracking-wider text-blue-600"
+                                            >KEY RESULT {{ oIdx + 1 }}.{{ krIdx + 1 }}</span
+                                        >
+                                    </div>
                                     <div v-if="canManage" class="flex items-center gap-1">
                                         <button
                                             v-if="kr.source === 'manual'"
@@ -585,7 +655,9 @@ const simpanAktual = () =>
                                     </div>
                                 </div>
 
-                                <h3 class="text-lg font-extrabold text-slate-900">{{ kr.title }}</h3>
+                                <h3 :class="['text-lg font-extrabold transition-colors', isKrComplete(kr) ? 'text-slate-500 line-through' : 'text-slate-900']">
+                                    {{ kr.title }}
+                                </h3>
 
                                 <p v-if="kr.description" class="text-xs text-slate-500 leading-relaxed max-w-3xl">{{ kr.description }}</p>
 
@@ -856,8 +928,30 @@ const simpanAktual = () =>
                     <textarea v-model="krForm.description" rows="2" placeholder="Jelaskan konteks atau tujuan Key Result ini…" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-y"></textarea>
                 </div>
 
-                <!-- Board Kanban -->
-                <div class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
+                <!-- Sumber Realisasi (Jenis KR) -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Sumber Realisasi / Jenis Key Result</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button
+                            v-for="s in sourceOptions"
+                            :key="s.value"
+                            type="button"
+                            :class="[
+                                'p-3 rounded-xl border text-left transition-all',
+                                krForm.source === s.value
+                                    ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-500/20'
+                                    : 'border-slate-200 bg-white hover:border-slate-300',
+                            ]"
+                            @click="krForm.source = s.value"
+                        >
+                            <p class="text-xs font-bold text-slate-800">{{ s.label }}</p>
+                            <p class="text-[10px] text-slate-500 mt-0.5 leading-tight">{{ s.desc }}</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Opsi Board Kanban -->
+                <div v-if="krForm.source === 'kartu'" class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
                     <p class="text-[11px] font-semibold text-emerald-800">Realisasi = jumlah kartu Kanban yang selesai di board yang dipilih.</p>
                     <div>
                         <label class="block text-[11px] font-semibold text-slate-600 mb-1">Board Kanban</label>
@@ -867,6 +961,44 @@ const simpanAktual = () =>
                         </select>
                         <p class="text-[10px] text-slate-400 mt-1">Target akan diambil dari KPI Board yang bersangkutan.</p>
                         <p v-if="krForm.errors.board_key" class="text-xs text-red-500 mt-1">{{ krForm.errors.board_key }}</p>
+                    </div>
+                </div>
+
+                <!-- Opsi Metrik Otomatis (Omzet / View / Subscriber) -->
+                <div v-if="krForm.source === 'auto'" class="bg-blue-50/60 border border-blue-200 rounded-xl p-4 space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Pilih Metrik Otomatis</label>
+                        <select v-model="krForm.metric" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            <option v-for="(mLabel, mKey) in metrics" :key="mKey" :value="mKey">{{ mLabel }}</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Target Key Result</label>
+                            <input v-model="krForm.target" type="number" step="any" placeholder="1000000" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Satuan</label>
+                            <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option v-for="u in unitOptions" :key="u.value" :value="u.value">{{ u.label }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Opsi Manual / Target Centang -->
+                <div v-if="krForm.source === 'manual'" class="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-amber-900 mb-1">Target Key Result</label>
+                            <input v-model="krForm.target" type="number" step="any" placeholder="10" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-amber-900 mb-1">Satuan</label>
+                            <select v-model="krForm.unit" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                                <option v-for="u in unitOptions" :key="u.value" :value="u.value">{{ u.label }}</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
