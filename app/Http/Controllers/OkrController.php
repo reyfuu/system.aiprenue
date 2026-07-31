@@ -170,16 +170,18 @@ class OkrController extends Controller
             ->map(fn ($columns) => $columns->values())
             ->all();
 
+        $period = OkrPeriod::where('year', $year)->where('quarter', $quarter)->first();
+        $periodOmsetTarget = $period?->omset_target !== null ? (float) $period->omset_target : null;
+
         return Inertia::render('Okr', [
             'quarter' => ['year' => $year, 'quarter' => $quarter, 'key' => $year.'-Q'.$quarter, 'label' => Quarter::label($year, $quarter)],
             // Judul OKR perusahaan bisa diedit bebas per kuartal; kalau belum
             // pernah diedit (baris kosong), pakai judul default.
-            'okrTitle' => OkrPeriod::where('year', $year)->where('quarter', $quarter)->value('title')
-                ?? 'OKR Perusahaan '.Quarter::label($year, $quarter),
+            'okrTitle' => $period?->title ?? 'OKR Perusahaan '.Quarter::label($year, $quarter),
             'quarterOptions' => Quarter::options(),
             'range' => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
             'objectives' => $objectives,
-            'ringkasan' => $this->ringkasan($objectives, $realisasi),
+            'ringkasan' => $this->ringkasan($objectives, $realisasi, $periodOmsetTarget),
             'tren' => $this->tren($year, $quarter),
             // Omzet sekarang target Objective. Pilihan KR otomatis hanya untuk
             // metrik yang memang tetap menjadi hasil pendukung.
@@ -229,6 +231,28 @@ class OkrController extends Controller
         );
 
         return back();
+    }
+
+    /** Ubah target omzet kuartal perusahaan secara independen per periode. */
+    public function updatePeriodOmset(Request $request)
+    {
+        $q = Quarter::parse($request->input('q')) ?? Quarter::current();
+        $rawTarget = $request->input('omset_target');
+        if (is_string($rawTarget)) {
+            $cleaned = preg_replace('/[^0-9]/', '', $rawTarget);
+            $rawTarget = $cleaned !== '' ? (float) $cleaned : null;
+        }
+
+        $target = $rawTarget !== null && (float) $rawTarget > 0 ? (float) $rawTarget : null;
+
+        $period = OkrPeriod::firstOrNew(['year' => $q['year'], 'quarter' => $q['quarter']]);
+        if (! $period->exists && empty($period->title)) {
+            $period->title = 'OKR Perusahaan '.Quarter::label($q['year'], $q['quarter']);
+        }
+        $period->omset_target = $target;
+        $period->save();
+
+        return back()->with('status', 'Target omzet kuartal diperbarui.');
     }
 
     /** Kuartal sebelum yang diberikan, ikut mundur tahun saat menyeberang Q1. */
@@ -312,21 +336,22 @@ class OkrController extends Controller
         return back()->with('status', 'Objective & target kuartal lalu disalin. Tinjau targetnya sebelum dipakai.');
     }
 
-    /** Angka puncak halaman. Objective/KR tanpa target tak ikut dihitung —
-     *  alasan yang sama dgn Objective::progress(). */
-    private function ringkasan($objectives, array $realisasi): array
+    /** Angka puncak halaman. Progress rata-rata menghitung seluruh Objective yang ada. */
+    private function ringkasan($objectives, array $realisasi, ?float $periodOmsetTarget = null): array
     {
         $krs = $objectives->pluck('key_results')->flatten(1);
-        $persenObjective = $objectives->pluck('progress')->filter(fn ($p) => $p !== null);
+        $persenObjective = $objectives->map(fn ($o) => (float) ($o['progress'] ?? 0));
         $persenKr = $krs->pluck('percent')->filter(fn ($p) => $p !== null);
 
-        $omsetTarget = $objectives->sum(fn ($o) => (float) ($o->omset_target ?? 0));
+        $omsetTarget = $periodOmsetTarget !== null && $periodOmsetTarget > 0
+            ? $periodOmsetTarget
+            : $objectives->sum(fn ($o) => (float) ($o['omset_target'] ?? 0));
         $omsetActual = (float) ($realisasi['omset'] ?? 0);
 
         return [
             'objectives' => $objectives->count(),
             'key_results' => $krs->count(),
-            'progress' => $persenObjective->isEmpty() ? null : round($persenObjective->avg(), 1),
+            'progress' => $objectives->isEmpty() ? null : round($persenObjective->avg(), 1),
             'tercapai' => $persenKr->filter(fn ($p) => $p >= 100)->count(),
             'tertinggal' => $persenKr->filter(fn ($p) => $p < 60)->count(),
             'omset_target' => $omsetTarget,
@@ -582,6 +607,18 @@ class OkrController extends Controller
 
     private function validasiObjective(Request $request, bool $denganOmset = false): array
     {
+        if ($request->has('omset_target') && $request->input('omset_target') !== null) {
+            $raw = (string) $request->input('omset_target');
+            if (! is_numeric($raw)) {
+                $cleaned = preg_replace('/[^0-9]/', '', $raw);
+                $request->merge(['omset_target' => $cleaned !== '' ? (float) $cleaned : null]);
+            }
+        }
+
+        if ($request->has('omset_owner_id') && ($request->input('omset_owner_id') === '' || $request->input('omset_owner_id') === 'null')) {
+            $request->merge(['omset_owner_id' => null]);
+        }
+
         $rules = [
             'year' => 'required|integer|min:2000|max:2100',
             'quarter' => 'required|integer|min:1|max:4',
@@ -1037,18 +1074,16 @@ class OkrController extends Controller
             return $data;
         }
 
+        $name = trim($name);
+
         $label = Label::where('group', 2)
-            ->whereIn('name', self::PRIORITY_NAMES)
             ->where('name', $name)
             ->first(['name', 'color']);
 
-        if (! $label) {
-            throw ValidationException::withMessages([
-                'priority_name' => 'Status harus Urgent atau Penting.',
-            ]);
-        }
-
-        $data['priority'] = ['name' => $label->name, 'color' => $label->color];
+        $data['priority'] = [
+            'name' => $label ? $label->name : $name,
+            'color' => $label ? $label->color : 'bg-blue-100 text-blue-700',
+        ];
 
         return $data;
     }

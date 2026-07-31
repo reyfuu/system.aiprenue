@@ -147,6 +147,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/okr', [OkrController::class, 'index'])->name('okr.index');
     Route::post('/okr/salin', [OkrController::class, 'salinKuartalLalu'])->name('okr.salin');
     Route::put('/okr/title', [OkrController::class, 'updateTitle'])->name('okr.title.update'); // judul OKR per kuartal
+    Route::put('/okr/omset-target', [OkrController::class, 'updatePeriodOmset'])->name('okr.period-omset.update'); // target omzet total per kuartal
     Route::post('/okr/objectives', [OkrController::class, 'storeObjective'])->name('okr.objectives.store');
     Route::put('/okr/objectives/{objective}', [OkrController::class, 'updateObjective'])->name('okr.objectives.update');
     Route::delete('/okr/objectives/{objective}', [OkrController::class, 'destroyObjective'])->name('okr.objectives.destroy');

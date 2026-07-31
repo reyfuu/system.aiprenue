@@ -233,6 +233,77 @@ class OkrTest extends TestCase
         $this->assertNotNull($notification->fresh()->read_at);
     }
 
+    public function test_manager_dapat_menginput_target_omzet_kuartal_berformat(): void
+    {
+        $manager = $this->user('manager');
+
+        $this->actingAs($manager)->post('/okr/objectives', [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Target Omzet Perusahaan',
+            'omset_target' => '500.000.000',
+        ])->assertSessionHasNoErrors();
+
+        $objective = Objective::firstOrFail();
+        $this->assertSame('500000000.00', $objective->omset_target);
+    }
+
+    public function test_manager_dapat_mengubah_target_omzet_objective_yang_sudah_ada(): void
+    {
+        $manager = $this->user('manager');
+        $o = Objective::create([
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Objective 1',
+        ]);
+
+        $this->actingAs($manager)->put("/okr/objectives/{$o->id}", [
+            'year' => 2026,
+            'quarter' => 3,
+            'title' => 'Objective 1',
+            'omset_target' => '750.000.000',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('750000000.00', $o->fresh()->omset_target);
+    }
+
+    public function test_manager_dapat_mengubah_target_omzet_kuartal_perusahaan_independen(): void
+    {
+        $manager = $this->user('manager');
+
+        $this->actingAs($manager)->put('/okr/omset-target', [
+            'q' => '2026-Q3',
+            'omset_target' => '1.500.000.000',
+        ])->assertSessionHasNoErrors();
+
+        $this->actingAs($manager)->get('/okr?q=2026-Q3')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('ringkasan.omset_target', 1500000000)
+            );
+    }
+
+    public function test_progress_rata_rata_menghitung_seluruh_objective(): void
+    {
+        $owner = $this->user();
+        $o1 = Objective::create(['year' => 2026, 'quarter' => 3, 'title' => 'Obj 1']);
+        $o2 = Objective::create(['year' => 2026, 'quarter' => 3, 'title' => 'Obj 2']);
+
+        // Obj 1 punyai KR selesai 100%
+        KeyResult::create([
+            'objective_id' => $o1->id, 'title' => 'KR 1', 'source' => 'manual',
+            'target' => 100, 'actual_manual' => 100, 'unit' => 'angka',
+        ]);
+
+        // Obj 2 belum ada KR / progress (0%)
+
+        $this->actingAs($owner)->get('/okr?q=2026-Q3')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('ringkasan.progress', 50) // (100 + 0) / 2 = 50, bukan 100
+            );
+    }
+
     public function test_staff_dapat_menandai_semua_notifikasinya_sudah_dibaca(): void
     {
         $owner = $this->user();
@@ -330,17 +401,18 @@ class OkrTest extends TestCase
             );
     }
 
-    /** Browser tidak boleh menyisipkan nama/warna status sendiri. */
-    public function test_status_okr_di_luar_urgent_dan_penting_ditolak(): void
+    /** Tag Role / status bebas (misal: COO AI, CFO AI, FK, AIPRENEUR). */
+    public function test_tag_role_bebas_diterima(): void
     {
         $this->actingAs($this->user())->post('/okr/objectives', [
             'year' => 2026,
             'quarter' => 3,
-            'title' => 'Status tidak sah',
-            'priority_name' => 'Review',
-        ])->assertSessionHasErrors('priority_name');
+            'title' => 'Tag role khusus',
+            'priority_name' => 'COO AI',
+        ])->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('objectives', 0);
+        $this->assertDatabaseCount('objectives', 1);
+        $this->assertSame('COO AI', Objective::first()->priority['name']);
     }
 
     /** Menghapus Objective ikut men-soft-delete Key Result-nya — KR tanpa

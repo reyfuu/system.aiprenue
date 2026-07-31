@@ -104,9 +104,29 @@ const bukaObjective = (o = null) => {
     objForm.clearErrors();
 };
 
+const periodOmsetModal = ref(false);
+const periodOmsetForm = useForm({
+    q: '',
+    omset_target: '',
+});
+
 const editOmzetPerusahaan = () => {
-    const o = props.objectives[0] ?? null;
-    bukaObjective(o);
+    periodOmsetForm.q = props.quarter.key;
+    periodOmsetForm.omset_target = props.ringkasan.omset_target || '';
+    periodOmsetForm.clearErrors();
+    periodOmsetModal.value = true;
+};
+
+const simpanPeriodOmset = () => {
+    periodOmsetForm.transform((data) => ({
+        ...data,
+        omset_target: data.omset_target ? String(data.omset_target).replace(/[^0-9]/g, '') : null,
+    })).put('/okr/omset-target', {
+        preserveScroll: true,
+        onSuccess: () => {
+            periodOmsetModal.value = false;
+        },
+    });
 };
 
 const editOmzetBrand = (brandName) => {
@@ -127,6 +147,11 @@ const simpanObjective = () => {
             objModal.value = null;
         },
     };
+    objForm.transform((data) => ({
+        ...data,
+        omset_owner_id: data.omset_owner_id || null,
+        omset_target: data.omset_target ? String(data.omset_target).replace(/[^0-9]/g, '') : null,
+    }));
     objModal.value === 'baru' ? objForm.post('/okr/objectives', tutup) : objForm.put('/okr/objectives/' + objModal.value.id, tutup);
 };
 
@@ -344,53 +369,29 @@ const simpanAktual = () =>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                         <div class="bg-white border border-emerald-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
                             <div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
-                                    <button
-                                        v-if="canManage"
-                                        class="text-[10px] font-bold text-blue-600 hover:underline"
-                                        @click="editOmzetBrand('FK')"
-                                    >
-                                        ✏️ Edit Target
-                                    </button>
-                                </div>
+                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Lini Produk Fashion &amp; Konsumen</h4>
                                 <p class="text-[10px] text-slate-500 font-semibold mt-0.5">
-                                    Terkumpul: <strong class="text-emerald-700">Rp {{ nfFull.format(ringkasan.omset_fk_actual || 0) }}</strong> (Dashboard)
+                                    Realisasi dari Pembukuan
                                 </p>
                             </div>
                             <div class="text-right">
-                                <p class="text-base font-extrabold text-emerald-600">
-                                    {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
-                                </p>
-                                <p class="text-[10px] font-semibold text-slate-500">
-                                    Per Bulan: {{ rpShort(objectives.filter(o => o.priority?.name === 'FK').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                <p class="text-lg font-extrabold text-emerald-600">
+                                    Rp {{ nfFull.format(ringkasan.omset_fk_actual || 0) }}
                                 </p>
                             </div>
                         </div>
                         <div class="bg-white border border-indigo-200/80 rounded-xl p-4 shadow-2xs flex items-center justify-between">
                             <div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
-                                    <button
-                                        v-if="canManage"
-                                        class="text-[10px] font-bold text-blue-600 hover:underline"
-                                        @click="editOmzetBrand('AIPRENEUR')"
-                                    >
-                                        ✏️ Edit Target
-                                    </button>
-                                </div>
+                                <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
                                 <h4 class="text-xs font-bold text-slate-800 mt-1">Ekosistem Portal &amp; Subskripsi</h4>
                                 <p class="text-[10px] text-slate-500 font-semibold mt-0.5">
-                                    Terkumpul: <strong class="text-indigo-700">Rp {{ nfFull.format(ringkasan.omset_aipreneur_actual || 0) }}</strong> (Dashboard)
+                                    Realisasi dari Pembukuan
                                 </p>
                             </div>
                             <div class="text-right">
-                                <p class="text-base font-extrabold text-indigo-600">
-                                    {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0)) }} <span class="text-[10px] text-slate-400 font-normal">/ Qtr</span>
-                                </p>
-                                <p class="text-[10px] font-semibold text-slate-500">
-                                    Per Bulan: {{ rpShort(objectives.filter(o => o.priority?.name === 'AIPRENEUR').reduce((acc, o) => acc + (o.omset_target || 0), 0) / 3) }}
+                                <p class="text-lg font-extrabold text-indigo-600">
+                                    Rp {{ nfFull.format(ringkasan.omset_aipreneur_actual || 0) }}
                                 </p>
                             </div>
                         </div>
@@ -727,6 +728,7 @@ const simpanAktual = () =>
                             placeholder="COO AI"
                             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
+                        <p v-if="objForm.errors.priority_name" class="text-xs text-red-600 mt-1">{{ objForm.errors.priority_name }}</p>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-slate-600 mb-1">Penanggung Jawab (PIC)</label>
@@ -739,6 +741,7 @@ const simpanAktual = () =>
                                 {{ person.name }} ({{ person.role }})
                             </option>
                         </select>
+                        <p v-if="objForm.errors.omset_owner_id" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_owner_id }}</p>
                     </div>
                 </div>
                 <div>
@@ -747,13 +750,13 @@ const simpanAktual = () =>
                         <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
                         <input
                             v-model="objForm.omset_target"
-                            type="number"
-                            min="0"
-                            step="1000"
-                            placeholder="500000000"
+                            type="text"
+                            inputmode="numeric"
+                            placeholder="500.000.000"
                             class="w-full border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
+                    <p v-if="objForm.errors.omset_target" class="text-xs text-red-600 mt-1">{{ objForm.errors.omset_target }}</p>
                 </div>
                 <div class="flex justify-end gap-2 pt-2">
                     <button
@@ -769,6 +772,50 @@ const simpanAktual = () =>
                         class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
                     >
                         Simpan
+                    </button>
+                </div>
+            </form>
+        </ModalWrap>
+
+        <!-- Modal Target Omzet Kuartal Perusahaan -->
+        <ModalWrap v-if="periodOmsetModal" @close="periodOmsetModal = false">
+            <h3 class="text-lg font-bold text-slate-800">
+                Target Omzet Total Perusahaan — {{ quarter.label }}
+            </h3>
+            <p class="text-xs text-slate-500 mt-1">
+                Target omzet kuartal ini terpisah secara mandiri dan tidak dipaksa mengambil gabungan omzet brand.
+            </p>
+            <form class="mt-4 space-y-4" @submit.prevent="simpanPeriodOmset">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Target Omzet Kuartal (Rp)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-3 flex items-center text-sm font-semibold text-slate-400">Rp</span>
+                        <input
+                            v-model="periodOmsetForm.omset_target"
+                            type="text"
+                            inputmode="numeric"
+                            placeholder="1.000.000.000"
+                            class="w-full border border-slate-200 rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                    <p v-if="periodOmsetForm.errors.omset_target" class="text-xs text-red-600 mt-1">
+                        {{ periodOmsetForm.errors.omset_target }}
+                    </p>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button
+                        type="button"
+                        class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        @click="periodOmsetModal = false"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="periodOmsetForm.processing"
+                        class="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    >
+                        Simpan Target Omzet
                     </button>
                 </div>
             </form>

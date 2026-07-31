@@ -91,7 +91,13 @@ class Objective extends Model
 
         $omsetTarget = (float) ($this->omset_target ?? 0);
         if ($omsetTarget > 0) {
-            $persen->prepend(min(100, (float) ($realisasi['omset'] ?? 0) / $omsetTarget * 100));
+            $pName = is_array($this->priority) ? ($this->priority['name'] ?? '') : '';
+            $realisasiOmset = match (strtoupper((string) $pName)) {
+                'FK' => (float) ($realisasi['omset_fk'] ?? 0),
+                'AIPRENEUR' => (float) ($realisasi['omset_aipreneur'] ?? 0),
+                default => (float) ($realisasi['omset'] ?? 0),
+            };
+            $persen->prepend(min(100, $realisasiOmset / $omsetTarget * 100));
         }
 
         return $persen->isEmpty() ? null : round($persen->avg(), 1);

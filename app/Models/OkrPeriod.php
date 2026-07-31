@@ -14,5 +14,10 @@ class OkrPeriod extends Model
 {
     use Auditable, SoftDeletes; // edit judul OKR ikut tercatat di audit log
 
-    protected $fillable = ['year', 'quarter', 'title'];
+    protected $fillable = ['year', 'quarter', 'title', 'omset_target'];
+    protected $casts = [
+        'year' => 'integer',
+        'quarter' => 'integer',
+        'omset_target' => 'decimal:2',
+    ];
 }
