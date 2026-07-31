@@ -104,6 +104,22 @@ const bukaObjective = (o = null) => {
     objForm.clearErrors();
 };
 
+const editOmzetPerusahaan = () => {
+    const o = props.objectives[0] ?? null;
+    bukaObjective(o);
+};
+
+const editOmzetBrand = (brandName) => {
+    const o = props.objectives.find((obj) => obj.priority?.name === brandName);
+    if (o) {
+        bukaObjective(o);
+    } else {
+        bukaObjective(null);
+        objForm.title = `Objective Omzet Penjualan ${brandName}`;
+        objForm.priority_name = brandName;
+    }
+};
+
 const simpanObjective = () => {
     const tutup = {
         preserveScroll: true,
@@ -282,8 +298,18 @@ const simpanAktual = () =>
                                 {{ ringkasan.progress === null || ringkasan.progress === undefined ? '—' : ringkasan.progress + '%' }}
                             </p>
                         </div>
-                        <div class="bg-white border border-emerald-200 bg-emerald-50/20 rounded-xl p-4 shadow-2xs space-y-1">
-                            <p class="text-xs font-semibold text-emerald-800 uppercase tracking-wider">Target Omzet Kuartal</p>
+                        <div class="bg-white border border-emerald-200 bg-emerald-50/20 rounded-xl p-4 shadow-2xs space-y-1 relative group">
+                            <div class="flex items-center justify-between">
+                                <p class="text-xs font-semibold text-emerald-800 uppercase tracking-wider">Target Omzet Kuartal</p>
+                                <button
+                                    v-if="canManage"
+                                    class="text-[10px] font-bold text-blue-600 hover:underline"
+                                    title="Edit Omzet Total"
+                                    @click="editOmzetPerusahaan()"
+                                >
+                                    ✏️ Edit
+                                </button>
+                            </div>
                             <p class="text-2xl font-extrabold text-emerald-600">
                                 {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
@@ -321,9 +347,9 @@ const simpanAktual = () =>
                                 <div class="flex items-center gap-2">
                                     <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">OMZET FK</span>
                                     <button
-                                        v-if="canManage && objectives.find(o => o.priority?.name === 'FK')"
+                                        v-if="canManage"
                                         class="text-[10px] font-bold text-blue-600 hover:underline"
-                                        @click="bukaObjective(objectives.find(o => o.priority?.name === 'FK'))"
+                                        @click="editOmzetBrand('FK')"
                                     >
                                         ✏️ Edit
                                     </button>
@@ -344,9 +370,9 @@ const simpanAktual = () =>
                                 <div class="flex items-center gap-2">
                                     <span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 uppercase">OMZET AIPRENEUR</span>
                                     <button
-                                        v-if="canManage && objectives.find(o => o.priority?.name === 'AIPRENEUR')"
+                                        v-if="canManage"
                                         class="text-[10px] font-bold text-blue-600 hover:underline"
-                                        @click="bukaObjective(objectives.find(o => o.priority?.name === 'AIPRENEUR'))"
+                                        @click="editOmzetBrand('AIPRENEUR')"
                                     >
                                         ✏️ Edit
                                     </button>
