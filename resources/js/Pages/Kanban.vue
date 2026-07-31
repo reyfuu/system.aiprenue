@@ -144,7 +144,8 @@ const statistikAnggota = computed(() => {
         const nama = kartu.assignee || 'Belum ditugaskan';
         const s = per.get(nama) || { nama, total: 0, selesai: 0, telat: 0 };
         s.total += 1;
-        if (kartu.completed_at || kartu.done) s.selesai += 1;
+        const isProgressDone = String(kartu.progress || '').toLowerCase().startsWith('done');
+        if (kartu.completed_at || kartu.done || isProgressDone) s.selesai += 1;
         if (kartu.ketepatan === 'lewat') s.telat += 1; // belum selesai & lewat deadline
         per.set(nama, s);
     }

@@ -260,12 +260,23 @@ class PipelineController extends Controller
             // layar. Rumusnya dijaga identik dgn KpiController::statistik() — kalau
             // menyimpang, angka board di halaman Kanban & halaman KPI akan berselisih
             // untuk kuartal yang sama.
+            $doneKeys = BoardColumn::where('board_key', $category)
+                ->where(function ($q) {
+                    $q->where('key', 'like', 'done%')
+                      ->orWhere('name', 'like', 'done%')
+                      ->orWhere('name', 'like', 'selesai%');
+                })
+                ->pluck('key')
+                ->all();
+
             $kartuKuartal = Pipeline::where('category', $category)
                 ->where('is_kr_master', false)
                 ->whereNull('archived_at')
-                ->get(['id', 'deadline', 'completed_at']);
+                ->get(['id', 'progress', 'deadline', 'completed_at']);
 
-            $selesaiKuartal = $kartuKuartal->filter(fn ($p) => $p->completed_at !== null)->count();
+            $selesaiKuartal = $kartuKuartal->filter(function ($p) use ($doneKeys) {
+                return $p->completed_at !== null || in_array($p->progress, $doneKeys, true) || str_starts_with(strtolower($p->progress ?? ''), 'done');
+            })->count();
             $target = (int) (BoardQuarterTarget::for($category, $quarterPanel['year'], $quarterPanel['quarter'])?->target_done ?? 0);
 
             $quarterStats = [
