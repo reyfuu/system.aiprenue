@@ -288,7 +288,7 @@ const simpanAktual = () =>
                                 {{ ringkasan.omset_target > 0 ? rpShort(ringkasan.omset_target) : 'Rp 0' }}
                             </p>
                             <p class="text-[10px] text-slate-400 font-semibold truncate" :title="'Rp ' + nfFull.format(ringkasan.omset_target || 0)">
-                                Rp {{ nfFull.format(ringkasan.omset_target || 0) }}
+                                Total Seluruh Objective
                             </p>
                         </div>
                         <div class="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-1">
