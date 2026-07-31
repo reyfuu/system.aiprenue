@@ -344,15 +344,6 @@ const simpanAktual = () =>
                 class="bg-white border-b border-slate-200 sticky top-0 z-10 px-8 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xs"
             >
                 <div class="flex items-center gap-4">
-                    <button
-                        class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors"
-                        title="Kembali ke Overview"
-                        @click="viewMode = 'landing'"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                        </svg>
-                    </button>
                     <h1 class="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
                         OKR — {{ quarter.label }}
                         <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
@@ -374,7 +365,7 @@ const simpanAktual = () =>
                         class="bg-blue-600 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold hover:bg-blue-700 shadow-xs"
                         @click="bukaObjective()"
                     >
-                        + Edit Objective
+                        + Buat Objective
                     </button>
                 </div>
             </header>
