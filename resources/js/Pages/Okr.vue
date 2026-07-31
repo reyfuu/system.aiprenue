@@ -713,7 +713,7 @@ const simpanAktual = () =>
 
                                     <div class="pl-6 text-xs text-blue-600 font-semibold">
                                         <a
-                                            :href="`/kanban?category=${card.board || 'todo'}&card=${card.id}`"
+                                            :href="`/pipelines/kanban?category=${card.board || 'todo'}&card=${card.id}`"
                                             class="hover:underline flex items-center gap-1"
                                         >
                                             Kanban: Todolist Tim &gt; {{ card.pic || 'Tim' }}
