@@ -5,10 +5,11 @@ namespace App\Models;
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     /** Output yang dipesan (Reels/Story/Video/Foto/…). Daftar pilihannya = isi
      *  tabel `outputs`, satu sumber dgn Pipeline — jangan bikin daftar kedua. */
     public function outputs(): BelongsToMany

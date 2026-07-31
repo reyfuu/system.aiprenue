@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Absence extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = [
         'user_id', 'type', 'start_date', 'end_date', 'reason', 'attachment_path', 'status',
     ];

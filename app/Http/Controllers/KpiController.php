@@ -115,7 +115,13 @@ class KpiController extends Controller
             ->whereBetween('deadline', [$start->toDateString(), $end->toDateString()])
             ->get(['id', 'deadline', 'completed_at']);
 
-        $selesai = $kartu->whereNotNull('completed_at')->count();
+        // "Selesai" dihitung dari completed_at DI DALAM kuartal, TANPA syarat
+        // deadline — kartu tanpa deadline (mis. board Sales) yang diselesaikan
+        // di kuartal ini tetap terhitung. $kartu di atas (total/ketepatan) tetap
+        // berbasis deadline, itu tak berubah.
+        $selesai = Pipeline::where('category', $boardKey)
+            ->whereBetween('completed_at', [$start, $end])
+            ->count();
         $target ??= (int) (BoardQuarterTarget::for($boardKey, $year, $quarter)?->target_done ?? 0);
 
         return [

@@ -65,13 +65,18 @@ class ColumnTest extends TestCase
         $this->assertNotNull($col->fresh(), 'kolom berisi kartu tak boleh hilang');
     }
 
+    /** Hapus kolom kini soft delete — kolomnya tak lagi muncul di query
+     *  normal (fresh() sengaja menembus scope soft-delete, jadi baris
+     *  ter-soft-delete tetap ditemukan olehnya), tapi barisnya masih ada di
+     *  tabel supaya bisa dipulihkan. */
     public function test_kolom_kosong_bisa_dihapus(): void
     {
         $col = BoardColumn::where('board_key', 'sales')->where('key', 'nego')->first();
 
         $this->actingAs($this->user())->delete('/columns/'.$col->id);
 
-        $this->assertNull($col->fresh());
+        $this->assertNull(BoardColumn::find($col->id));
+        $this->assertSoftDeleted($col);
     }
 
     public function test_kolom_terakhir_tak_bisa_dihapus(): void

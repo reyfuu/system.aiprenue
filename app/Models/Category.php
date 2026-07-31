@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Category extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = ['key', 'name', 'type', 'section', 'super_admin_only', 'created_by'];
 
     protected $casts = ['super_admin_only' => 'boolean'];

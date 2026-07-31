@@ -1,12 +1,14 @@
 <?php
 
-use App\Models\BoardColumn;
-use App\Models\Category;
-use App\Models\Label;
 use App\Models\Pipeline;
-use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+
+// Category/BoardColumn/Label sengaja DB::table(), BUKAN model Eloquent: migrasi
+// 2026_07_31_010000 (SoftDeletes) berjalan SESUDAH ini, jadi memakai model di
+// sini akan menabrak kolom `deleted_at` yang belum ada saat migrasi ini
+// dieksekusi ulang lewat `migrate:fresh`. Pipeline aman — SoftDeletes-nya
+// sudah dipasang sejak migrasi lama, jauh sebelum migrasi ini.
 
 /**
  * Pemulihan board Kanban tim yang hilang di server.
@@ -223,10 +225,12 @@ return new class extends Migration
             return;
         }
 
-        $board = Category::firstOrCreate(
-            ['key' => self::BOARD_KEY, 'type' => 'kanban'],
-            ['name' => self::BOARD_NAME],
-        );
+        if (! DB::table('categories')->where('key', self::BOARD_KEY)->where('type', 'kanban')->exists()) {
+            DB::table('categories')->insert([
+                'key' => self::BOARD_KEY, 'type' => 'kanban', 'name' => self::BOARD_NAME,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
 
         // Jangan pernah menimpa board yang sudah berisi kartu. Migrasi ini
         // memulihkan data yang hilang, bukan mengganti pekerjaan yang sedang
@@ -238,17 +242,26 @@ return new class extends Migration
         // Pembuat kartu = owner pertama. Pada database yang benar-benar baru
         // (migrate:fresh) tabel users masih kosong karena seeder berjalan
         // setelah migrasi — created_by nullable, jadi cukup dibiarkan null.
-        $pembuat = User::where('role', 'owner')->orderBy('id')->value('id');
+        $pembuat = DB::table('users')->where('role', 'owner')->orderBy('id')->value('id');
 
         DB::transaction(function () use ($pembuat): void {
             $posisiKolom = 0;
 
             foreach ($this->papan() as $orang) {
                 foreach ([$orang['todo'], $orang['done']] as $kolom) {
-                    BoardColumn::updateOrCreate(
-                        ['board_key' => self::BOARD_KEY, 'key' => $kolom['key']],
-                        ['name' => $kolom['name'], 'position' => $posisiKolom++],
-                    );
+                    $now = now();
+                    $existing = DB::table('board_columns')
+                        ->where('board_key', self::BOARD_KEY)->where('key', $kolom['key'])->first();
+                    if ($existing) {
+                        DB::table('board_columns')->where('id', $existing->id)
+                            ->update(['name' => $kolom['name'], 'position' => $posisiKolom++, 'updated_at' => $now]);
+                    } else {
+                        DB::table('board_columns')->insert([
+                            'board_key' => self::BOARD_KEY, 'key' => $kolom['key'],
+                            'name' => $kolom['name'], 'position' => $posisiKolom++,
+                            'created_at' => $now, 'updated_at' => $now,
+                        ]);
+                    }
 
                     foreach (array_values($kolom['cards']) as $posisi => $kartu) {
                         $card = Pipeline::create([
@@ -304,8 +317,8 @@ return new class extends Migration
                 return;
             }
 
-            BoardColumn::where('board_key', self::BOARD_KEY)->delete();
-            Category::where('key', self::BOARD_KEY)->where('type', 'kanban')->delete();
+            DB::table('board_columns')->where('board_key', self::BOARD_KEY)->delete();
+            DB::table('categories')->where('key', self::BOARD_KEY)->where('type', 'kanban')->delete();
         });
     }
 
@@ -326,10 +339,15 @@ return new class extends Migration
 
         return collect($nama)
             ->map(function (string $n) use ($bawaan) {
-                $label = Label::firstOrCreate(
-                    ['name' => $n],
-                    $bawaan[$n] ?? ['group' => 2, 'color' => 'bg-slate-500'],
-                );
+                $label = DB::table('labels')->where('name', $n)->first();
+                if (! $label) {
+                    $atribut = $bawaan[$n] ?? ['group' => 2, 'color' => 'bg-slate-500'];
+                    $now = now();
+                    DB::table('labels')->insert(array_merge(
+                        ['name' => $n], $atribut, ['created_at' => $now, 'updated_at' => $now],
+                    ));
+                    $label = (object) array_merge(['name' => $n], $atribut);
+                }
 
                 return ['name' => $label->name, 'group' => $label->group, 'color' => $label->color];
             })

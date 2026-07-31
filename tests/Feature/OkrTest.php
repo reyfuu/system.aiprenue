@@ -343,17 +343,30 @@ class OkrTest extends TestCase
         $this->assertDatabaseCount('objectives', 0);
     }
 
-    /** Menghapus Objective ikut menghapus Key Result-nya — KR tanpa induk tak
-     *  punya arti apa pun (cascadeOnDelete di skema). */
+    /** Menghapus Objective ikut men-soft-delete Key Result-nya — KR tanpa
+     *  induk tak punya arti apa pun. Dulu ini FK cascadeOnDelete; sejak
+     *  domain model pakai SoftDeletes, cascade ditiru manual lewat hook
+     *  `booted()` di Objective (soft delete = UPDATE, FK cascade tak
+     *  terpicu). Restore Objective juga harus mengembalikan KR yang ikut
+     *  hilang bareng dia. */
     public function test_hapus_objective_menghapus_key_result(): void
     {
         $o = $this->objective();
-        KeyResult::create(['objective_id' => $o->id, 'title' => 'KR', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
+        $kr = KeyResult::create(['objective_id' => $o->id, 'title' => 'KR', 'source' => 'manual', 'target' => 10, 'unit' => 'angka']);
 
         $this->actingAs($this->user())->delete('/okr/objectives/'.$o->id)->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('objectives', 0);
-        $this->assertDatabaseCount('key_results', 0);
+        // Tak muncul lagi di query normal (scope soft-delete default)...
+        $this->assertNull(Objective::find($o->id));
+        $this->assertNull(KeyResult::find($kr->id));
+        // ...tapi barisnya masih ada, cuma ditandai terhapus — bisa dipulihkan.
+        $this->assertSoftDeleted($o);
+        $this->assertSoftDeleted($kr);
+
+        $o->refresh()->restore();
+
+        $this->assertNotSoftDeleted($o);
+        $this->assertNotSoftDeleted($kr->refresh());
     }
 
     /** Angka otomatis yang bisa ditimpa tangan berhenti bisa dipercaya —
@@ -854,6 +867,30 @@ class OkrTest extends TestCase
                 ->where('quarter.key', '2026-Q3')
                 ->where('quarterStats.no_deadline', 1)
                 ->has('board.todo', 1)                       // hanya kartu Q3
+            );
+    }
+
+    /** Kartu tanpa deadline yang diselesaikan di dalam kuartal tetap terhitung
+     *  "selesai" di quarterStats — "selesai" dinilai dari completed_at, BUKAN
+     *  deadline. Sebelumnya kartu begini (mis. board Sales) tidak pernah
+     *  terhitung karena ikut disaring lewat kolom deadline. */
+    public function test_kartu_tanpa_deadline_selesai_di_kuartal_tetap_terhitung(): void
+    {
+        $this->board();
+        $this->kartu([
+            'endorse' => 'Tanpa deadline, selesai',
+            'deadline' => null,
+            'progress' => 'done',
+            'completed_at' => '2026-08-15 10:00:00',
+        ]);
+
+        $this->actingAs($this->user())
+            ->get('/pipelines/kanban?category=proyek&q=2026-Q3')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('quarterStats.total', 0)        // total tetap berbasis deadline
+                ->where('quarterStats.no_deadline', 1)
+                ->where('quarterStats.done', 1)          // tapi selesai ikut completed_at
             );
     }
 

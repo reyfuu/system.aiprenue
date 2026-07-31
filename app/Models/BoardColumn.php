@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class BoardColumn extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = ['board_key', 'key', 'name', 'color', 'position'];
 
     /** Kolom milik satu board, terurut. */

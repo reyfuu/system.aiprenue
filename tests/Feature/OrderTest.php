@@ -311,7 +311,10 @@ class OrderTest extends TestCase
         $this->assertSame([$b->id], $order->fresh()->outputs->pluck('id')->all());
     }
 
-    /** Hapus order ikut membersihkan pivot — cascadeOnDelete. */
+    /** Hapus order kini soft delete (bukan hard delete/cascadeOnDelete lagi)
+     *  — Order-nya sendiri tak benar-benar hilang, jadi baris pivot
+     *  `order_output` HARUS tetap ada supaya kalau Order dipulihkan,
+     *  sambungan ke Output-nya tidak putus. */
     public function test_hapus_order_ikut_membuang_baris_pivot(): void
     {
         $out = Output::create(['name' => 'Output X']);
@@ -320,7 +323,8 @@ class OrderTest extends TestCase
 
         $this->actingAs($this->user())->delete('/orders/'.$order->id)->assertSessionHasNoErrors();
 
-        $this->assertSame(0, DB::table('order_output')->where('order_id', $order->id)->count());
+        $this->assertSoftDeleted($order);
+        $this->assertSame(1, DB::table('order_output')->where('order_id', $order->id)->count(), 'pivot tetap ada supaya restore Order tak kehilangan Output-nya');
         $this->assertNotNull($out->fresh(), 'output-nya sendiri jangan ikut terhapus');
     }
 

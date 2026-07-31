@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Script extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = ['brand', 'title', 'body', 'generated_for', 'source_pdf_path'];
 
     protected $casts = ['generated_for' => 'date'];

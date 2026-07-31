@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 
 /** Satu baris = satu konten (post/reel/video/short) beserta metriknya. */
@@ -15,6 +16,8 @@ use Illuminate\Support\Collection;
 ])]
 class InsightContent extends Model
 {
+    use SoftDeletes;
+
     public const PLATFORMS = ['instagram' => 'Instagram', 'youtube' => 'YouTube'];
 
     /** Bobot content_score, langsung dari spesifikasi. Jumlahnya wajib 1.00 —

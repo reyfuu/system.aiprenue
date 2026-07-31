@@ -107,13 +107,17 @@ class UserCrudTest extends TestCase
         $this->assertNotNull($owner->fresh(), 'akun sendiri tak boleh terhapus');
     }
 
+    /** Hapus user kini soft delete — hilang dari daftar/login normal, tapi
+     *  barisnya tetap ada supaya bisa dipulihkan (bukan `fresh()`, karena
+     *  itu sengaja menembus scope soft-delete). */
     public function test_hapus_user_lain(): void
     {
         $target = User::factory()->create(['role' => 'staff']);
 
         $this->actingAs($this->user())->delete('/users/'.$target->id)->assertSessionHasNoErrors();
 
-        $this->assertNull($target->fresh());
+        $this->assertNull(User::find($target->id));
+        $this->assertSoftDeleted($target);
     }
 
     public function test_manager_dan_staff_tak_punya_akses_menu_user(): void

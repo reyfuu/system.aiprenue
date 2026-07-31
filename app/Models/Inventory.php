@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Inventory extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = ['name', 'qty', 'unit_value_idr', 'month'];
 
     protected $casts = [

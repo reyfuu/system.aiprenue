@@ -299,6 +299,8 @@ const fillForm = (card) => {
     editForm.account = card.account_key ?? 'fk';
     editForm.progressKey = card.progress ?? props.columns[0]?.key ?? 'script';
     editForm.assigned_to = card.assigned_to ?? '';
+    // Todo baru default ikut penanggung jawab kartunya (sesuai kolom) — user tetap bisa ganti.
+    taskForm.assigned_to = card.assigned_to ?? '';
     editForm.payment_status = card.payment_status ?? 'belum';
     editForm.amount_idr = card.amount_idr ?? '';
     editForm.amount_usd = card.amount_usd ?? '';
@@ -412,6 +414,10 @@ const archiveCard = (card) => {
     if (props.canManage)
         router.patch(`/pipelines/${card.id}/archive`, {}, { preserveScroll: true, onSuccess: () => (detailId.value = null) });
 };
+// Tandai kartu selesai / batal. completed_at terisi = sudah selesai → kirim kebalikannya.
+const toggleDone = (card) => {
+    if (props.canManage) router.patch(`/pipelines/${card.id}/done`, { done: !card.completed_at }, { preserveScroll: true });
+};
 const deleteCard = (card) => {
     if (!props.canManage) return;
     if (!confirm(`Hapus kartu "${card.endorse}"? Tindakan ini tidak bisa dibatalkan.`)) return;
@@ -431,7 +437,7 @@ const taskForm = useForm({ title: '', assigned_to: '', deadline: '' });
 const addTask = () =>
     taskForm.post(`/pipelines/${detailId.value}/tasks`, {
         preserveScroll: true,
-        onSuccess: () => taskForm.reset(),
+        onSuccess: () => taskForm.reset('title', 'deadline'),
     });
 const toggleTask = (task) => router.patch(`/pipeline-tasks/${task.id}`, { done: !task.done }, { preserveScroll: true });
 const deleteTask = (task) => router.delete(`/pipeline-tasks/${task.id}`, { preserveScroll: true });
@@ -1949,6 +1955,22 @@ class="block font-medium text-slate-600"
                     </div>
                     <div v-for="group in [1, 2]" :key="group" class="mt-2">
                         <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ LABEL_GROUP_NAMES[group] }}</p>
+                        <!-- Tanda selesai kartu (Sales) — chip Status Pekerjaan, gaya sama spt label Kanban. -->
+                        <button
+                            v-if="group === 1 && isPipeline && detailCard"
+                            type="button"
+                            role="radio"
+                            :aria-checked="!!detailCard.completed_at"
+                            :class="[
+                                'mb-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition',
+                                detailCard.completed_at
+                                    ? 'border-brand-400 bg-brand-50 text-slate-700'
+                                    : 'border-slate-200 text-slate-500 hover:bg-slate-50',
+                            ]"
+                            @click="toggleDone(detailCard)"
+                        >
+                            <span class="w-3 h-3 rounded-full bg-emerald-500"></span><span>Selesai</span><span v-if="detailCard.completed_at">✓</span>
+                        </button>
                         <div class="flex flex-wrap gap-2" role="radiogroup" :aria-label="`Kategori ${group}`">
                             <button
                                 v-for="lp in labelGroups[group]"
@@ -1967,7 +1989,7 @@ class="block font-medium text-slate-600"
                                 <span :class="['w-3 h-3 rounded-full', lp.color]"></span><span>{{ lp.name }}</span
                                 ><span v-if="hasLabel(lp.name)">✓</span>
                             </button>
-                            <p v-if="!labelGroups[group].length" class="text-xs text-slate-400">Belum ada pilihan.</p>
+                            <p v-if="!labelGroups[group].length && !(group === 1 && isPipeline && detailCard)" class="text-xs text-slate-400">Belum ada pilihan.</p>
                         </div>
                     </div>
                 </div>

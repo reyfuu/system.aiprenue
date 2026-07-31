@@ -29,7 +29,9 @@ trait Auditable
         });
 
         static::deleted(function ($model) {
-            AuditLog::record('delete', $model, new: null);
+            // Simpan snapshot lengkap baris yang dihapus di old_values agar bisa
+            // dipulihkan dari audit log. new_values sengaja kosong (bukan delete → tak ada nilai baru).
+            AuditLog::record('delete', $model, old: $model->getAttributes(), new: []);
         });
     }
 }

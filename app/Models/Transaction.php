@@ -4,10 +4,11 @@ namespace App\Models;
 
 use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Transaction extends Model
 {
-    use Auditable;
+    use Auditable, SoftDeletes;
     protected $fillable = ['type', 'category', 'description', 'amount_idr', 'date', 'bukti_path'];
 
     protected $casts = [
