@@ -261,7 +261,17 @@ const colTasks = ref({ ...(props.columnTasks || {}) });
 watch(() => props.columnTasks, (v) => { colTasks.value = { ...(v || {}) }; });
 
 // Delegasi hanya ke staff yang ada.
-const staffOnly = computed(() => (props.staff || []).filter((s) => s.role === 'staff'));
+// Penerima delegasi = SEMUA user (bukan cuma role 'staff'): tim ini isinya
+// owner/manager/it, jadi membatasi ke 'staff' bikin dropdown kosong. Staff
+// didahulukan di daftar supaya tetap jadi pilihan utama saat ada.
+const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', it: 'IT', admin: 'Admin', staff: 'Staff' };
+const roleLabel = (r) => ROLE_LABEL[r] || r;
+const assignableUsers = computed(() =>
+    [...(props.staff || [])].sort((a, b) => (a.role === 'staff' ? -1 : 0) - (b.role === 'staff' ? -1 : 0)),
+);
+const initialsOf = (name) =>
+    (name || '').split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const colDoneCount = (colId) => (colTasks.value[colId] || []).filter((t) => t.done).length;
 
 const colTaskAddFor = ref(null); // id kolom yg form delegasinya sedang terbuka
 const colTaskForm = useForm({ board_column_id: null, title: '', assigned_to: '' });
@@ -1386,19 +1396,26 @@ class="ml-auto text-[11px] text-slate-400"
                                     </div>
                                 </div>
 
-                                <!-- Checklist delegasi kolom: owner/manager menugaskan item ke staff.
-                             Staff hanya melihat item yang didelegasikan ke dirinya (difilter server).
-                             Tiap item yg tampil pasti boleh dicentang si penonton; controller tetap
-                             menegakkan otorisasi. -->
+                                <!-- Checklist delegasi kolom: owner/manager menugaskan item ke user
+                             (staff didahulukan). Staff hanya melihat item yang didelegasikan ke
+                             dirinya (difilter server). Tiap item yg tampil pasti boleh dicentang
+                             si penonton; controller tetap menegakkan otorisasi. -->
                                 <div
                                     v-if="columnTasks && ((colTasks[col.id] && colTasks[col.id].length) || canManageStructure)"
-                                    class="mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2"
+                                    class="mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5"
                                 >
-                                    <div v-if="colTasks[col.id] && colTasks[col.id].length" class="space-y-1">
-                                        <div v-for="t in colTasks[col.id]" :key="t.id" class="group flex items-center gap-1.5">
+                                    <div v-if="colTasks[col.id] && colTasks[col.id].length" class="mb-1.5 flex items-center gap-1.5 px-0.5">
+                                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l2 2 4-4" />
+                                        </svg>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Checklist</span>
+                                        <span class="ml-auto text-[10px] font-bold text-slate-400">{{ colDoneCount(col.id) }}/{{ colTasks[col.id].length }}</span>
+                                    </div>
+                                    <div v-if="colTasks[col.id] && colTasks[col.id].length" class="space-y-0.5">
+                                        <div v-for="t in colTasks[col.id]" :key="t.id" class="group flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-white transition">
                                             <button type="button" class="shrink-0" title="Tandai selesai" @click="toggleColTask(t)">
                                                 <svg v-if="t.done" class="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                                                 </svg>
                                                 <svg v-else class="w-4 h-4 text-slate-300 hover:text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                                     <circle cx="12" cy="12" r="9" />
@@ -1407,9 +1424,9 @@ class="ml-auto text-[11px] text-slate-400"
                                             <span class="flex-1 text-xs leading-tight" :class="t.done ? 'line-through text-slate-400' : 'text-slate-600'">{{ t.title }}</span>
                                             <span
                                                 v-if="t.assignee"
-                                                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white border border-slate-200 text-slate-500"
+                                                class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-[9px] font-bold flex items-center justify-center ring-1 ring-white"
                                                 :title="'Ditugaskan: ' + t.assignee"
-                                            >{{ t.assignee.split(' ')[0] }}</span>
+                                            >{{ initialsOf(t.assignee) }}</span>
                                             <button
                                                 v-if="canManageStructure"
                                                 type="button"
@@ -1422,33 +1439,47 @@ class="ml-auto text-[11px] text-slate-400"
                                         </div>
                                     </div>
                                     <!-- Delegasi baru: owner/manager saja -->
-                                    <div v-if="canManageStructure" class="mt-1">
+                                    <div v-if="canManageStructure" class="mt-1.5">
                                         <button
                                             v-if="colTaskAddFor !== col.id"
                                             type="button"
-                                            class="w-full text-left text-[11px] font-semibold text-brand-600 hover:text-brand-700 px-1 py-0.5"
+                                            class="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-brand-300 hover:bg-white hover:text-brand-600"
                                             @click="openColTaskAdd(col)"
                                         >
-                                            + Delegasikan task
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                            Delegasikan task
                                         </button>
-                                        <form v-else class="space-y-1" @submit.prevent="submitColTask">
+                                        <form v-else class="space-y-2 rounded-xl border border-brand-200 bg-white p-2 shadow-xs" @submit.prevent="submitColTask">
                                             <input
                                                 v-model="colTaskForm.title"
                                                 maxlength="120"
-                                                placeholder="Tugas…"
+                                                placeholder="Apa yang harus dikerjakan?"
                                                 :ref="(el) => el && el.focus()"
-                                                class="w-full text-xs rounded border border-slate-200 px-2 py-1 focus:outline-none focus:border-brand-400"
+                                                class="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
                                             />
-                                            <select
-                                                v-model="colTaskForm.assigned_to"
-                                                class="w-full text-xs rounded border border-slate-200 px-2 py-1 bg-white focus:outline-none focus:border-brand-400"
-                                            >
-                                                <option value="">— pilih staff —</option>
-                                                <option v-for="s in staffOnly" :key="s.id" :value="s.id">{{ s.name }}</option>
-                                            </select>
-                                            <div class="flex gap-1">
-                                                <button type="submit" class="text-[11px] font-semibold bg-brand-600 hover:bg-brand-700 text-white rounded px-2 py-1 transition">Delegasikan</button>
-                                                <button type="button" class="text-[11px] text-slate-400 hover:text-slate-600 px-2 py-1" @click="colTaskAddFor = null">Batal</button>
+                                            <div class="relative">
+                                                <span
+                                                    v-if="colTaskForm.assigned_to"
+                                                    class="pointer-events-none absolute left-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-700"
+                                                >{{ initialsOf((assignableUsers.find((u) => u.id === colTaskForm.assigned_to) || {}).name) }}</span>
+                                                <select
+                                                    v-model="colTaskForm.assigned_to"
+                                                    :class="['w-full rounded-lg border border-slate-200 bg-white py-1.5 pr-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200', colTaskForm.assigned_to ? 'pl-8' : 'pl-2.5 text-slate-400']"
+                                                >
+                                                    <option value="" disabled>Pilih penanggung jawab…</option>
+                                                    <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.name }} · {{ roleLabel(u.role) }}</option>
+                                                </select>
+                                            </div>
+                                            <p v-if="!assignableUsers.length" class="text-[10px] text-amber-600">Belum ada user untuk ditugasi.</p>
+                                            <div class="flex items-center gap-1.5 pt-0.5">
+                                                <button
+                                                    type="submit"
+                                                    :disabled="!colTaskForm.title.trim() || !colTaskForm.assigned_to"
+                                                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                                >
+                                                    Delegasikan
+                                                </button>
+                                                <button type="button" class="px-2 py-1.5 text-[11px] font-semibold text-slate-400 hover:text-slate-600" @click="colTaskAddFor = null">Batal</button>
                                             </div>
                                         </form>
                                     </div>
