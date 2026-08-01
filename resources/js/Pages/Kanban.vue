@@ -284,6 +284,10 @@ const toggleColTask = (t) => {
 const deleteColTask = (t) =>
     router.delete(`/column-tasks/${t.id}`, { preserveScroll: true, preserveState: true, only: ['columnTasks'] });
 
+// Objective dianggap selesai bila progress-nya ≥ 100 (cermin isObjectiveComplete
+// di halaman OKR untuk cabang progress). Dipakai preview Objective di atas kolom.
+const objDone = (o) => o.progress !== null && o.progress >= 100;
+
 // ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
 // Dulu ada dua modal terpisah — form tambah cuma subset form edit, jadi kartu baru
 // harus dibuat dulu lalu dibuka lagi untuk mengisi detailnya. Sekarang satu modal:
@@ -1222,26 +1226,51 @@ class="ml-auto text-[11px] text-slate-400"
                  force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
                  (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
                  Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
-            <!-- Preview Objective OKR (kuartal panel). Tiap chip diklik → halaman
-                 OKR dgn objektif tsb disorot (/okr?q=..&focus=id). Read-only di sini. -->
-            <div v-if="objectives && objectives.length" class="mb-3 bg-white border border-slate-200 rounded-xl shadow-sm px-3 py-2">
-                <div class="flex items-center gap-2 mb-2">
-                    <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <!-- Preview Objective OKR (kuartal panel) — gaya kartu disamakan dgn
+                 halaman OKR: label OBJECTIVE N, chip prioritas, judul tebal,
+                 progress bar (angka sama dgn OKR). Diklik → /okr?q=..&focus=id
+                 (OKR scroll + sorot objektifnya). Read-only di sini. -->
+            <div v-if="objectives && objectives.length" class="mb-3">
+                <div class="flex items-center gap-2 mb-2 px-0.5">
+                    <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-1.657 1.343-3 3-3s3 1.343 3 3M4.5 12a7.5 7.5 0 1115 0 7.5 7.5 0 01-15 0zm7.5-4v.01M12 12l3 3" />
                     </svg>
-                    <span class="text-sm font-semibold text-slate-700">Objectives {{ quarter.label }}</span>
+                    <span class="text-xs font-extrabold uppercase tracking-wider text-slate-600">Objectives · {{ quarter.label }}</span>
                     <Link :href="`/okr?q=${quarter.key}`" class="ml-auto text-xs font-semibold text-brand-600 hover:underline">Buka OKR →</Link>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     <Link
-                        v-for="o in objectives"
+                        v-for="(o, i) in objectives"
                         :key="o.id"
                         :href="`/okr?q=${quarter.key}&focus=${o.id}`"
-                        class="group inline-flex items-center gap-2 max-w-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 transition hover:bg-brand-50 hover:border-brand-300"
+                        class="group block bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 transition hover:border-brand-300 hover:shadow-sm"
                     >
-                        <span v-if="o.priority" class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">{{ o.priority.name }}</span>
-                        <span class="text-sm text-slate-700 truncate group-hover:text-brand-700">{{ o.title }}</span>
-                        <span v-if="o.kr_count" class="shrink-0 text-[11px] text-slate-400">{{ o.kr_count }} KR</span>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-red-600">OBJECTIVE {{ i + 1 }}</span>
+                            <span v-if="o.priority" class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">{{ o.priority.name }}</span>
+                            <span v-if="objDone(o)" class="ml-auto inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-700">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                Selesai
+                            </span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span v-if="objDone(o)" class="mt-0.5 w-5 h-5 rounded-md bg-emerald-500 text-white flex items-center justify-center shrink-0 font-extrabold text-[10px]">✓</span>
+                            <h3 :class="['text-sm font-extrabold tracking-tight leading-snug line-clamp-2', objDone(o) ? 'text-emerald-900 line-through' : 'text-slate-900 group-hover:text-brand-700']">{{ o.title }}</h3>
+                        </div>
+                        <!-- Progress bar ala kartu Objective OKR -->
+                        <div class="mt-3">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[11px] text-slate-400">{{ o.kr_count }} KR</span>
+                                <span class="text-[11px] font-bold" :class="objDone(o) ? 'text-emerald-600' : 'text-slate-500'">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
+                            </div>
+                            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                    class="h-full rounded-full transition-all"
+                                    :class="objDone(o) ? 'bg-emerald-500' : 'bg-brand-500'"
+                                    :style="{ width: Math.min(100, Math.max(0, o.progress || 0)) + '%' }"
+                                ></div>
+                            </div>
+                        </div>
                     </Link>
                 </div>
             </div>

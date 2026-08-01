@@ -13,6 +13,7 @@ use App\Models\Output;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\ExchangeRate;
+use App\Support\OkrMetrics;
 use App\Support\OkrNotifications;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
@@ -344,19 +345,26 @@ class PipelineController extends Controller
                     'done' => $t->completed_at !== null,
                 ])->values());
             })() : null,
-            // Preview Objective OKR (kuartal panel) — Kanban saja. Ringan: judul +
-            // prioritas + jumlah KR; progress detail biar dihitung di halaman OKR.
-            // Diklik → /okr?q=..&focus=id (halaman OKR scroll + sorot objektifnya).
-            'objectives' => $showGallery ? Objective::where('year', $quarterPanel['year'])
-                ->where('quarter', $quarterPanel['quarter'])
-                ->withCount('keyResults')
-                ->orderBy('position')->orderBy('id')->get()
-                ->map(fn ($o) => [
-                    'id' => $o->id,
-                    'title' => $o->title,
-                    'priority' => $o->priority,          // {name} | null
-                    'kr_count' => $o->key_results_count,
-                ])->values() : null,
+            // Preview Objective OKR (kuartal panel) — Kanban saja. UI dibuat mirip
+            // kartu Objective di halaman OKR: label OBJECTIVE N, chip prioritas,
+            // judul tebal, progress bar. progress memakai sumber angka yg sama
+            // dgn halaman OKR (OkrMetrics::objectiveProgress). Urutan = urutan OKR
+            // (position, id) supaya nomor OBJECTIVE cocok. Diklik → /okr?focus=id.
+            'objectives' => $showGallery ? (function () use ($quarterPanel) {
+                $progress = OkrMetrics::objectiveProgress($quarterPanel['year'], $quarterPanel['quarter']);
+
+                return Objective::where('year', $quarterPanel['year'])
+                    ->where('quarter', $quarterPanel['quarter'])
+                    ->withCount('keyResults')
+                    ->orderBy('position')->orderBy('id')->get()
+                    ->map(fn ($o) => [
+                        'id' => $o->id,
+                        'title' => $o->title,
+                        'priority' => $o->priority,          // {name} | null
+                        'kr_count' => $o->key_results_count,
+                        'progress' => $progress[$o->id] ?? null, // % | null (tak ada KR)
+                    ])->values();
+            })() : null,
             'categories' => $categories,                            // board select: sesuai type modul
             'baseUrl' => $baseUrl,                                     // '/pipelines' | '/pipelines/kanban'
             'pageTitle' => $title,
