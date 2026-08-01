@@ -47,6 +47,10 @@ const props = defineProps({
     // sama sekali, bukan sekadar disembunyikan di sini).
     quarterStats: { type: Object, default: null },
     boardCreator: { type: String, default: null }, // pembuat board (null = board lama)
+    // Kanban saja (null di Sales Pipeline). Prop WAJIB dideklarasikan di sini:
+    // prop yang tak dideklarasi jatuh ke $attrs & tak terbaca lewat `props`.
+    routineTasks: { default: null }, // checklist rutinitas harian (personal)
+    objectives: { default: null },   // preview Objective OKR kuartal panel
 });
 
 // Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
@@ -245,6 +249,48 @@ const onColumnChange = (evt) => {
     if (!evt.moved) return;
 
     patchCard('/columns/reorder', { ids: colOrder.value.map((c) => c.id) });
+};
+
+// ---- Checklist rutinitas harian (personal, reset tiap hari) ----
+// Kanban saja: props.routineTasks null di Sales Pipeline → strip tak dirender.
+// Pola sama dgn kolom: salinan lokal utk draggable + watch resync dari props.
+const routine = ref([...(props.routineTasks || [])]);
+watch(() => props.routineTasks, (v) => { routine.value = [...(v || [])]; });
+const routineOpen = ref(true);
+const routineDone = computed(() => routine.value.filter((t) => t.done_today).length);
+
+const routineForm = useForm({ title: '' });
+const addRoutine = () => {
+    if (!routineForm.title.trim()) return;
+    routineForm.post('/routine-tasks', {
+        preserveScroll: true, preserveState: true, only: ['routineTasks'],
+        onSuccess: () => routineForm.reset('title'),
+    });
+};
+const toggleRoutine = (t) => {
+    t.done_today = !t.done_today; // optimistik; reload berikutnya = kebenaran server
+    router.patch(`/routine-tasks/${t.id}/toggle`, {}, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
+};
+const deleteRoutine = (t) =>
+    router.delete(`/routine-tasks/${t.id}`, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
+
+// Reorder ala kolom: seluruh urutan dikirim sbg JSON (fetch), tanpa reload props.
+const onRoutineChange = (evt) => {
+    if (!evt.moved) return;
+    patchCard('/routine-tasks/reorder', { ids: routine.value.map((t) => t.id) });
+};
+
+// Edit judul inline (klik teks → input). Enter/blur simpan, Esc batal.
+const routineEditId = ref(null);
+const routineEditTitle = ref('');
+const startRoutineEdit = (t) => { routineEditId.value = t.id; routineEditTitle.value = t.title; };
+const saveRoutineEdit = (t) => {
+    if (routineEditId.value !== t.id) return; // guard: blur+enter jangan dobel simpan
+    const title = routineEditTitle.value.trim();
+    routineEditId.value = null;
+    if (!title || title === t.title) return;
+    t.title = title; // optimistik
+    router.put(`/routine-tasks/${t.id}`, { title }, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
 };
 
 // ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
@@ -1185,6 +1231,115 @@ class="ml-auto text-[11px] text-slate-400"
                  force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
                  (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
                  Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
+            <!-- Preview Objective OKR (kuartal panel). Tiap chip diklik → halaman
+                 OKR dgn objektif tsb disorot (/okr?q=..&focus=id). Read-only di sini. -->
+            <div v-if="objectives && objectives.length" class="mb-3 bg-white border border-slate-200 rounded-xl shadow-sm px-3 py-2">
+                <div class="flex items-center gap-2 mb-2">
+                    <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-1.657 1.343-3 3-3s3 1.343 3 3M4.5 12a7.5 7.5 0 1115 0 7.5 7.5 0 01-15 0zm7.5-4v.01M12 12l3 3" />
+                    </svg>
+                    <span class="text-sm font-semibold text-slate-700">Objectives {{ quarter.label }}</span>
+                    <Link :href="`/okr?q=${quarter.key}`" class="ml-auto text-xs font-semibold text-brand-600 hover:underline">Buka OKR →</Link>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <Link
+                        v-for="o in objectives"
+                        :key="o.id"
+                        :href="`/okr?q=${quarter.key}&focus=${o.id}`"
+                        class="group inline-flex items-center gap-2 max-w-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 transition hover:bg-brand-50 hover:border-brand-300"
+                    >
+                        <span v-if="o.priority" class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">{{ o.priority.name }}</span>
+                        <span class="text-sm text-slate-700 truncate group-hover:text-brand-700">{{ o.title }}</span>
+                        <span v-if="o.kr_count" class="shrink-0 text-[11px] text-slate-400">{{ o.kr_count }} KR</span>
+                    </Link>
+                </div>
+            </div>
+
+            <!-- Checklist rutinitas harian (personal). Reset tiap hari otomatis:
+                 "tercentang" = completed_on == hari ini, jadi besok kosong lagi. -->
+            <div v-if="routineTasks" class="mb-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <button
+                    type="button"
+                    class="w-full flex items-center gap-2 px-3 py-2 text-left"
+                    @click="routineOpen = !routineOpen"
+                >
+                    <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="text-sm font-semibold text-slate-700">Checklist Harian</span>
+                    <span class="text-xs font-medium text-slate-400">{{ routineDone }}/{{ routine.length }}</span>
+                    <svg
+                        class="w-4 h-4 ml-auto text-slate-400 transition-transform"
+                        :class="routineOpen ? 'rotate-180' : ''"
+                        fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                    >
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                <div v-show="routineOpen" class="px-3 pb-3">
+                    <draggable
+                        :list="routine"
+                        item-key="id"
+                        handle=".rt-handle"
+                        ghost-class="drag-ghost"
+                        :animation="150"
+                        class="space-y-0.5"
+                        @change="onRoutineChange"
+                    >
+                        <template #item="{ element: t }">
+                            <div class="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50">
+                                <span class="rt-handle cursor-grab select-none text-slate-300 hover:text-slate-400 text-xs leading-none">⠿</span>
+                                <button type="button" class="shrink-0" @click="toggleRoutine(t)">
+                                    <svg v-if="t.done_today" class="w-5 h-5 text-brand-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                    <svg v-else class="w-5 h-5 text-slate-300 hover:text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="9" />
+                                    </svg>
+                                </button>
+                                <input
+                                    v-if="routineEditId === t.id"
+                                    v-model="routineEditTitle"
+                                    :ref="(el) => el && el.focus()"
+                                    maxlength="120"
+                                    class="flex-1 text-sm bg-transparent border-b border-brand-400 focus:outline-none"
+                                    @keyup.enter="saveRoutineEdit(t)"
+                                    @keyup.esc="routineEditId = null"
+                                    @blur="saveRoutineEdit(t)"
+                                />
+                                <span
+                                    v-else
+                                    class="flex-1 text-sm cursor-text"
+                                    :class="t.done_today ? 'line-through text-slate-400' : 'text-slate-700'"
+                                    @click="startRoutineEdit(t)"
+                                >{{ t.title }}</span>
+                                <button
+                                    type="button"
+                                    class="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition"
+                                    title="Hapus"
+                                    @click="deleteRoutine(t)"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </template>
+                    </draggable>
+                    <form class="mt-0.5 flex items-center gap-2 px-2 py-1.5" @submit.prevent="addRoutine">
+                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        <input
+                            v-model="routineForm.title"
+                            maxlength="120"
+                            placeholder="Tambah rutinitas…"
+                            class="flex-1 text-sm bg-transparent focus:outline-none placeholder-slate-400"
+                        />
+                    </form>
+                </div>
+            </div>
+
             <!-- Scrollbar atas tersinkron dengan board. `sticky top-0` menempelkannya
                  ke tepi atas viewport: sejauh apa pun halaman digulir ke bawah, batang
                  geser kanan-kiri tetap kelihatan — jadi tak perlu turun ke kartu paling

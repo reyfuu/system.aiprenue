@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import Layout from '../Layout.vue';
 import ModalWrap from '../ModalWrap.vue';
@@ -23,6 +23,17 @@ const props = defineProps({
     bisaSalin: Boolean,
     kuartalLaluLabel: { type: String, default: '' },
     okrTitle: { type: String, default: '' }, // judul OKR perusahaan (bebas per kuartal)
+});
+
+// Deep-link dari Kanban: /okr?q=..&focus=<id> → scroll ke objektif itu & sorot
+// sebentar. Dibaca dari URL (bukan prop) supaya controller tak perlu tahu apa pun.
+const focusedObjective = ref(null);
+onMounted(() => {
+    const focus = Number(new URLSearchParams(window.location.search).get('focus'));
+    if (!focus) return;
+    focusedObjective.value = focus;
+    nextTick(() => document.getElementById('obj-' + focus)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    setTimeout(() => (focusedObjective.value = null), 2600); // lepas sorotan
 });
 
 // Mode tampilan: 'detail' (rincian OKR langsung) atau 'landing' (overview landing)
@@ -503,8 +514,10 @@ const simpanAktual = () =>
                 <!-- Objectives List (Design Matching Screenshot Exactly) -->
                 <div
                     v-for="(o, oIdx) in objectives"
+                    :id="'obj-' + o.id"
                     :key="o.id"
-                    class="bg-white rounded-xl border border-slate-200/90 p-8 space-y-6 shadow-xs"
+                    class="bg-white rounded-xl border border-slate-200/90 p-8 space-y-6 shadow-xs transition-shadow"
+                    :class="focusedObjective === o.id ? 'ring-2 ring-brand-500 ring-offset-2' : ''"
                 >
                     <!-- Objective Header -->
                     <div class="space-y-3">

@@ -7,8 +7,10 @@ use App\Models\BoardColumn;
 use App\Models\BoardQuarterTarget;
 use App\Models\Category;
 use App\Models\Label;
+use App\Models\Objective;
 use App\Models\Output;
 use App\Models\Pipeline;
+use App\Models\RoutineTask;
 use App\Models\User;
 use App\Support\ExchangeRate;
 use App\Support\OkrNotifications;
@@ -324,7 +326,29 @@ class PipelineController extends Controller
             'quarterStats' => $quarterStats,
             'category' => $category,
             'counts' => $counts,
-            'categories' => $categories,                                  // board select: sesuai type modul
+            // Checklist rutinitas harian — hanya di modul Kanban ($showGallery),
+            // personal milik user. done_today diturunkan dari completed_on hari ini.
+            'routineTasks' => $showGallery ? RoutineTask::where('user_id', auth()->id())
+                ->orderBy('position')->orderBy('id')->get()
+                ->map(fn ($t) => [
+                    'id' => $t->id,
+                    'title' => $t->title,
+                    'done_today' => $t->completed_on && $t->completed_on->isToday(),
+                ])->values() : null,
+            // Preview Objective OKR (kuartal panel) — Kanban saja. Ringan: judul +
+            // prioritas + jumlah KR; progress detail biar dihitung di halaman OKR.
+            // Diklik → /okr?q=..&focus=id (halaman OKR scroll + sorot objektifnya).
+            'objectives' => $showGallery ? Objective::where('year', $quarterPanel['year'])
+                ->where('quarter', $quarterPanel['quarter'])
+                ->withCount('keyResults')
+                ->orderBy('position')->orderBy('id')->get()
+                ->map(fn ($o) => [
+                    'id' => $o->id,
+                    'title' => $o->title,
+                    'priority' => $o->priority,          // {name} | null
+                    'kr_count' => $o->key_results_count,
+                ])->values() : null,
+            'categories' => $categories,                            // board select: sesuai type modul
             'baseUrl' => $baseUrl,                                     // '/pipelines' | '/pipelines/kanban'
             'pageTitle' => $title,
             'showGallery' => $showGallery,                                 // link galeri: kanban saja
