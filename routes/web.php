@@ -20,8 +20,8 @@ use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
+use App\Http\Controllers\ColumnTaskController;
 use App\Http\Controllers\PipelineTaskController;
-use App\Http\Controllers\RoutineTaskController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -52,13 +52,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
 
-    // Checklist rutinitas harian di Kanban — personal per user, bukan menu,
-    // jadi tak digerbang EnsureMenuAccess (sama seperti notifikasi di atas).
-    Route::post('/routine-tasks', [RoutineTaskController::class, 'store'])->name('routine-tasks.store');
-    Route::put('/routine-tasks/{routineTask}', [RoutineTaskController::class, 'update'])->name('routine-tasks.update');
-    Route::patch('/routine-tasks/reorder', [RoutineTaskController::class, 'reorder'])->name('routine-tasks.reorder');
-    Route::patch('/routine-tasks/{routineTask}/toggle', [RoutineTaskController::class, 'toggle'])->name('routine-tasks.toggle');
-    Route::delete('/routine-tasks/{routineTask}', [RoutineTaskController::class, 'destroy'])->name('routine-tasks.destroy');
+    // Checklist delegasi per kolom Kanban — bukan menu, otorisasi di controller
+    // (buat/hapus: owner/manager; centang: staff ditugasi atau owner/manager).
+    Route::post('/column-tasks', [ColumnTaskController::class, 'store'])->name('column-tasks.store');
+    Route::patch('/column-tasks/{columnTask}/toggle', [ColumnTaskController::class, 'toggle'])->name('column-tasks.toggle');
+    Route::delete('/column-tasks/{columnTask}', [ColumnTaskController::class, 'destroy'])->name('column-tasks.destroy');
 });
 
 // Pipeline (butuh login) + batasan akses per role

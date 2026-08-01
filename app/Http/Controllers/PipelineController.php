@@ -6,11 +6,11 @@ use App\Models\AuditLog;
 use App\Models\BoardColumn;
 use App\Models\BoardQuarterTarget;
 use App\Models\Category;
+use App\Models\ColumnTask;
 use App\Models\Label;
 use App\Models\Objective;
 use App\Models\Output;
 use App\Models\Pipeline;
-use App\Models\RoutineTask;
 use App\Models\User;
 use App\Support\ExchangeRate;
 use App\Support\OkrNotifications;
@@ -326,15 +326,24 @@ class PipelineController extends Controller
             'quarterStats' => $quarterStats,
             'category' => $category,
             'counts' => $counts,
-            // Checklist rutinitas harian — hanya di modul Kanban ($showGallery),
-            // personal milik user. done_today diturunkan dari completed_on hari ini.
-            'routineTasks' => $showGallery ? RoutineTask::where('user_id', auth()->id())
-                ->orderBy('position')->orderBy('id')->get()
-                ->map(fn ($t) => [
+            // Checklist delegasi per kolom (Kanban saja). Dikelompokkan per kolom.
+            // Visibilitas: owner/manager lihat semua item; staff HANYA item yang
+            // didelegasikan ke dirinya (difilter di query, bukan di Vue).
+            'columnTasks' => $showGallery ? (function () use ($columns) {
+                $q = ColumnTask::whereIn('board_column_id', $columns->pluck('id'))
+                    ->with('assignee:id,name')->orderBy('position')->orderBy('id');
+                if (! auth()->user()->canManage()) {
+                    $q->where('assigned_to', auth()->id());
+                }
+
+                return $q->get()->groupBy('board_column_id')->map(fn ($g) => $g->map(fn ($t) => [
                     'id' => $t->id,
                     'title' => $t->title,
-                    'done_today' => $t->completed_on && $t->completed_on->isToday(),
-                ])->values() : null,
+                    'assigned_to' => $t->assigned_to,
+                    'assignee' => $t->assignee?->name,
+                    'done' => $t->completed_at !== null,
+                ])->values());
+            })() : null,
             // Preview Objective OKR (kuartal panel) — Kanban saja. Ringan: judul +
             // prioritas + jumlah KR; progress detail biar dihitung di halaman OKR.
             // Diklik → /okr?q=..&focus=id (halaman OKR scroll + sorot objektifnya).
