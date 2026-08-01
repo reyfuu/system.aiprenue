@@ -49,8 +49,8 @@ const props = defineProps({
     boardCreator: { type: String, default: null }, // pembuat board (null = board lama)
     // Kanban saja (null di Sales Pipeline). Prop WAJIB dideklarasikan di sini:
     // prop yang tak dideklarasi jatuh ke $attrs & tak terbaca lewat `props`.
-    routineTasks: { default: null }, // checklist rutinitas harian (personal)
-    objectives: { default: null },   // preview Objective OKR kuartal panel
+    columnTasks: { default: null }, // checklist delegasi per kolom (owner/manager → staff)
+    objectives: { default: null },  // preview Objective OKR kuartal panel
 });
 
 // Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
@@ -251,47 +251,52 @@ const onColumnChange = (evt) => {
     patchCard('/columns/reorder', { ids: colOrder.value.map((c) => c.id) });
 };
 
-// ---- Checklist rutinitas harian (personal, reset tiap hari) ----
-// Kanban saja: props.routineTasks null di Sales Pipeline → strip tak dirender.
-// Pola sama dgn kolom: salinan lokal utk draggable + watch resync dari props.
-const routine = ref([...(props.routineTasks || [])]);
-watch(() => props.routineTasks, (v) => { routine.value = [...(v || [])]; });
-const routineOpen = ref(true);
-const routineDone = computed(() => routine.value.filter((t) => t.done_today).length);
+// ---- Checklist delegasi per kolom (owner/manager → staff) ----
+// Kanban saja: props.columnTasks null di Sales Pipeline → tak dirender.
+// Peta { <board_column_id>: [ {id,title,assigned_to,assignee,done}, ... ] }.
+// Server sudah menyaring visibilitas (staff hanya item miliknya), jadi tiap
+// item yang tampil PASTI boleh dicentang si penonton — tombol tak perlu dipagari
+// di sini; controller tetap menegakkan otorisasi.
+const colTasks = ref({ ...(props.columnTasks || {}) });
+watch(() => props.columnTasks, (v) => { colTasks.value = { ...(v || {}) }; });
 
-const routineForm = useForm({ title: '' });
-const addRoutine = () => {
-    if (!routineForm.title.trim()) return;
-    routineForm.post('/routine-tasks', {
-        preserveScroll: true, preserveState: true, only: ['routineTasks'],
-        onSuccess: () => routineForm.reset('title'),
+// Delegasi hanya ke staff yang ada.
+// Penerima delegasi = SEMUA user (bukan cuma role 'staff'): tim ini isinya
+// owner/manager/it, jadi membatasi ke 'staff' bikin dropdown kosong. Staff
+// didahulukan di daftar supaya tetap jadi pilihan utama saat ada.
+const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', it: 'IT', admin: 'Admin', staff: 'Staff' };
+const roleLabel = (r) => ROLE_LABEL[r] || r;
+const assignableUsers = computed(() =>
+    [...(props.staff || [])].sort((a, b) => (a.role === 'staff' ? -1 : 0) - (b.role === 'staff' ? -1 : 0)),
+);
+const initialsOf = (name) =>
+    (name || '').split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const colDoneCount = (colId) => (colTasks.value[colId] || []).filter((t) => t.done).length;
+
+const colTaskAddFor = ref(null); // id kolom yg form delegasinya sedang terbuka
+const colTaskForm = useForm({ board_column_id: null, title: '', assigned_to: '' });
+const openColTaskAdd = (col) => {
+    colTaskForm.reset();
+    colTaskForm.board_column_id = col.id;
+    colTaskAddFor.value = col.id;
+};
+const submitColTask = () => {
+    if (!colTaskForm.title.trim() || !colTaskForm.assigned_to) return;
+    colTaskForm.post('/column-tasks', {
+        preserveScroll: true, preserveState: true, only: ['columnTasks'],
+        onSuccess: () => { colTaskForm.reset(); colTaskAddFor.value = null; },
     });
 };
-const toggleRoutine = (t) => {
-    t.done_today = !t.done_today; // optimistik; reload berikutnya = kebenaran server
-    router.patch(`/routine-tasks/${t.id}/toggle`, {}, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
+const toggleColTask = (t) => {
+    t.done = !t.done; // optimistik; reload berikutnya = kebenaran server
+    router.patch(`/column-tasks/${t.id}/toggle`, {}, { preserveScroll: true, preserveState: true, only: ['columnTasks'] });
 };
-const deleteRoutine = (t) =>
-    router.delete(`/routine-tasks/${t.id}`, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
+const deleteColTask = (t) =>
+    router.delete(`/column-tasks/${t.id}`, { preserveScroll: true, preserveState: true, only: ['columnTasks'] });
 
-// Reorder ala kolom: seluruh urutan dikirim sbg JSON (fetch), tanpa reload props.
-const onRoutineChange = (evt) => {
-    if (!evt.moved) return;
-    patchCard('/routine-tasks/reorder', { ids: routine.value.map((t) => t.id) });
-};
-
-// Edit judul inline (klik teks → input). Enter/blur simpan, Esc batal.
-const routineEditId = ref(null);
-const routineEditTitle = ref('');
-const startRoutineEdit = (t) => { routineEditId.value = t.id; routineEditTitle.value = t.title; };
-const saveRoutineEdit = (t) => {
-    if (routineEditId.value !== t.id) return; // guard: blur+enter jangan dobel simpan
-    const title = routineEditTitle.value.trim();
-    routineEditId.value = null;
-    if (!title || title === t.title) return;
-    t.title = title; // optimistik
-    router.put(`/routine-tasks/${t.id}`, { title }, { preserveScroll: true, preserveState: true, only: ['routineTasks'] });
-};
+// Objective dianggap selesai bila progress-nya ≥ 100 (cermin isObjectiveComplete
+// di halaman OKR untuk cabang progress). Dipakai preview Objective di atas kolom.
+const objDone = (o) => o.progress !== null && o.progress >= 100;
 
 // ---- Modal kartu: dipakai untuk BUAT dan EDIT sekaligus ----
 // Dulu ada dua modal terpisah — form tambah cuma subset form edit, jadi kartu baru
@@ -1231,112 +1236,52 @@ class="ml-auto text-[11px] text-slate-400"
                  force-auto-scroll-fallback: plugin AutoScroll sudah ter-mount default
                  (Sortable.js:3775) TAPI jalur non-fallback tak jalan dgn drag HTML5 native di
                  Chrome (lihat syarat di Sortable.js:2836) → board diam saat diseret ke tepi. -->
-            <!-- Preview Objective OKR (kuartal panel). Tiap chip diklik → halaman
-                 OKR dgn objektif tsb disorot (/okr?q=..&focus=id). Read-only di sini. -->
-            <div v-if="objectives && objectives.length" class="mb-3 bg-white border border-slate-200 rounded-xl shadow-sm px-3 py-2">
-                <div class="flex items-center gap-2 mb-2">
-                    <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <!-- Preview Objective OKR (kuartal panel) — gaya kartu disamakan dgn
+                 halaman OKR: label OBJECTIVE N, chip prioritas, judul tebal,
+                 progress bar (angka sama dgn OKR). Diklik → /okr?q=..&focus=id
+                 (OKR scroll + sorot objektifnya). Read-only di sini. -->
+            <div v-if="objectives && objectives.length" class="mb-3">
+                <div class="flex items-center gap-2 mb-2 px-0.5">
+                    <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-1.657 1.343-3 3-3s3 1.343 3 3M4.5 12a7.5 7.5 0 1115 0 7.5 7.5 0 01-15 0zm7.5-4v.01M12 12l3 3" />
                     </svg>
-                    <span class="text-sm font-semibold text-slate-700">Objectives {{ quarter.label }}</span>
+                    <span class="text-xs font-extrabold uppercase tracking-wider text-slate-600">Objectives · {{ quarter.label }}</span>
                     <Link :href="`/okr?q=${quarter.key}`" class="ml-auto text-xs font-semibold text-brand-600 hover:underline">Buka OKR →</Link>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     <Link
-                        v-for="o in objectives"
+                        v-for="(o, i) in objectives"
                         :key="o.id"
                         :href="`/okr?q=${quarter.key}&focus=${o.id}`"
-                        class="group inline-flex items-center gap-2 max-w-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 transition hover:bg-brand-50 hover:border-brand-300"
+                        class="group block bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 transition hover:border-brand-300 hover:shadow-sm"
                     >
-                        <span v-if="o.priority" class="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">{{ o.priority.name }}</span>
-                        <span class="text-sm text-slate-700 truncate group-hover:text-brand-700">{{ o.title }}</span>
-                        <span v-if="o.kr_count" class="shrink-0 text-[11px] text-slate-400">{{ o.kr_count }} KR</span>
-                    </Link>
-                </div>
-            </div>
-
-            <!-- Checklist rutinitas harian (personal). Reset tiap hari otomatis:
-                 "tercentang" = completed_on == hari ini, jadi besok kosong lagi. -->
-            <div v-if="routineTasks" class="mb-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                <button
-                    type="button"
-                    class="w-full flex items-center gap-2 px-3 py-2 text-left"
-                    @click="routineOpen = !routineOpen"
-                >
-                    <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span class="text-sm font-semibold text-slate-700">Checklist Harian</span>
-                    <span class="text-xs font-medium text-slate-400">{{ routineDone }}/{{ routine.length }}</span>
-                    <svg
-                        class="w-4 h-4 ml-auto text-slate-400 transition-transform"
-                        :class="routineOpen ? 'rotate-180' : ''"
-                        fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
-                    >
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                </button>
-                <div v-show="routineOpen" class="px-3 pb-3">
-                    <draggable
-                        :list="routine"
-                        item-key="id"
-                        handle=".rt-handle"
-                        ghost-class="drag-ghost"
-                        :animation="150"
-                        class="space-y-0.5"
-                        @change="onRoutineChange"
-                    >
-                        <template #item="{ element: t }">
-                            <div class="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50">
-                                <span class="rt-handle cursor-grab select-none text-slate-300 hover:text-slate-400 text-xs leading-none">⠿</span>
-                                <button type="button" class="shrink-0" @click="toggleRoutine(t)">
-                                    <svg v-if="t.done_today" class="w-5 h-5 text-brand-600" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                                    </svg>
-                                    <svg v-else class="w-5 h-5 text-slate-300 hover:text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                        <circle cx="12" cy="12" r="9" />
-                                    </svg>
-                                </button>
-                                <input
-                                    v-if="routineEditId === t.id"
-                                    v-model="routineEditTitle"
-                                    :ref="(el) => el && el.focus()"
-                                    maxlength="120"
-                                    class="flex-1 text-sm bg-transparent border-b border-brand-400 focus:outline-none"
-                                    @keyup.enter="saveRoutineEdit(t)"
-                                    @keyup.esc="routineEditId = null"
-                                    @blur="saveRoutineEdit(t)"
-                                />
-                                <span
-                                    v-else
-                                    class="flex-1 text-sm cursor-text"
-                                    :class="t.done_today ? 'line-through text-slate-400' : 'text-slate-700'"
-                                    @click="startRoutineEdit(t)"
-                                >{{ t.title }}</span>
-                                <button
-                                    type="button"
-                                    class="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition"
-                                    title="Hapus"
-                                    @click="deleteRoutine(t)"
-                                >
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-red-600">OBJECTIVE {{ i + 1 }}</span>
+                            <span v-if="o.priority" class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 uppercase">{{ o.priority.name }}</span>
+                            <span v-if="objDone(o)" class="ml-auto inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-700">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                Selesai
+                            </span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span v-if="objDone(o)" class="mt-0.5 w-5 h-5 rounded-md bg-emerald-500 text-white flex items-center justify-center shrink-0 font-extrabold text-[10px]">✓</span>
+                            <h3 :class="['text-sm font-extrabold tracking-tight leading-snug line-clamp-2', objDone(o) ? 'text-emerald-900 line-through' : 'text-slate-900 group-hover:text-brand-700']">{{ o.title }}</h3>
+                        </div>
+                        <!-- Progress bar ala kartu Objective OKR -->
+                        <div class="mt-3">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[11px] text-slate-400">{{ o.kr_count }} KR</span>
+                                <span class="text-[11px] font-bold" :class="objDone(o) ? 'text-emerald-600' : 'text-slate-500'">{{ o.progress === null ? '—' : o.progress + '%' }}</span>
                             </div>
-                        </template>
-                    </draggable>
-                    <form class="mt-0.5 flex items-center gap-2 px-2 py-1.5" @submit.prevent="addRoutine">
-                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                        <input
-                            v-model="routineForm.title"
-                            maxlength="120"
-                            placeholder="Tambah rutinitas…"
-                            class="flex-1 text-sm bg-transparent focus:outline-none placeholder-slate-400"
-                        />
-                    </form>
+                            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                    class="h-full rounded-full transition-all"
+                                    :class="objDone(o) ? 'bg-emerald-500' : 'bg-brand-500'"
+                                    :style="{ width: Math.min(100, Math.max(0, o.progress || 0)) + '%' }"
+                                ></div>
+                            </div>
+                        </div>
+                    </Link>
                 </div>
             </div>
 
@@ -1448,6 +1393,95 @@ class="ml-auto text-[11px] text-slate-400"
                                                 </button>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+
+                                <!-- Checklist delegasi kolom: owner/manager menugaskan item ke user
+                             (staff didahulukan). Staff hanya melihat item yang didelegasikan ke
+                             dirinya (difilter server). Tiap item yg tampil pasti boleh dicentang
+                             si penonton; controller tetap menegakkan otorisasi. -->
+                                <div
+                                    v-if="columnTasks && ((colTasks[col.id] && colTasks[col.id].length) || canManageStructure)"
+                                    class="mb-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5"
+                                >
+                                    <div v-if="colTasks[col.id] && colTasks[col.id].length" class="mb-1.5 flex items-center gap-1.5 px-0.5">
+                                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l2 2 4-4" />
+                                        </svg>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Checklist</span>
+                                        <span class="ml-auto text-[10px] font-bold text-slate-400">{{ colDoneCount(col.id) }}/{{ colTasks[col.id].length }}</span>
+                                    </div>
+                                    <div v-if="colTasks[col.id] && colTasks[col.id].length" class="space-y-0.5">
+                                        <div v-for="t in colTasks[col.id]" :key="t.id" class="group flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-white transition">
+                                            <button type="button" class="shrink-0" title="Tandai selesai" @click="toggleColTask(t)">
+                                                <svg v-if="t.done" class="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                                </svg>
+                                                <svg v-else class="w-4 h-4 text-slate-300 hover:text-brand-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                    <circle cx="12" cy="12" r="9" />
+                                                </svg>
+                                            </button>
+                                            <span class="flex-1 text-xs leading-tight" :class="t.done ? 'line-through text-slate-400' : 'text-slate-600'">{{ t.title }}</span>
+                                            <span
+                                                v-if="t.assignee"
+                                                class="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-[9px] font-bold flex items-center justify-center ring-1 ring-white"
+                                                :title="'Ditugaskan: ' + t.assignee"
+                                            >{{ initialsOf(t.assignee) }}</span>
+                                            <button
+                                                v-if="canManageStructure"
+                                                type="button"
+                                                class="shrink-0 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition"
+                                                title="Hapus"
+                                                @click="deleteColTask(t)"
+                                            >
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- Delegasi baru: owner/manager saja -->
+                                    <div v-if="canManageStructure" class="mt-1.5">
+                                        <button
+                                            v-if="colTaskAddFor !== col.id"
+                                            type="button"
+                                            class="flex w-full items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-2 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-brand-300 hover:bg-white hover:text-brand-600"
+                                            @click="openColTaskAdd(col)"
+                                        >
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                            Delegasikan task
+                                        </button>
+                                        <form v-else class="space-y-2 rounded-xl border border-brand-200 bg-white p-2 shadow-xs" @submit.prevent="submitColTask">
+                                            <input
+                                                v-model="colTaskForm.title"
+                                                maxlength="120"
+                                                placeholder="Apa yang harus dikerjakan?"
+                                                :ref="(el) => el && el.focus()"
+                                                class="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                                            />
+                                            <div class="relative">
+                                                <span
+                                                    v-if="colTaskForm.assigned_to"
+                                                    class="pointer-events-none absolute left-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-700"
+                                                >{{ initialsOf((assignableUsers.find((u) => u.id === colTaskForm.assigned_to) || {}).name) }}</span>
+                                                <select
+                                                    v-model="colTaskForm.assigned_to"
+                                                    :class="['w-full rounded-lg border border-slate-200 bg-white py-1.5 pr-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200', colTaskForm.assigned_to ? 'pl-8' : 'pl-2.5 text-slate-400']"
+                                                >
+                                                    <option value="" disabled>Pilih penanggung jawab…</option>
+                                                    <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.name }} · {{ roleLabel(u.role) }}</option>
+                                                </select>
+                                            </div>
+                                            <p v-if="!assignableUsers.length" class="text-[10px] text-amber-600">Belum ada user untuk ditugasi.</p>
+                                            <div class="flex items-center gap-1.5 pt-0.5">
+                                                <button
+                                                    type="submit"
+                                                    :disabled="!colTaskForm.title.trim() || !colTaskForm.assigned_to"
+                                                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                                >
+                                                    Delegasikan
+                                                </button>
+                                                <button type="button" class="px-2 py-1.5 text-[11px] font-semibold text-slate-400 hover:text-slate-600" @click="colTaskAddFor = null">Batal</button>
+                                            </div>
+                                        </form>
                                     </div>
                                 </div>
 

@@ -2,8 +2,11 @@
 
 namespace App\Support;
 
+use App\Models\BoardQuarterTarget;
 use App\Models\InsightContent;
+use App\Models\Objective;
 use App\Models\Order;
+use App\Models\Pipeline;
 use App\Models\Transaction;
 use App\Support\ExchangeRate;
 use Illuminate\Support\Facades\DB;
@@ -119,5 +122,42 @@ final class OkrMetrics
         });
 
         return (float) $orders->sum('total_idr') + (float) $orders->sum('total_usd') * $rate;
+    }
+
+    /** Progress % tiap Objective satu kuartal: [objectiveId => float|null].
+     *
+     *  Memakai sumber angka yang PERSIS sama dengan halaman OKR: realisasi +
+     *  menyuntikkan angka board (kartu_selesai & target) ke KR sumber 'kartu'
+     *  sebelum Objective::progress() dipanggil. OkrController menghitungnya
+     *  inline (karena KR-nya juga dipakai untuk payload KR); di sini berdiri
+     *  sendiri untuk konsumen ringan seperti preview Objective di Kanban —
+     *  supaya angkanya tak pernah berbeda dari halaman OKR.
+     */
+    public static function objectiveProgress(int $year, int $quarter): array
+    {
+        $realisasi = self::realisasi($year, $quarter);
+        $objectives = Objective::forQuarter($year, $quarter);
+
+        $krKartu = $objectives->flatMap->keyResults->where('source', 'kartu');
+        $boardKeys = $krKartu->pluck('board_key')->filter()->unique()->values();
+
+        if ($boardKeys->isNotEmpty()) {
+            $selesaiPerBoard = Pipeline::whereIn('category', $boardKeys)
+                ->whereNotNull('completed_at')->where('is_kr_master', false)
+                ->selectRaw('category, COUNT(*) as total')
+                ->groupBy('category')->pluck('total', 'category');
+            $targetPerBoard = BoardQuarterTarget::whereIn('board_key', $boardKeys)
+                ->where('year', $year)->where('quarter', $quarter)
+                ->pluck('target_done', 'board_key');
+
+            foreach ($krKartu as $kr) {
+                if ($kr->board_key) {
+                    $kr->setAttribute('kartu_selesai', (int) ($selesaiPerBoard[$kr->board_key] ?? 0));
+                    $kr->target = (string) ($targetPerBoard[$kr->board_key] ?? 0);
+                }
+            }
+        }
+
+        return $objectives->mapWithKeys(fn (Objective $o) => [$o->id => $o->progress($realisasi)])->all();
     }
 }
