@@ -21,6 +21,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\PipelineTaskController;
+use App\Http\Controllers\RoutineTaskController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -50,6 +51,14 @@ Route::get('/', fn () => redirect()->route(auth()->check() ? auth()->user()->hom
 Route::middleware('auth')->group(function () {
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+
+    // Checklist rutinitas harian di Kanban — personal per user, bukan menu,
+    // jadi tak digerbang EnsureMenuAccess (sama seperti notifikasi di atas).
+    Route::post('/routine-tasks', [RoutineTaskController::class, 'store'])->name('routine-tasks.store');
+    Route::put('/routine-tasks/{routineTask}', [RoutineTaskController::class, 'update'])->name('routine-tasks.update');
+    Route::patch('/routine-tasks/reorder', [RoutineTaskController::class, 'reorder'])->name('routine-tasks.reorder');
+    Route::patch('/routine-tasks/{routineTask}/toggle', [RoutineTaskController::class, 'toggle'])->name('routine-tasks.toggle');
+    Route::delete('/routine-tasks/{routineTask}', [RoutineTaskController::class, 'destroy'])->name('routine-tasks.destroy');
 });
 
 // Pipeline (butuh login) + batasan akses per role
