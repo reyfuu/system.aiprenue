@@ -14,14 +14,11 @@ const page = usePage(); // akses flash.status
 const toast = ref(null); // pesan toast aktif
 const remindersOpen = ref(false);
 const chatOpen = ref(false);
-const chatInput = ref('');
-const chatLoading = ref(false);
-const chatMessages = ref([
-    {
-        from: 'bot',
-        text: 'Halo, saya Hermes Assistant. Aku bisa bantu bikin OKR cepat atau cek detail report hari ini.',
-    },
-]); // riwayat chat mini
+const hermesLoading = ref(false);
+const hermesResult = ref({
+    text: 'Pilih aksi di bawah untuk memicu Hermes Agent.',
+    actions: [],
+});
 const reminders = computed(() => page.props.workReminders || []);
 const serverNotifications = computed(() => page.props.serverNotifications || []);
 const unreadNotifications = computed(() => Number(page.props.unreadNotificationsCount || 0));
@@ -32,23 +29,36 @@ const notificationSupported = typeof window !== 'undefined' && 'Notification' in
 const notificationPermission = ref(notificationSupported ? Notification.permission : 'unsupported');
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
 
-const appendChatMessage = (message) => chatMessages.value.push(message);
+const hermesActions = [
+    {
+        label: 'Buat OKR',
+        message: 'buat okr',
+        intentHint: 'Buka halaman OKR dengan preset langkah cepat.',
+    },
+    {
+        label: 'Detail Report',
+        message: 'check detail report',
+        intentHint: 'Tampilkan ringkasan harian untuk hari ini.',
+    },
+    {
+        label: 'Buka Daily Report',
+        message: 'buka /daily-report',
+        intentHint: 'Buka halaman laporan harian Hermes.',
+    },
+];
 
-const sendToHermes = async (prompt) => {
-    const teks = typeof prompt === 'string' ? prompt : chatInput.value;
-    const message = (teks || '').trim();
+const runHermesAction = async (message) => {
+    if (!canUseHermesChat.value) return;
 
-    if (!message || chatLoading.value) return;
+    const normalizedMessage = message?.trim() || '';
+    if (!normalizedMessage || hermesLoading.value) return;
 
-    if (!canUseHermesChat.value) {
-        appendChatMessage({ from: 'bot', text: 'Akses chat Hermes tidak tersedia untuk akun ini.' });
+    if (normalizedMessage === 'buka /daily-report') {
+        window.location.href = '/daily-report';
         return;
     }
 
-    chatInput.value = '';
-    appendChatMessage({ from: 'user', text: message });
-    appendChatMessage({ from: 'bot', text: 'Menghubungi Hermes ...' });
-    chatLoading.value = true;
+    hermesLoading.value = true;
 
     try {
         const res = await fetch('/hermes/chat', {
@@ -58,35 +68,29 @@ const sendToHermes = async (prompt) => {
                 Accept: 'application/json',
                 'X-CSRF-TOKEN': csrf(),
             },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({ message: normalizedMessage }),
         });
 
         const payload = await res.json().catch(() => ({ ok: false, reply: 'Tidak bisa membaca respons dari Hermes.' }));
-        const loadingIdx = chatMessages.value.findLastIndex(
-            (item) => item.from === 'bot' && item.text === 'Menghubungi Hermes ...',
-        );
-        if (loadingIdx >= 0) chatMessages.value.splice(loadingIdx, 1);
 
         if (!res.ok || payload.ok === false) {
-            appendChatMessage({ from: 'bot', text: payload.reply || payload.message || 'Hermes belum merespons dengan benar.' });
-            return;
+            hermesResult.value = {
+                text: payload.reply || payload.message || 'Hermes belum merespons dengan benar.',
+                actions: [],
+            };
+        } else {
+            hermesResult.value = {
+                text: (payload.reply || payload.message || 'Hermes merespons tanpa teks.').trim(),
+                actions: Array.isArray(payload.actions) ? payload.actions : [],
+            };
         }
-
-        appendChatMessage({
-            from: 'bot',
-            text: (payload.reply || payload.message || 'Hermes merespons tanpa isi teks.').trim(),
-            actions: Array.isArray(payload.actions) ? payload.actions : [],
-            source: payload.source,
-        });
     } catch {
-        const loadingIdx = chatMessages.value.findLastIndex(
-            (item) => item.from === 'bot' && item.text === 'Menghubungi Hermes ...',
-        );
-        if (loadingIdx >= 0) chatMessages.value.splice(loadingIdx, 1);
-
-        appendChatMessage({ from: 'bot', text: 'Tidak bisa menghubungi Hermes sekarang, coba lagi beberapa saat lagi.' });
+        hermesResult.value = {
+            text: 'Tidak bisa menghubungi Hermes sekarang, coba lagi beberapa saat lagi.',
+            actions: [],
+        };
     } finally {
-        chatLoading.value = false;
+        hermesLoading.value = false;
     }
 };
 
@@ -329,72 +333,41 @@ watch(
                 <button type="button" class="text-slate-400 hover:text-slate-600" @click="chatOpen = false">✕</button>
             </div>
 
-            <div class="max-h-72 overflow-y-auto px-3 py-3 space-y-2 bg-slate-50/40">
-                <div
-                    v-for="(item, index) in chatMessages"
-                    :key="`${item.from}-${index}-${item.text?.slice(0, 15)}`"
-                    :class="['flex text-sm', item.from === 'user' ? 'justify-end' : 'justify-start']"
-                >
-                    <div
-                        class="max-w-[85%] rounded-xl px-3 py-2"
-                        :class="
-                            item.from === 'user'
-                                ? 'bg-brand-600 text-white'
-                                : 'bg-white border border-slate-200 text-slate-700 shadow-xs'
-                        "
-                    >
-                        <p class="whitespace-pre-line">{{ item.text }}</p>
-                        <div v-if="item.actions?.length" class="mt-2 flex flex-wrap gap-1.5">
-                            <button
-                                v-for="action in item.actions"
-                                :key="action.label"
-                                type="button"
-                                class="px-2 py-1 text-xs font-semibold text-brand-700 border border-brand-200 rounded-lg hover:bg-brand-50 bg-white"
-                                @click="openHermesAction(action)"
-                            >
-                                {{ action.label }}
-                            </button>
-                        </div>
+            <div class="max-h-[calc(100vh-20rem)] overflow-y-auto px-3 py-3 space-y-3 bg-slate-50/40">
+                <div class="text-sm">
+                    <p class="font-semibold text-slate-700">Aksi cepat</p>
+                    <p class="text-xs text-slate-500 mb-2">Klik tombol di bawah untuk memanggil Hermes Agent.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="action in hermesActions"
+                            :key="action.label"
+                            type="button"
+                            :disabled="hermesLoading"
+                            class="px-2 py-1.5 text-xs font-semibold rounded-lg border border-brand-200 hover:bg-white disabled:opacity-50"
+                            @click="runHermesAction(action.message)"
+                        >
+                            {{ action.label }}
+                        </button>
                     </div>
                 </div>
-            </div>
 
-            <div class="px-3 py-2 border-t border-slate-100 bg-white">
-                <div class="flex items-center gap-2 mb-2 text-[11px] text-slate-500">
-                    <button
-                        type="button"
-                        :disabled="chatLoading"
-                        class="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
-                        @click="sendToHermes('buat okr')"
-                    >
-                        Buat OKR
-                    </button>
-                    <button
-                        type="button"
-                        :disabled="chatLoading"
-                        class="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
-                        @click="sendToHermes('check detail report')"
-                    >
-                        Check detail report
-                    </button>
+                <div class="text-xs border border-slate-200 rounded-xl bg-white p-3">
+                    <p class="font-semibold text-slate-700 mb-2">Hasil Hermes</p>
+                    <p class="text-slate-600 leading-relaxed whitespace-pre-line" :class="hermesLoading ? 'opacity-70' : ''">
+                        {{ hermesLoading ? 'Menghubungi Hermes ...' : hermesResult.text }}
+                    </p>
+                    <div v-if="hermesResult.actions?.length" class="mt-2 flex flex-wrap gap-1.5">
+                        <button
+                            v-for="action in hermesResult.actions"
+                            :key="action.label"
+                            type="button"
+                            class="px-2 py-1 text-[11px] font-semibold text-brand-700 border border-brand-200 rounded-lg hover:bg-brand-50 bg-white"
+                            @click="openHermesAction(action)"
+                        >
+                            {{ action.label }}
+                        </button>
+                    </div>
                 </div>
-                <form class="flex items-center gap-2" @submit.prevent="sendToHermes()">
-                    <input
-                        v-model="chatInput"
-                        :disabled="chatLoading"
-                        type="text"
-                        class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-200"
-                        placeholder="Ketik perintah..."
-                        maxlength="3000"
-                    />
-                    <button
-                        type="submit"
-                        :disabled="chatLoading || !chatInput.trim()"
-                        class="inline-flex items-center justify-center rounded-lg bg-brand-600 text-white px-3 py-2 text-sm font-semibold disabled:opacity-60"
-                    >
-                        Kirim
-                    </button>
-                </form>
             </div>
         </div>
 
@@ -411,7 +384,7 @@ watch(
                     d="M8 10h.01M12 10h.01M16 10h.01M21 8a2 2 0 01-2 2h-1l-3 3v-3H8a2 2 0 110-4h10a2 2 0 012 2zm-4 8a2 2 0 01-2 2H8l-4 3V10a2 2 0 114 0v3h7l2 2z"
                 />
             </svg>
-            <span v-if="chatMessages.length > 1" class="sr-only">Ada pesan chat terbaru</span>
+            <span v-if="hermesResult.text" class="sr-only">Hasil Hermes terakhir tersedia.</span>
         </button>
     </div>
 
