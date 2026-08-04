@@ -6,7 +6,6 @@ use App\Models\Order;
 use App\Models\Output;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -114,7 +113,6 @@ class OrderController extends Controller
             'outputs.*' => 'exists:outputs,id',
             'bukti_bayar' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
             'invoice' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
-            'invoice_maker' => 'nullable|string|max:150',
         ];
     }
 
@@ -162,14 +160,10 @@ class OrderController extends Controller
         return back()->with('status', 'Order diperbarui.');
     }
 
-    public function invoice(Request $request, Order $order)
+    public function invoice(Order $order)
     {
         $order->load('outputs');
 
-        $maker = trim((string) $request->query('maker'))
-            ?: trim((string) $order->invoice_maker)
-            ?: trim((string) $request->user()?->name)
-            ?: 'Freddie';
         $issuedAt = $order->created_at ?? now();
         $invoiceNo = $issuedAt->format('Ymd') . str_pad((string) $order->id, 5, '0', STR_PAD_LEFT);
 
@@ -195,7 +189,7 @@ class OrderController extends Controller
         $invoicePayload = [
             'invoiceNo' => $invoiceNo,
             'issuedAt' => $issuedAt->format('d M Y'),
-            'maker' => $maker,
+            'maker' => 'Freddie',
             'customerName' => $order->nama_customer,
             'customerAddress' => $order->alamat ? trim("{$order->alamat}, {$order->kota}", ', ') : ($order->kota ?? ''),
             'items' => $lineItems,
@@ -229,13 +223,6 @@ class OrderController extends Controller
         $data = $request->validate($this->rules());
         $data['total_idr'] = $data['total_idr'] ?? 0;
         $data['total_usd'] = $data['total_usd'] ?? 0;
-
-        // Kolom invoice_maker belum tentu ada di semua database produksi (terutama yang
-        // dipindah dari dump lama). Agar fitur tetap jalan tanpa migration tambahan,
-        // buang key ini saat skema belum mendukungnya.
-        if (! Schema::hasColumn('orders', 'invoice_maker') && array_key_exists('invoice_maker', $data)) {
-            unset($data['invoice_maker']);
-        }
 
         // `outputs` bukan kolom di tabel orders — masuk lewat pivot (sync di store/update).
         // Kalau ikut terbawa ke Order::create(), Eloquent melempar (kolom tak ada).

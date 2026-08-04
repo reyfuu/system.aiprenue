@@ -11,10 +11,11 @@
         }
 
         body {
-            font-family: Arial, Helvetica, sans-serif;
-            color: #0f172a;
             margin: 0;
-            padding: 28px 32px;
+            padding: 22mm;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #111827;
         }
 
         .title {
@@ -22,74 +23,76 @@
             font-size: 38px;
             letter-spacing: 2px;
             font-weight: 700;
-            color: #0f172a;
+            color: #111827;
         }
 
-        .badge {
+        .tag {
             display: inline-block;
-            border: 1px solid #0f172a;
-            border-radius: 8px;
+            margin-top: 8px;
+            border: 1px solid #111827;
+            border-radius: 7px;
+            padding: 5px 12px;
+            font-size: 13px;
             font-weight: 700;
-            padding: 6px 12px;
-            margin-top: 6px;
         }
 
         .invoice-no {
+            margin: 10px 0 0;
             font-size: 18px;
             font-weight: 700;
-            margin-top: 14px;
-            margin-bottom: 0;
         }
 
-        .header {
-            margin-top: 8px;
-            margin-bottom: 8px;
+        .muted {
+            color: #334155;
+            font-size: 12px;
+            line-height: 1.45;
         }
 
         .section {
-            margin-top: 16px;
-            display: block;
+            margin-top: 18px;
         }
 
         .section-title {
             font-size: 13px;
-            letter-spacing: 0.4px;
-            color: #334155;
-            margin-bottom: 8px;
             font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: 0.4px;
+            color: #0f172a;
         }
 
         .small {
-            font-size: 12px;
+            margin: 0;
             color: #334155;
         }
 
-        .row {
+        .two-col {
             display: table;
             width: 100%;
-            margin-bottom: 6px;
+            table-layout: fixed;
         }
 
-        .label {
+        .col {
             display: table-cell;
-            width: 120px;
-            font-size: 12px;
-            color: #334155;
+            width: 50%;
             vertical-align: top;
         }
 
-        .value {
-            display: table-cell;
-            font-size: 12px;
-            color: #0f172a;
-            white-space: pre-line;
+        .col.right {
+            text-align: right;
+        }
+
+        .note {
+            border-top: 1px solid #cbd5e1;
+            border-bottom: 1px solid #cbd5e1;
+            padding: 8px 0;
+            margin-top: 2px;
         }
 
         .grid {
             width: 100%;
-            table-layout: fixed;
             border-collapse: collapse;
-            margin-top: 10px;
+            table-layout: fixed;
+            margin-top: 8px;
             font-size: 12px;
         }
 
@@ -97,6 +100,7 @@
         .grid td {
             border: 1px solid #d1d5db;
             padding: 10px 8px;
+            vertical-align: top;
             text-align: left;
         }
 
@@ -110,65 +114,69 @@
         }
 
         .total-box {
-            margin-top: 14px;
-            font-size: 13px;
+            margin-top: 12px;
             font-weight: 700;
+            font-size: 13px;
         }
 
         .grand {
             margin-top: 6px;
-            font-size: 26px;
+            font-size: 28px;
             font-weight: 800;
             letter-spacing: 0.3px;
         }
 
-        .mt-20 {
-            margin-top: 20px;
-        }
-
         .divider {
+            margin-top: 24px;
             border-top: 1px solid #cbd5e1;
-            margin: 14px 0;
         }
 
         .footer {
             margin-top: 120px;
-            font-size: 11px;
             color: #475569;
+            font-size: 11px;
         }
 
-        .footer .title {
+        .footer .brand {
+            margin: 0;
             font-size: 30px;
             letter-spacing: 1px;
+            font-weight: 700;
+            color: #111827;
         }
 
         .signature {
-            margin-top: 24px;
+            margin-top: 20px;
+            width: 40%;
             font-size: 12px;
             color: #334155;
-            width: 42%;
         }
     </style>
 </head>
 
 <body>
     <h1 class="title">FREDDIE</h1>
+    <p class="muted" style="margin: 4px 0 0;">Jl. Dr. Ir. H. Soekarno.30-32, Apartemen Puncak Dharmahusada Ruko No.9H</p>
 
-    <div class="header">
-        <div class="badge">INVOICE</div>
-        <p class="invoice-no">No. {{ $invoiceNo }}</p>
+    <div class="two-col" style="margin-top: 12px;">
+        <div class="col">
+            <span class="tag">INVOICE</span>
+            <p class="invoice-no">No. {{ $invoiceNo }}</p>
+        </div>
+        <div class="col right muted">{{ $issuedAt }}</div>
     </div>
 
     <div class="section">
-        <div class="section-title">PAYMENT NOTE</div>
-        <p class="small">Endorse {{ $maker }}</p>
-        <p class="small">{{ $issuedAt }}</p>
+        <div class="note">
+            <div class="section-title">PAYMENT NOTE</div>
+            <p class="small">Endorse by {{ $maker }}</p>
+        </div>
     </div>
 
     <div class="section">
         <div class="section-title">CUSTOMER NAME</div>
-        <div class="small">{{ $customerName }}</div>
-        <div class="small">{{ $customerAddress ?: '—' }}</div>
+        <p class="small">{{ $customerName }}</p>
+        <p class="small">{{ $customerAddress ?: '—' }}</p>
     </div>
 
     <div class="section">
@@ -179,8 +187,8 @@
                     <th style="width: 12%;">QTY</th>
                     <th style="width: 26%;">TOTAL</th>
                 </tr>
-                </thead>
-                <tbody>
+            </thead>
+            <tbody>
                 @foreach ($items as $item)
                     <tr>
                         <td>{{ $item['description'] }}</td>
@@ -188,39 +196,40 @@
                         <td class="text-right">Rp {{ number_format((float) $item['total'], 0, ',', '.') }}</td>
                     </tr>
                 @endforeach
-                </tbody>
-            </table>
-        </div>
+            </tbody>
+        </table>
+    </div>
 
     <p class="total-box">TOTAL PEMBAYARAN</p>
     <p class="grand">Rp {{ number_format($subtotal, 0, ',', '.') }}</p>
 
     <div class="section">
         <div class="section-title">LAMPIRAN NPWP :</div>
+        <p class="small">—</p>
     </div>
 
     <div class="section">
         <div class="section-title">SYARAT DAN KETENTUAN PEMBAYARAN</div>
-        <div class="small">1. Silakan kirim pembayaran setelah menerima faktur ini.</div>
-        <div class="small">2. Tidak dapat melakukan pembatalan setelah pembayaran dilakukan.</div>
-        <div class="small">Saya telah setuju dengan syarat dan ketentuan yang berlaku.</div>
-        <div class="small">Terimakasih telah bekerjasama dengan kami.</div>
+        <p class="small">1. Silakan kirim pembayaran setelah menerima faktur ini.</p>
+        <p class="small">2. Tidak dapat melakukan pembatalan setelah pembayaran dilakukan.</p>
+        <p class="small">Saya telah setuju dengan syarat dan ketentuan yang berlaku.</p>
+        <p class="small">Terimakasih telah bekerjasama dengan kami.</p>
     </div>
 
-    <div class="section mt-20">
+    <div class="section">
         <div class="section-title">BANK ACCOUNT</div>
-        <div class="small">{{ $bankAccount }} {{ $bankName }} {{ $bankOwner }}</div>
+        <p class="small">{{ $bankAccount }} {{ $bankName }} {{ $bankOwner }}</p>
     </div>
 
     <div class="divider"></div>
 
     <div class="footer">
-        <p class="title" style="font-size:20px;">Freddie</p>
+        <p class="brand">Freddie</p>
         <p class="small">Jl. Dr. Ir. H. Soekarno.30-32,</p>
         <p class="small">Apartemen Puncak Dharmahusada Ruko No.9H</p>
     </div>
 
-    <p class="small signature">{{ $maker }}</p>
+    <p class="signature">{{ $maker }}</p>
 </body>
 
 </html>
