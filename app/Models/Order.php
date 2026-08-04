@@ -21,7 +21,6 @@ class Order extends Model
         'tipe_order', 'account', 'tanggal_deadline',
         'nama_customer', 'telepon', 'email', 'kota', 'alamat',
         'tipe_pembayaran', 'tanggal_bayar', 'bukti_bayar', 'invoice',
-        'invoice_maker',
         'total_idr', 'total_usd',
     ];
 

@@ -3,13 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\Inventory;
+use App\Models\Attendance;
+use App\Models\Absence;
 use App\Models\Mindmap;
 use App\Models\Order;
+use App\Models\PayrollEntry;
+use App\Models\PayrollPeriod;
 use App\Models\Pipeline;
 use App\Models\Script;
 use App\Models\Transaction;
 use App\Support\ExchangeRate;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -56,6 +61,73 @@ class DashboardController extends Controller
         // ditanya "berapa nilai pipeline saya", dan itu memang estimasi.
         $pipe          = Pipeline::whereIn('category', array_keys($pipelineBoards))->get();
         $pipeEstimasi  = (float) $pipe->sum('amount_idr') + (float) $pipe->sum('amount_usd') * $rate;
+
+        $crmCards = $pipe;
+        $crmTotal      = (int) $crmCards->count();
+        $crmOpen       = (int) $crmCards->where('done', false)->count();
+        $crmClosed     = (int) $crmCards->where('done', true)->count();
+        $crmDueSoon    = (int) $crmCards->filter(function ($card) {
+            return ! empty($card->deadline)
+                && ! $card->done
+                && $card->deadline->isBetween(now()->startOfDay(), now()->addDays(7)->endOfDay(), true);
+        })->count();
+        $crmValue      = (float) $crmCards->sum('amount_idr') + (float) $crmCards->sum('amount_usd') * $rate;
+        $crmConversion = $crmTotal > 0 ? round(($crmClosed / $crmTotal) * 100, 1) : 0.0;
+        $crmFollowUpRate = $crmTotal > 0 ? round(($crmDueSoon / $crmTotal) * 100, 1) : 0.0;
+
+        $hasPayrollTables = Schema::hasTable('payroll_periods') && Schema::hasTable('payroll_entries');
+        $payrollSummary = [
+            'periods'          => 0,
+            'draft'            => 0,
+            'final'            => 0,
+            'latest_period'    => null,
+            'latest_total_net'  => 0.0,
+            'latest_employees'  => 0,
+            'total_net'         => 0.0,
+            'total_employees'   => 0,
+        ];
+        if ($hasPayrollTables) {
+            $payrollPeriods = PayrollPeriod::query()->get(['id', 'period', 'status']);
+            $payrollSummary['periods'] = $payrollPeriods->count();
+            $payrollSummary['draft'] = (int) $payrollPeriods->where('status', 'draft')->count();
+            $payrollSummary['final'] = (int) $payrollPeriods->where('status', 'final')->count();
+            $latest = PayrollPeriod::query()->orderByDesc('start_date')->orderByDesc('id')->first(['id', 'period', 'status']);
+            if ($latest !== null) {
+                $entriesForLatest = PayrollEntry::query()
+                    ->where('payroll_period_id', $latest->id)
+                    ->get(['net_salary', 'user_id']);
+                $payrollSummary['latest_period'] = [
+                    'period' => (string) $latest->period,
+                    'status' => (string) $latest->status,
+                ];
+                $payrollSummary['latest_total_net'] = (float) $entriesForLatest->sum('net_salary');
+                $payrollSummary['latest_employees'] = (int) $entriesForLatest->count();
+            }
+            $payrollSummary['total_net'] = (float) PayrollEntry::sum('net_salary');
+            $payrollSummary['total_employees'] = (int) PayrollEntry::distinct('user_id')->count('user_id');
+        }
+
+        $hasAbsensiTables = Schema::hasTable('attendances') && Schema::hasTable('absences');
+        $absensiSummary = [
+            'today_attendance'    => 0,
+            'month_attendance'    => 0,
+            'absence_requests'    => 0,
+            'absence_waiting'     => 0,
+            'absence_approved'    => 0,
+            'absence_rejected'    => 0,
+        ];
+        if ($hasAbsensiTables) {
+            $absensiSummary['today_attendance'] = Attendance::query()
+                ->whereDate('work_date', now()->toDateString())
+                ->count();
+            $absensiSummary['month_attendance'] = Attendance::query()
+                ->whereBetween('work_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
+                ->count();
+            $absensiSummary['absence_requests'] = Absence::query()->count();
+            $absensiSummary['absence_waiting'] = Absence::query()->where('status', 'menunggu')->count();
+            $absensiSummary['absence_approved'] = Absence::query()->where('status', 'disetujui')->count();
+            $absensiSummary['absence_rejected'] = Absence::query()->where('status', 'ditolak')->count();
+        }
 
         // ---- Omzet per akun (FK / AI Preneur) ----
         // Pecahan dari $grandIdr, bukan angka lain: FK + AI Preneur WAJIB = Grand Omzet.
@@ -190,6 +262,18 @@ class DashboardController extends Controller
                 'perCategory' => $pipe->groupBy('jenis')->map->count(),
                 'categories'  => Pipeline::JENIS,
             ],
+            'crm' => [
+                'total'      => $crmTotal,
+                'open'       => $crmOpen,
+                'deals'      => $crmClosed,
+                'dueSoon'    => $crmDueSoon,
+                'valueTotal' => (float) $crmValue,
+                'openRate'   => $crmTotal > 0 ? round(($crmOpen / $crmTotal) * 100, 1) : 0,
+                'conversion' => $crmConversion,
+                'followUpRate' => $crmFollowUpRate,
+            ],
+            'absensi' => $absensiSummary,
+            'payroll' => $payrollSummary,
 
             'kanban' => [
                 'total'       => $kanban->count(),

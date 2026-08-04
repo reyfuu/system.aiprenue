@@ -113,7 +113,6 @@ class OrderController extends Controller
             'outputs.*' => 'exists:outputs,id',
             'bukti_bayar' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
             'invoice' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
-            'invoice_maker' => 'nullable|string|max:150',
         ];
     }
 
@@ -161,6 +160,54 @@ class OrderController extends Controller
         return back()->with('status', 'Order diperbarui.');
     }
 
+    public function invoice(Order $order)
+    {
+        $order->load('outputs');
+
+        $issuedAt = $order->created_at ?? now();
+        $invoiceNo = $issuedAt->format('Ymd') . str_pad((string) $order->id, 5, '0', STR_PAD_LEFT);
+
+        $items = [];
+        $subtotal = (float) ($order->total_idr + $order->total_usd * ExchangeRate::usdToIdr());
+
+        foreach ($order->outputs as $output) {
+            $items[] = (string) $output->name;
+        }
+
+        if (empty($items)) {
+            $items[] = "Pelunasan {$order->tipe_order}";
+        }
+
+        $lineItems = [
+            [
+                'description' => implode(", ", $items),
+                'qty' => 1,
+                'total' => $subtotal,
+            ],
+        ];
+
+        $orderType = strtolower(trim((string) $order->tipe_order));
+        $needsDepositTerm = str_contains($orderType, 'coaching') || str_contains($orderType, 'speaker');
+
+        $invoicePayload = [
+            'invoiceNo' => $invoiceNo,
+            'issuedAt' => $issuedAt->format('d M Y'),
+            'maker' => 'Freddie',
+            'needsDepositTerm' => $needsDepositTerm,
+            'customerName' => $order->nama_customer,
+            'customerAddress' => $order->alamat ? trim("{$order->alamat}, {$order->kota}", ', ') : ($order->kota ?? ''),
+            'items' => $lineItems,
+            'subtotal' => $subtotal,
+            'bankName' => 'BCA',
+            'bankAccount' => '8293117771',
+            'bankOwner' => 'Aipreneur Digital Indonesia',
+        ];
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('orders.invoice', $invoicePayload)->setPaper('a4', 'portrait');
+
+        return $pdf->stream("Invoice-{$invoiceNo}.pdf");
+    }
+
     public function destroy(Order $order)
     {
         foreach (array_keys(self::FILES) as $field) {
@@ -180,6 +227,7 @@ class OrderController extends Controller
         $data = $request->validate($this->rules());
         $data['total_idr'] = $data['total_idr'] ?? 0;
         $data['total_usd'] = $data['total_usd'] ?? 0;
+
         // `outputs` bukan kolom di tabel orders — masuk lewat pivot (sync di store/update).
         // Kalau ikut terbawa ke Order::create(), Eloquent melempar (kolom tak ada).
         unset($data['outputs']);

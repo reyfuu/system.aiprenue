@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\InsightIngestController;
 use App\Http\Controllers\Api\ScriptIngestController;
+use App\Http\Controllers\Api\HermesReportController;
 use Illuminate\Support\Facades\Route;
 
 // Pintu masuk agen Daily Script Rave. Sengaja di luar routes/web.php: tak perlu
@@ -18,3 +19,8 @@ Route::post('/scripts', [ScriptIngestController::class, 'store'])
 Route::post('/insights', [InsightIngestController::class, 'store'])
     ->middleware('throttle:30,1')
     ->name('api.insights.store');
+
+// Pintu masuk cron Hermes (VPS) → laporan harian otomatis.
+Route::post('/hermes/daily-report', [HermesReportController::class, 'dailyReport'])
+    ->middleware('throttle:30,1')
+    ->name('api.hermes.daily-report');

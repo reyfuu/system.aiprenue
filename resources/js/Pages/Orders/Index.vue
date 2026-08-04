@@ -116,7 +116,6 @@ const form = useForm({
     outputs: [], // id Output tercentang (pivot order_output)
     bukti_bayar: null, // File object; null = tak ada file baru
     invoice: null, // invoice dari perusahaan
-    invoice_maker: '',
 });
 
 // Centang/hapus centang satu output. Ganti array (bukan push/splice) supaya
@@ -157,7 +156,6 @@ const openEdit = (o) => {
     form.tanggal_bayar = o.tanggal_bayar ? o.tanggal_bayar.substring(0, 10) : '';
     form.total_idr = o.total_idr ?? '';
     form.total_usd = o.total_usd ?? '';
-    form.invoice_maker = o.invoice_maker || '';
     // relasi outputs di-eager-load controller → ambil id-nya. Number(): id dari JSON
     // bisa string, sementara :value checkbox membandingkan dgn id numerik prop.
     form.outputs = Array.isArray(o.outputs) ? o.outputs.map((x) => Number(x.id)) : [];
@@ -184,9 +182,6 @@ const submit = () => {
     // diset di kedua cabang. Kalau create tak menyetel ulang, `_method: 'put'` sisa
     // dari edit sebelumnya ikut terkirim → POST /orders di-spoof jadi PUT → 405.
     if (mode.value === 'create') {
-        if (!form.invoice_maker && auth.value?.user?.name) {
-            form.invoice_maker = auth.value.user.name;
-        }
         form.transform((d) => d).post('/orders', done);
     } else {
         form.transform((d) => ({ ...d, _method: 'put' })).post('/orders/' + editId.value, done);
@@ -198,6 +193,10 @@ const destroy = (o) => {
     if (confirm('Yakin hapus order "' + o.nama_customer + '"? Tindakan ini tidak bisa dibatalkan.')) {
         router.delete('/orders/' + o.id, { preserveScroll: true });
     }
+};
+
+const invoiceUrl = (o) => {
+    return `/orders/${o.id}/invoice`;
 };
 </script>
 
@@ -329,7 +328,6 @@ const destroy = (o) => {
                             <th class="px-2.5 py-3 text-left">Deadline</th>
                             <th class="px-2.5 py-3 text-left">Pembayaran</th>
                             <th class="px-2.5 py-3 text-right">Total</th>
-                            <th class="px-2.5 py-3 text-left">Invoice Maker</th>
                             <th class="px-2.5 py-3 text-center">Berkas</th>
                             <th class="px-2.5 py-3 text-center">Aksi</th>
                         </tr>
@@ -337,7 +335,7 @@ const destroy = (o) => {
                     <tbody class="divide-y divide-brand-50">
                         <!-- Kosong -->
                         <tr v-if="orders.data.length === 0">
-                            <td colspan="11" class="px-2.5 py-10 text-center text-slate-400">Belum ada order.</td>
+                            <td colspan="10" class="px-2.5 py-10 text-center text-slate-400">Belum ada order.</td>
                         </tr>
                         <!-- Baris data (hanya halaman aktif) -->
                         <tr v-for="o in orders.data" v-else :key="o.id" class="hover:bg-brand-50/60 transition">
@@ -419,7 +417,6 @@ const destroy = (o) => {
                                     {{ rp(o.total_idr) }} + {{ usd(o.total_usd) }}
                                 </p>
                             </td>
-                            <td class="px-2.5 py-2.5 text-slate-600">{{ o.invoice_maker || '—' }}</td>
                             <!-- Berkas: bukti bayar customer + invoice perusahaan, buka di tab baru -->
                             <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
                                 <div class="flex items-center justify-center gap-2 text-xs font-semibold">
@@ -445,6 +442,14 @@ const destroy = (o) => {
                             <!-- Aksi -->
                             <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
                                 <div v-if="auth?.user?.canManage" class="flex items-center justify-center gap-1">
+                                    <a
+                                        :href="invoiceUrl(o)"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
+                                    >
+                                        Invoice
+                                    </a>
                                     <button
                                         class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
                                         @click="openEdit(o)"
@@ -699,17 +704,6 @@ const destroy = (o) => {
                                 <p v-if="!outputList.length" class="text-xs text-slate-400">Belum ada pilihan output.</p>
                             </div>
                             <span v-if="form.errors.outputs" class="text-xs text-red-600">{{ form.errors.outputs }}</span>
-                        </div>
-                        <!-- Invoice maker: siapa yang membuat invoice ini -->
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-600">Invoice Maker</label>
-                            <input
-                                v-model="form.invoice_maker"
-                                type="text"
-                                placeholder="Nama pembuat invoice"
-                                class="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
-                            />
-                            <span v-if="form.errors.invoice_maker" class="text-xs text-red-600">{{ form.errors.invoice_maker }}</span>
                         </div>
                         <!-- Bukti bayar: file baru menimpa yang lama; dikosongkan = file lama dipertahankan -->
                         <div>

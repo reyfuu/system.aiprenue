@@ -110,7 +110,7 @@ class EnsureMenuAccess
             // lupa didaftarkan berarti route itu lolos tanpa cek canManage().
             || ($name !== 'okr.index' && str_starts_with($name, 'okr.'))
             || str_starts_with($name, 'kpi.targets.')   // menetapkan target board = mutasi
-            || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true)
+            || in_array($name, ['orders.store', 'orders.update', 'orders.destroy', 'orders.invoice'], true)
             || str_starts_with($name, 'payroll.')
             || in_array($name, ['absensi.presensi.store', 'absensi.presensi.update', 'absensi.presensi.destroy'], true)
             // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
