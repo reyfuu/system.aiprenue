@@ -32,6 +32,13 @@ const normalizeSocketUrl = (rawUrl) => {
     }
 
     if (/^wss?:\/\//i.test(trimmed)) {
+        const desiredScheme = resolveSocketScheme();
+        if (desiredScheme === 'wss' && trimmed.startsWith('ws://')) {
+            return trimmed.replace(/^ws:\/\//i, 'wss://');
+        }
+        if (desiredScheme === 'ws' && trimmed.startsWith('wss://')) {
+            return trimmed.replace(/^wss:\/\//i, 'ws://');
+        }
         return trimmed;
     }
 
