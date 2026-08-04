@@ -179,7 +179,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     // CRM — ringkasan Sales/Pipeline untuk follow-up, reminder, dan prioritas.
     Route::get('/crm', [CRMController::class, 'index'])->name('crm.index');
 
-    // Daily Report — riwayat kiriman ringkasan harian Hermes untuk owner/it.
+    // Daily Report — riwayat kiriman ringkasan harian Hermes untuk semua user.
     Route::get('/daily-report', [HermesReportController::class, 'index'])->name('hermes-report.index');
     Route::post('/hermes/chat', [HermesReportController::class, 'chat'])->name('hermes.chat');
 

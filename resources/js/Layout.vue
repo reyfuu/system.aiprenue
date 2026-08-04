@@ -27,7 +27,7 @@ const serverNotifications = computed(() => page.props.serverNotifications || [])
 const unreadNotifications = computed(() => Number(page.props.unreadNotificationsCount || 0));
 const bellCount = computed(() => reminders.value.length + unreadNotifications.value);
 const hasBellItems = computed(() => reminders.value.length > 0 || serverNotifications.value.length > 0);
-const canUseHermesChat = computed(() => page.props.auth?.user?.menus?.daily_report === true);
+const canUseHermesChat = computed(() => Boolean(page.props.auth?.user?.id));
 const notificationSupported = typeof window !== 'undefined' && 'Notification' in window;
 const notificationPermission = ref(notificationSupported ? Notification.permission : 'unsupported');
 const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
