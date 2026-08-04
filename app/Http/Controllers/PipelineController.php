@@ -18,12 +18,15 @@ use App\Support\OkrNotifications;
 use App\Support\Quarter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class PipelineController extends Controller
 {
+    private const MANDATORY_OUTPUTS = ['YouTube Shorts'];
+
     /** Sales pipeline — board tipe `pipeline`, dirender pakai UI kanban yang sama.
      *  Tanpa galeri: board dipilih lewat dropdown toolbar. */
     public function index(Request $request)
@@ -85,6 +88,10 @@ class PipelineController extends Controller
      *  $showGallery= tampilkan link balik ke galeri (kanban saja). */
     private function renderBoard(Request $request, string $category, array $categories, string $baseUrl, string $title, bool $showGallery)
     {
+        if (! $showGallery && $category === 'sales') {
+            $this->ensureSalesOutputs();
+        }
+
         // Tampilkan kartu aktif; bila ?archived=1 → tampilkan yg diarsipkan
         $showArchived = $request->boolean('archived');
 
@@ -421,6 +428,30 @@ class PipelineController extends Controller
             'jenisList' => Pipeline::JENIS,          // endorse/coaching/agensi/speaker
             'payments' => Pipeline::PAYMENT,
         ]);
+    }
+
+    private function ensureSalesOutputs(): void
+    {
+        static $isDone = false;
+
+        if ($isDone || ! Schema::hasTable('outputs')) {
+            return;
+        }
+
+        foreach (self::MANDATORY_OUTPUTS as $name) {
+            $output = Output::withTrashed()->where('name', $name)->first();
+
+            if ($output === null) {
+                Output::create(['name' => $name]);
+                continue;
+            }
+
+            if ($output->trashed()) {
+                $output->restore();
+            }
+        }
+
+        $isDone = true;
     }
 
     /** Simpan isi & urutan satu kolom kanban sekaligus.

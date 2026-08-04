@@ -30,12 +30,12 @@ return [
         'token' => env('INSIGHT_AGENT_TOKEN'),
     ],
 
-    // Agen Hermes (VPS) → POST /api/hermes/daily-report.
+    // Agen Hermes (VPS) → POST /v1/chat/completions (OpenAI-compatible).
     // Kosong = endpointnya menolak semua permintaan.
     'hermes_agent' => [
         'token' => env('HERMES_AGENT_TOKEN'),
         'url' => env('HERMES_AGENT_URL'),
-        'chat_path' => env('HERMES_AGENT_CHAT_PATH', '/api/chat'),
+        'chat_path' => env('HERMES_AGENT_CHAT_PATH', '/v1/chat/completions'),
         'timeout' => (int) env('HERMES_AGENT_TIMEOUT', 20),
     ],
 

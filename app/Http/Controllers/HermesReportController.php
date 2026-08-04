@@ -210,13 +210,13 @@ class HermesReportController extends Controller
         $token = (string) ($config['token'] ?? '');
         $baseUrl = trim((string) ($config['url'] ?? ''));
         $timeout = (int) ($config['timeout'] ?? 20);
-        $chatPaths = $this->normalizeHermesChatPaths((string) ($config['chat_path'] ?? '/api/chat'));
+        $chatPaths = $this->normalizeHermesChatPaths((string) ($config['chat_path'] ?? ''));
 
         if ($token === '' || $baseUrl === '') {
             return response()->json([
                 'ok' => false,
                 'source' => 'system',
-                'reply' => $this->fallbackReply($message),
+                'reply' => 'Konfigurasi Hermes belum lengkap (HERMES_AGENT_URL / HERMES_AGENT_TOKEN kosong). ' . $this->fallbackReply($message),
             ]);
         }
 
@@ -224,24 +224,19 @@ class HermesReportController extends Controller
             $resolved = null;
             $attempts = [];
             $lastStatus = null;
+            $lastBody = null;
 
             foreach ($chatPaths as $chatPath) {
                 $url = rtrim($baseUrl, '/') . '/' . ltrim($chatPath, '/');
+                $payload = $this->buildHermesPayload($message, $intent, $userId, $chatPath);
+
                 $res = Http::timeout($timeout)
                     ->withToken($token)
                     ->acceptJson()
-                    ->post($url, [
-                        'message' => $message,
-                        'intent' => $intent,
-                        'user_id' => $userId,
-                        'source' => 'system',
-                        'context' => [
-                            'current_quarter' => Quarter::current(),
-                            'kanban' => $this->kanbanContext(),
-                        ],
-                    ]);
+                    ->post($url, $payload);
 
                 $attempts[] = $chatPath . ' => ' . $res->status();
+                $lastBody = (array) $res->json();
                 $lastStatus = $res->status();
 
                 if ($res->status() !== 405) {
@@ -261,15 +256,19 @@ class HermesReportController extends Controller
                     ], 502);
                 }
 
+                $remoteReply = $this->extractHermesReply($lastBody ?? []);
+                if ($remoteReply !== '') {
+                    return response()->json(['ok' => false, 'source' => 'system', 'reply' => $remoteReply], 502);
+                }
+
                 return response()->json([
                     'ok' => false,
                     'source' => 'system',
-                    'reply' => "Hermes tidak merespons (HTTP {$lastStatus}). ".$this->fallbackReply($message),
+                    'reply' => "Hermes tidak merespons (HTTP {$lastStatus}). " . $this->fallbackReply($message),
                 ], 502);
             }
 
-            $body = (array) $res->json();
-            $reply = trim((string) ($body['reply'] ?? $body['message'] ?? ''));
+            $reply = $this->extractHermesReply((array) $res->json());
 
             if ($reply === '') {
                 return response()->json([
@@ -283,16 +282,103 @@ class HermesReportController extends Controller
                 'ok' => true,
                 'source' => 'hermes',
                 'reply' => $reply,
-                'actions' => is_array($body['actions'] ?? null) ? $body['actions'] : [],
+                'actions' => is_array(($lastBody['actions'] ?? null)) ? $lastBody['actions'] : [],
             ]);
         } catch (\Throwable $e) {
             return response()->json([
                 'ok' => false,
                 'source' => 'system',
-                'reply' => 'Tidak bisa terhubung ke Hermes saat ini. '.$this->fallbackReply($message),
+                'reply' => 'Tidak bisa terhubung ke Hermes saat ini. ' . $this->fallbackReply($message),
             ], 502);
         }
     }
+
+    private function buildHermesPayload(string $message, string $intent, ?int $userId, string $chatPath): array
+    {
+        $context = [
+            'current_quarter' => Quarter::current(),
+            'kanban' => $this->kanbanContext(),
+        ];
+
+        if ($this->isHermesOpenAiPath($chatPath)) {
+            return [
+                'model' => config('services.hermes_agent.model', 'gpt-4o-mini'),
+                'messages' => [['role' => 'user', 'content' => $message]],
+                'max_tokens' => 1024,
+                'intent' => $intent,
+                'user_id' => $userId,
+                'source' => 'system',
+                'context' => $context,
+            ];
+        }
+
+        return [
+            'message' => $message,
+            'intent' => $intent,
+            'user_id' => $userId,
+            'source' => 'system',
+            'context' => $context,
+        ];
+    }
+
+    private function isHermesOpenAiPath(string $chatPath): bool
+    {
+        $path = ltrim(trim($chatPath), '/');
+        return str_starts_with($path, 'v1/');
+    }
+
+    private function extractHermesReply(array $body): string
+    {
+        $direct = data_get($body, 'reply');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'message');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'content');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'text');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $choices = data_get($body, 'choices', []);
+        if (is_array($choices) && isset($choices[0]['message']['content']) && is_string($choices[0]['message']['content'])) {
+            $text = trim($choices[0]['message']['content']);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        if (is_array($choices) && isset($choices[0]['text']) && is_string($choices[0]['text'])) {
+            $text = trim($choices[0]['text']);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        if (is_array($body['result'] ?? null)) {
+            return $this->extractHermesReply((array) $body['result']);
+        }
+
+        if (is_array($body['output'] ?? null)) {
+            return $this->extractHermesReply((array) $body['output']);
+        }
+
+        if (is_array($body['response'] ?? null)) {
+            return $this->extractHermesReply((array) $body['response']);
+        }
+
+        return '';
+    }
+
 
     private function kanbanContext(): array
     {
@@ -339,7 +425,15 @@ class HermesReportController extends Controller
             ->toArray();
 
         if (empty($paths)) {
-            return ['api/chat'];
+            return ['v1/chat/completions', 'v1/responses'];
+        }
+
+        if (! in_array('v1/chat/completions', $paths, true)) {
+            $paths[] = 'v1/chat/completions';
+        }
+
+        if (! in_array('v1/responses', $paths, true)) {
+            $paths[] = 'v1/responses';
         }
 
         if (! in_array('api/chat', $paths, true)) {
