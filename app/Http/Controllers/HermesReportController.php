@@ -304,7 +304,7 @@ class HermesReportController extends Controller
 
     private function fallbackReply(string $message): string
     {
-        return 'Coba klik salah satu opsi cepat: “Buat OKR” atau “Check detail report”. Jika tetap ingin ngobrol bebas, kirim pesan langsung di sini.';
+        return 'Koneksi Hermes lagi tidak stabil. Aku lanjut bantu sebisa mungkin lewat chat biasa—kirim pertanyaanmu langsung di sini, ya.';
     }
 
     public function index(Request $request)

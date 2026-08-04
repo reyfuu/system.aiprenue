@@ -21,9 +21,17 @@ const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD ||
 const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
 const messagesPanel = ref(null);
 
+const clearWsConnectTimeout = () => {
+    if (wsConnectTimeoutId.value) {
+        clearTimeout(wsConnectTimeoutId.value);
+        wsConnectTimeoutId.value = null;
+    }
+};
+
 const closeMessage = () => {
     isConnected.value = false;
     isConnecting.value = false;
+    clearWsConnectTimeout();
     socket.value = null;
 };
 
@@ -176,8 +184,17 @@ const startSession = () => {
     }
 
     const ws = new WebSocket(socketUrl.value);
+    wsConnectTimeoutId.value = window.setTimeout(() => {
+        if (!isConnected.value && socket.value === ws) {
+            isConnecting.value = false;
+            errorMessage.value = 'Realtime Hermes belum tersambung, memakai fallback HTTP.';
+            statusText.value = 'Fallback aktif';
+            ws.close();
+        }
+    }, 6000);
 
     ws.onopen = () => {
+        clearWsConnectTimeout();
         isConnected.value = true;
         isConnecting.value = false;
         statusText.value = 'Terhubung';
@@ -200,10 +217,12 @@ const startSession = () => {
     ws.onmessage = handleSocketMessage;
 
     ws.onerror = () => {
+        clearWsConnectTimeout();
         errorMessage.value = 'Gagal koneksi ke Hermes WS.';
     };
 
     ws.onclose = () => {
+        clearWsConnectTimeout();
         isConnected.value = false;
         isConnecting.value = false;
         statusText.value = 'Koneksi tertutup';
