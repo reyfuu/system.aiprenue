@@ -31,7 +31,8 @@ class ColumnTaskController extends Controller
         return back();
     }
 
-    /** Menetap: toggle mengisi/mengosongkan completed_at (bukan reset harian). */
+    /** Reset harian: toggle "selesai HARI INI". completed_on = hari ini → tercentang;
+     *  null → belum. Lewat jam 12 malam tanggalnya beda sehingga reset sendiri. */
     public function toggle(Request $request, ColumnTask $columnTask)
     {
         abort_unless(
@@ -39,7 +40,8 @@ class ColumnTaskController extends Controller
             403
         );
 
-        $columnTask->update(['completed_at' => $columnTask->completed_at ? null : now()]);
+        $done = $columnTask->completed_on && $columnTask->completed_on->isToday();
+        $columnTask->update(['completed_on' => $done ? null : today()]);
 
         return back();
     }

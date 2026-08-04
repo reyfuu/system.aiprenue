@@ -15,8 +15,10 @@ return new class extends Migration
             $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('title');
-            // Menetap (bukan reset harian): sekali selesai tetap selesai.
-            $table->timestamp('completed_at')->nullable();
+            // Reset harian tanpa cron: "selesai" = completed_on == hari ini.
+            // Lewat jam 12 malam tanggalnya ganti, jadi centang otomatis kosong
+            // lagi. Definisi & delegasi task tetap; hanya status hariannya reset.
+            $table->date('completed_on')->nullable();
             $table->unsignedInteger('position')->default(0);
             $table->timestamps();
             $table->index(['board_column_id', 'position']);
