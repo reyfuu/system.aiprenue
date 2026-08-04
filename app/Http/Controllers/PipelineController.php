@@ -368,7 +368,7 @@ class PipelineController extends Controller
                     'title' => $t->title,
                     'assigned_to' => $t->assigned_to,
                     'assignee' => $t->assignee?->name,
-                    'done' => $t->completed_on && $t->completed_on->isToday(),
+                    'done' => $t->isDoneToday(),
                 ])->values());
             })() : null,
             // Preview Objective OKR (kuartal panel) — Kanban saja. UI dibuat mirip

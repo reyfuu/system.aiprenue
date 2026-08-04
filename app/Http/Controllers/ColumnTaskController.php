@@ -40,8 +40,11 @@ class ColumnTaskController extends Controller
             403
         );
 
-        $done = $columnTask->completed_on && $columnTask->completed_on->isToday();
-        $columnTask->update(['completed_on' => $done ? null : today()]);
+        $done = $columnTask->isDoneToday();
+        $field = ColumnTask::completedField();
+        $value = $done ? null : ($field === 'completed_on' ? today() : now());
+
+        $columnTask->update([$field => $value]);
 
         return back();
     }
