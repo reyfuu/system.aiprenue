@@ -75,7 +75,7 @@ curl -i https://hermes.aipreneur.co.id/ws
 3. Pastikan `.env` app Laravel memiliki nilai:
 
 - `HERMES_AGENT_URL=https://hermes.aipreneur.co.id`
-- `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS)
+- `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS; boleh isi beberapa path dipisah koma, contoh: `/api/chat,/chat`)
   - `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
 
 > Catatan penting:
