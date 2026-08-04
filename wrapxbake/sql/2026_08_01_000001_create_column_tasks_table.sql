@@ -10,7 +10,7 @@ CREATE TABLE `column_tasks` (
   `assigned_to` bigint unsigned DEFAULT NULL,
   `created_by` bigint unsigned DEFAULT NULL,
   `title` varchar(255) NOT NULL,
-  `completed_at` timestamp NULL DEFAULT NULL,
+  `completed_on` date DEFAULT NULL,
   `position` int unsigned NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,

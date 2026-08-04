@@ -35,17 +35,29 @@ class ColumnTaskTest extends TestCase
         $this->actingAs($staff)->post('/column-tasks', $payload)->assertForbidden();
     }
 
-    public function test_assignee_bisa_centang_dan_menetap(): void
+    public function test_assignee_bisa_centang_dan_reset_harian(): void
     {
         $col = $this->column();
         $staff = $this->user('staff');
         $task = ColumnTask::create(['board_column_id' => $col->id, 'assigned_to' => $staff->id, 'title' => 'X', 'position' => 0]);
 
         $this->actingAs($staff)->patch("/column-tasks/{$task->id}/toggle");
-        $this->assertNotNull($task->fresh()->completed_at); // menetap: tetap terisi
+        $this->assertTrue($task->fresh()->completed_on->isToday()); // selesai hari ini
 
         $this->actingAs($staff)->patch("/column-tasks/{$task->id}/toggle");
-        $this->assertNull($task->fresh()->completed_at);
+        $this->assertNull($task->fresh()->completed_on);
+    }
+
+    public function test_centang_kemarin_bukan_selesai_hari_ini(): void
+    {
+        // Inti "reset jam 12 malam": completed_on kemarin → tak dihitung hari ini.
+        $col = $this->column();
+        $task = ColumnTask::create([
+            'board_column_id' => $col->id, 'assigned_to' => $this->user('staff')->id,
+            'title' => 'X', 'position' => 0, 'completed_on' => today()->subDay(),
+        ]);
+
+        $this->assertFalse($task->completed_on->isToday());
     }
 
     public function test_manager_boleh_centang_item_staff_orang_lain_tidak(): void
