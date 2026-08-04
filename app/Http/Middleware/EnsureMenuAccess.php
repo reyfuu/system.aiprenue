@@ -148,6 +148,7 @@ class EnsureMenuAccess
             str_starts_with($name, 'script.') => ['script'],
             str_starts_with($name, 'content.') => ['content'],
             str_starts_with($name, 'tracking.') => ['tracking'],
+            str_starts_with($name, 'hermes-report.') => ['daily_report'],
             str_starts_with($name, 'okr.') => ['okr'],
             str_starts_with($name, 'kpi.') => ['kpi'],
             str_starts_with($name, 'absensi.') => ['absensi'],

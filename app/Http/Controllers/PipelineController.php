@@ -238,6 +238,25 @@ class PipelineController extends Controller
             ];
         }
 
+        $today = now()->toDateString();
+        $doneToday = $pipelines
+            ->filter(function ($p) use ($today) {
+                return $p->completed_at !== null && $p->completed_at->toDateString() === $today;
+            })
+            ->filter(fn ($p) => ! (bool) $p->is_kr_master)
+            ->groupBy(fn ($p) => $p->assignee?->name ?: 'Belum ditugaskan')
+            ->map(fn ($items, $nama) => [
+                'nama' => $nama,
+                'count' => $items->count(),
+                'cards' => $items->map(fn ($p) => [
+                    'id' => $p->id,
+                    'code' => 't_'.str_pad($p->id, 6, '0', STR_PAD_LEFT),
+                    'title' => $p->description ?: '—',
+                ])->values(),
+            ])->values()
+            ->sortByDesc('count')
+            ->values();
+
         $currentBoard = Category::where('key', $category)->first();
 
         // ---- Panel kuartal: target KPI + capaian + ketepatan waktu ----
@@ -375,6 +394,7 @@ class PipelineController extends Controller
             'rate' => $rate,
             'boardTotal' => $boardTotal,                                 // estimasi nilai SELURUH board (tak ikut filter)
             'board' => $board,                                       // kartu tersusun per kolom
+            'doneToday' => $doneToday,                                // ringkasan kartu yang selesai hari ini
             'columns' => $columns,                                     // kolom dinamis board ini
             'jenis' => $jenis,                                      // chip aktif (array; kosong = semua)
             'dateFilters' => $request->only(['created_from', 'created_to']),

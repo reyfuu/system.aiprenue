@@ -5,10 +5,11 @@ namespace App\Http\Middleware;
 use App\Models\Category;
 use App\Models\Pipeline;
 use App\Models\User;
-use App\Support\OkrNotifications;
 use App\Support\Hermes;
+use App\Support\OkrNotifications;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Middleware;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -69,24 +70,25 @@ class HandleInertiaRequests extends Middleware
                     // Peta menu yang boleh dilihat → dipakai Sidebar
                     'menus' => [
                         'dashboard' => $user->canSee('dashboard'),
-                    'pipeline' => $user->canSee('pipeline'),
-                    'crm' => $user->canSee('crm'),
-                    'kanban' => $user->canSee('kanban'),
+                        'pipeline' => $user->canSee('pipeline'),
+                        'crm' => $user->canSee('crm'),
+                        'kanban' => $user->canSee('kanban'),
                         'order' => $user->canSee('order'),
                         'mindmap' => $user->canSee('mindmap'),
                         'script' => $user->canSee('script'),
                         'content' => $user->canSee('content'),     // kalender produksi konten
                         'tracking' => $user->canSee('tracking'),   // ringkasan progress owner/manager
                         'okr' => $user->canSee('okr'),          // OKR: objective & key result
-                    'absensi' => $user->canSee('absensi'),      // absensi — semua peran
-                    'payroll' => $user->canSee('payroll'),
-                    'pembukuan' => $user->canSee('pembukuan'),
+                        'absensi' => $user->canSee('absensi'),      // absensi — semua peran
+                        'payroll' => $user->canSee('payroll'),
+                        'pembukuan' => $user->canSee('pembukuan'),
                         'user' => $user->canSee('user'),
                         'insight' => $user->canSee('insight'),      // Insight IG & YouTube
                         'upload' => $user->canSee('upload'),       // Upload konten multi-platform (template)
                         'prodpilot' => $user->canSee('prodpilot'),   // tautan eksternal, owner/it/manager
                         'akses' => $user->canSee('akses'),       // Manajemen Akses
                         'audit' => $user->canSee('audit'),       // Audit Log — owner + it
+                        'daily_report' => $user->canSee('daily_report'), // Hermes daily report
                     ],
                 ] : null,
             ],
@@ -146,7 +148,7 @@ class HandleInertiaRequests extends Middleware
      *  halamanlah pemicunya — dan karena dipicu duluan, pengingat baru
      *  langsung terlihat pada respons yang sama.
      *
-     *  @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     private function notifikasiServer(User $user)
     {

@@ -51,6 +51,7 @@ const props = defineProps({
     // prop yang tak dideklarasi jatuh ke $attrs & tak terbaca lewat `props`.
     columnTasks: { default: null }, // checklist delegasi per kolom (owner/manager → staff)
     objectives: { default: null },  // preview Objective OKR kuartal panel
+    doneToday: { type: Array, default: () => [] }, // ringkasan kartu selesai hari ini
 });
 
 // Palet warna label — HARUS cermin Label::COLORS (subset safelist di app.css).
@@ -160,6 +161,8 @@ const statistikAnggota = computed(() => {
             .sort((a, b) => (a.nama === 'Belum ditugaskan') - (b.nama === 'Belum ditugaskan') || b.skor - a.skor || b.total - a.total)
     );
 });
+
+const doneHariIni = computed(() => props.doneToday || []);
 
 // Chart batang per anggota (Selesai/Berjalan/Telat) — warna sama dgn kolom tabel.
 const barData = computed(() => ({
@@ -1070,6 +1073,25 @@ class="ml-auto text-[11px] text-slate-400"
                         >Target minimum score 100 per anggota · {{ scoreMonth }}</span
                     >
                 </div>
+
+                <div class="px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+                    <div class="text-xs font-semibold text-slate-600 mb-2">Done hari ini</div>
+                    <div v-if="doneHariIni.length" class="space-y-2">
+                        <div v-for="r in doneHariIni" :key="r.nama" class="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                            <p class="text-sm font-semibold text-slate-700">
+                                {{ r.nama }} <span class="text-xs font-medium text-slate-500">({{ r.count }})</span>
+                            </p>
+                            <p v-if="r.cards?.length" class="mt-1 text-xs text-slate-500">
+                                <span v-for="(k, i) in r.cards" :key="k.id" class="inline-flex items-center">
+                                    <span>{{ k.code }} — {{ k.title }}</span>
+                                    <span v-if="i + 1 < r.cards.length"> ; </span>
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                    <p v-else class="text-xs text-slate-500">Belum ada kartu yang selesai hari ini.</p>
+                </div>
+
                 <div v-if="monthlyScores.length" class="flex gap-2 overflow-x-auto px-4 py-3 border-b border-slate-100 bg-slate-50/60">
                     <div
                         v-for="anggota in monthlyScores"
