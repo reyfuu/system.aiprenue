@@ -113,6 +113,7 @@ class OrderController extends Controller
             'outputs.*' => 'exists:outputs,id',
             'bukti_bayar' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',  // bukti transfer customer
             'invoice' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',  // invoice perusahaan, maks 5MB
+            'invoice_maker' => 'nullable|string|max:150',
         ];
     }
 

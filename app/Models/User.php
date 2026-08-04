@@ -13,7 +13,16 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 
-#[Fillable(['name', 'email', 'password', 'role'])]
+#[Fillable([
+    'name',
+    'email',
+    'password',
+    'role',
+    'base_salary',
+    'meal_allowance',
+    'overtime_rate_per_hour',
+    'late_penalty_per_minute',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -35,8 +44,8 @@ class User extends Authenticatable
     public const MENU_ACCESS = [
         'owner' => ['*'],
         'it' => ['*'],           // IT = akses penuh teknis
-        'manager' => ['dashboard', 'pipeline', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'okr', 'kpi', 'prodpilot', 'akses'],
-        'admin' => ['pipeline', 'kanban', 'mindmap', 'content', 'insight', 'kpi'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
+        'manager' => ['dashboard', 'pipeline', 'crm', 'kanban', 'order', 'mindmap', 'script', 'content', 'tracking', 'pembukuan', 'insight', 'upload', 'okr', 'kpi', 'payroll', 'prodpilot', 'akses'],
+        'admin' => ['pipeline', 'crm', 'kanban', 'mindmap', 'content', 'insight', 'kpi', 'payroll'],   // sales(=pipeline)/kanban/mindmap, boleh CRUD
         'staff' => ['kanban', 'mindmap'],   // view-only, cuma dua menu ini
     ];
 
@@ -46,6 +55,7 @@ class User extends Authenticatable
     public const MENUS = [
         'dashboard' => 'Dashboard',
         'pipeline' => 'Sales',
+        'crm' => 'CRM',
         'kanban' => 'Kanban',
         'order' => 'Order',
         'mindmap' => 'Mindmap',
@@ -61,6 +71,7 @@ class User extends Authenticatable
         'prodpilot' => 'ProdPilot',
         'akses' => 'Manajemen Akses',
         'audit' => 'Audit Log',
+        'payroll' => 'Payroll',
     ];
 
     /** Cache per-instance: `menus` dibangun dgn ~10 kali canSee() pada user yang
@@ -184,6 +195,16 @@ class User extends Authenticatable
         return $this->hasMany(Absence::class);
     }
 
+    public function attendances()
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    public function payrollEntries()
+    {
+        return $this->hasMany(PayrollEntry::class);
+    }
+
     /** Route landing pertama yang boleh diakses user.
      *
  https://github.com/reyfuu/system.aiprenue/pull/39/conflict?name=public%252Fbuild%252Fmanifest.json&ancestor_oid=9187962467d5529f6d89e322d36546398d87ab2f&base_oid=d000806ec7810a451ce5869319592319845cca5d&head_oid=bf2d895306134d6767e6de965a1fb9afe55c35f5    *  Wajib mengembalikan route yang benar-benar DIBOLEHKAN: kalau bukan,
@@ -197,8 +218,10 @@ class User extends Authenticatable
     {
         $kandidat = [
             'dashboard' => 'dashboard',
+            'crm' => 'crm.index',
             'kanban'    => 'pipelines.kanban',
             'pipeline'  => 'pipelines.index',
+            'payroll' => 'payroll.index',
             'order'     => 'orders.index',
             'script'    => 'script.index',
             'insight'   => 'insight.index',
@@ -236,6 +259,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'base_salary' => 'decimal:2',
+            'meal_allowance' => 'decimal:2',
+            'overtime_rate_per_hour' => 'decimal:2',
+            'late_penalty_per_minute' => 'decimal:2',
         ];
     }
 }

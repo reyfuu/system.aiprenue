@@ -111,6 +111,8 @@ class EnsureMenuAccess
             || ($name !== 'okr.index' && str_starts_with($name, 'okr.'))
             || str_starts_with($name, 'kpi.targets.')   // menetapkan target board = mutasi
             || in_array($name, ['orders.store', 'orders.update', 'orders.destroy'], true)
+            || str_starts_with($name, 'payroll.')
+            || in_array($name, ['absensi.presensi.store', 'absensi.presensi.update', 'absensi.presensi.destroy'], true)
             // mindmaps.index/show TIDAK di sini — semua peran boleh lihat galeri & editor.
             // Sebelumnya mutasinya lolos: tombolnya disembunyikan di Vue lewat `canManage`,
             // tapi request langsung tetap tembus.
@@ -149,6 +151,8 @@ class EnsureMenuAccess
             str_starts_with($name, 'okr.') => ['okr'],
             str_starts_with($name, 'kpi.') => ['kpi'],
             str_starts_with($name, 'absensi.') => ['absensi'],
+            str_starts_with($name, 'crm.') => ['crm'],
+            str_starts_with($name, 'payroll.') => ['payroll'],
             str_starts_with($name, 'pembukuan.') => ['pembukuan'],
             str_starts_with($name, 'transactions.') => ['pembukuan'],
             str_starts_with($name, 'inventories.') => ['pembukuan'],

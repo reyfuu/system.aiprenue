@@ -8,6 +8,7 @@ import ModalWrap from './ModalWrap.vue'; // bungkus modal seragam (overlay + kar
 const ITEMS = [
     { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: 'M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 13h6v6h-6z' },
     { key: 'pipeline', label: 'Sales', href: '/pipelines', icon: 'M3 10h18M3 6h18M3 14h18M3 18h18' },
+    { key: 'crm', label: 'CRM', href: '/crm', icon: 'M16 11V7a4 4 0 10-8 0v4M5 21h14a1 1 0 011 1v-9a8 8 0 10-16 0v9a1 1 0 011 1z' },
     {
         key: 'order',
         label: 'Order',
@@ -16,6 +17,7 @@ const ITEMS = [
     },
     { key: 'kanban', label: 'Kanban', href: '/pipelines/kanban', icon: 'M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z' },
     { key: 'insight', label: 'Insight', href: '/insight', icon: 'M3 3v18h18M7 15l3-4 3 3 5-7' },
+    { key: 'payroll', label: 'Payroll', href: '/payroll', icon: 'M9 7h6m-6 4h6m-6 4h6m-6 4h4M5 3h14a1 1 0 011 1v16l-3-2-3 2-3-2-3 2V4a1 1 0 011-1z' },
     { key: 'upload', label: 'Upload', href: '/upload', icon: 'M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4' },
     { key: 'content', label: 'Content', href: '/content', icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
     // { key: 'tracking', label: 'Tracking', href: '/tracking', icon: 'M4 19V9m5 10V5m5 14v-7m5 7V3' }, // sementara disembunyikan
