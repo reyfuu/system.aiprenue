@@ -27,13 +27,6 @@ Implementasi ini menanamkan widget chat Hermes berbasis **WebSocket JSON-RPC** k
 - Widget ditampilkan untuk user dengan menu `daily_report` aktif (`page.props.auth?.user?.menus?.daily_report === true`).
 - Akses bisa dipersempit/luaskan dengan menyesuaikan kondisi `v-if` sesuai kebutuhan role.
 
-## Konfigurasi backend (Laravel ↔ Hermes VPS)
-
-- `HERMES_AGENT_TOKEN` wajib diisi.
-- `HERMES_AGENT_URL` wajib diisi dengan endpoint VPS Hermes, misalnya `https://hermes.aipreneur.co.id`.
-- `HERMES_AGENT_CHAT_PATH` mengarah ke endpoint chat Hermes, contoh default `/chat`.
-- `HERMES_AGENT_TIMEOUT` opsional, mis. `20`.
-
 ## Konfigurasi lingkungan (Vite)
 
 Tambahkan variabel berikut pada `.env` agar endpoint dan method bisa dikustom:

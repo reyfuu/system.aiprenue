@@ -13,8 +13,6 @@ const messages = ref([]);
 const isSubmitting = ref(false);
 const socket = ref(null);
 const requestId = ref(1);
-const pendingAssistantMessageIds = ref({});
-const wsConnectTimeoutId = ref(null);
 const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
 const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
@@ -123,25 +121,16 @@ const handleSocketMessage = (event) => {
 
     if (isJsonRpcResponse(payload)) {
         const text = normalizeReply(payload.result || payload.error);
-        const target = payload.id ? String(payload.id) : '';
-        const mappedPendingId = target ? pendingAssistantMessageIds.value[target] : null;
+        const target = payload.id || `${Date.now()}`;
 
         if (text) {
             const existing = messages.value
                 .map((m, i) => ({ m, i }))
-                .find(
-                    (row) =>
-                        row.m.role === 'assistant' &&
-                        row.m.pending &&
-                        (mappedPendingId ? row.m.id === mappedPendingId : row.m.id.startsWith(`pending-${target}`)),
-                );
+                .find((row) => row.m.role === 'assistant' && row.m.pending && row.m.id.startsWith(`pending-${target}`));
 
             if (existing) {
                 const newText = `${messages.value[existing.i].text}${text}`;
                 updateMessageById(messages.value[existing.i].id, { text: newText, pending: false });
-                if (target) {
-                    delete pendingAssistantMessageIds.value[target];
-                }
                 return;
             }
         }
@@ -208,8 +197,7 @@ const startSession = () => {
         clearWsConnectTimeout();
         isConnected.value = true;
         isConnecting.value = false;
-        errorMessage.value = '';
-        statusText.value = 'Terhubung ke Hermes';
+        statusText.value = 'Terhubung';
 
         ws.send(
             JSON.stringify(
@@ -231,8 +219,6 @@ const startSession = () => {
     ws.onerror = () => {
         clearWsConnectTimeout();
         errorMessage.value = 'Gagal koneksi ke Hermes WS.';
-        statusText.value = 'Gagal koneksi';
-        isConnecting.value = false;
     };
 
     ws.onclose = () => {
@@ -311,15 +297,7 @@ const sendChat = async () => {
         const messageId = requestId.value;
         const rpc = buildRequest(chatMethod.value, payload);
 
-        const pendingId = `pending-${messageId}`;
-        updateMessageById(tempId, {
-            id: pendingId,
-            text: '',
-            pending: true,
-            thinkingText: 'Hermes sedang berpikir',
-            createdAt: new Date().toISOString(),
-        });
-        pendingAssistantMessageIds.value[`${messageId}`] = pendingId;
+        updateMessageById(tempId, { id: `pending-${messageId}`, pending: true });
 
         try {
             socket.value.send(JSON.stringify(rpc));
@@ -330,10 +308,9 @@ const sendChat = async () => {
             });
             closeSocket();
             await fallbackToHttp(text, tempId);
-            delete pendingAssistantMessageIds.value[`${messageId}`];
         }
     } else {
-        updateMessageById(tempId, { text: 'Koneksi WebSocket belum siap, mencoba fallback HTTP…', pending: false });
+        updateMessageById(tempId, { text: 'WebSocket belum siap, mencoba fallback HTTP…', pending: false });
         await fallbackToHttp(text, tempId);
     }
 
@@ -345,12 +322,7 @@ const onToggle = () => {
     if (isOpen.value) {
         if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
             messages.value = messages.value.length ? messages.value : [
-                {
-                    id: `intro-${Date.now()}`,
-                    role: 'system',
-                    text: 'Siap, saya Hermes. Tanyakan apa saja dan saya bantu cek data OKR, kanban, sales, atau laporan harian.',
-                    createdAt: new Date().toISOString(),
-                },
+                { id: `intro-${Date.now()}`, role: 'system', text: 'Siap terhubung ke Hermes.', createdAt: new Date().toISOString() },
             ];
             startSession();
         }
@@ -413,15 +385,8 @@ onBeforeUnmount(() => {
                         item.role === 'user' ? 'ml-auto bg-brand-600 text-white' : item.role === 'system' ? 'bg-yellow-100 text-yellow-900' : 'bg-slate-100 text-slate-700',
                     ]"
                 >
-                    <p v-if="item.pending && !item.text" class="text-[11px] text-slate-500 mt-1 inline-flex items-center gap-1">
-                        {{ item.thinkingText || 'Hermes sedang berpikir' }}
-                        <span class="inline-flex ml-1">
-                            <span class="hermes-thinking-dot" />
-                            <span class="hermes-thinking-dot hermes-thinking-dot-delay-1" />
-                            <span class="hermes-thinking-dot hermes-thinking-dot-delay-2" />
-                        </span>
-                    </p>
-                    <p v-else class="whitespace-pre-wrap">{{ item.text }}</p>
+                    <p class="whitespace-pre-wrap">{{ item.text }}</p>
+                    <p v-if="item.pending" class="text-[11px] opacity-70 mt-1">mengetik…</p>
                 </div>
             </div>
 
