@@ -14,12 +14,70 @@ const isSubmitting = ref(false);
 const socket = ref(null);
 const requestId = ref(1);
 const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
+const resolveSocketScheme = () => {
+    if (typeof window === 'undefined') {
+        return 'wss';
+    }
+
+    return window.location.protocol === 'https:' ? 'wss' : 'ws';
+};
+
+const normalizeSocketUrl = (rawUrl) => {
+    const defaultUrl = 'wss://hermes.aipreneur.co.id/ws';
+    const trimmed = (rawUrl || defaultUrl).trim();
+    const scheme = resolveSocketScheme();
+
+    if (!trimmed) {
+        return defaultUrl;
+    }
+
+    if (/^wss?:\/\//i.test(trimmed)) {
+        return trimmed;
+    }
+
+    if (/^https?:\/\//i.test(trimmed)) {
+        return trimmed.replace(/^https:\/\//i, 'wss://').replace(/^http:\/\//i, 'ws://');
+    }
+
+    if (trimmed.startsWith('//')) {
+        return `${scheme}:${trimmed}`;
+    }
+
+    if (trimmed.startsWith('/')) {
+        if (typeof window === 'undefined' || !window.location?.host) {
+            return `${scheme}://${trimmed}`;
+        }
+        return `${scheme}://${window.location.host}${trimmed}`;
+    }
+
+    return `${scheme}://${trimmed}`;
+};
+
+const socketUrl = computed(() => normalizeSocketUrl(import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws'));
 const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
 const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD || 'chat').trim());
 
 const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
 const messagesPanel = ref(null);
+
+const socketUrlCandidates = computed(() => {
+    const configured = socketUrl.value;
+    const fallback = normalizeSocketUrl('hermes.aipreneur.co.id/ws');
+    const sameHost = normalizeSocketUrl('/ws');
+    const seen = new Set();
+    const candidates = [configured, fallback, sameHost];
+    return candidates.filter((url) => {
+        const clean = (url || '').trim();
+        if (!clean) {
+            return false;
+        }
+        if (seen.has(clean)) {
+            return false;
+        }
+        seen.add(clean);
+        return true;
+    });
+});
 
 const closeMessage = () => {
     isConnected.value = false;
@@ -169,48 +227,80 @@ const startSession = () => {
     isConnecting.value = true;
     errorMessage.value = '';
 
-    if (!socketUrl.value) {
+    const candidates = socketUrlCandidates.value;
+
+    if (!candidates.length) {
         statusText.value = 'Endpoint WebSocket belum disetel';
         isConnecting.value = false;
         return;
     }
 
-    const ws = new WebSocket(socketUrl.value);
+    const connectWithIndex = (index) => {
+        const target = candidates[index];
+        if (!target || !isConnecting.value) {
+            return;
+        }
 
-    ws.onopen = () => {
-        isConnected.value = true;
-        isConnecting.value = false;
-        statusText.value = 'Terhubung';
+        statusText.value = `Menghubungkan ke Hermes... (${index + 1}/${candidates.length})`;
 
-        ws.send(
-            JSON.stringify(
-                buildRequest(initMethod.value, {
-                    sessionId,
-                    source: 'system_aipreneur',
-                    userId: page.props.auth?.user?.id ?? null,
-                    user: page.props.auth?.user?.name ?? null,
-                    email: page.props.auth?.user?.email ?? null,
-                    location: page.url || window.location.pathname || '/okr',
-                    ts: new Date().toISOString(),
-                }),
-            ),
-        );
+        const ws = new WebSocket(target);
+        ws.onmessage = handleSocketMessage;
+        socket.value = ws;
+
+        ws.onopen = () => {
+            isConnected.value = true;
+            isConnecting.value = false;
+            statusText.value = `Terhubung (${target})`;
+            errorMessage.value = '';
+
+            ws.send(
+                JSON.stringify(
+                    buildRequest(initMethod.value, {
+                        sessionId,
+                        source: 'system_aipreneur',
+                        userId: page.props.auth?.user?.id ?? null,
+                        user: page.props.auth?.user?.name ?? null,
+                        email: page.props.auth?.user?.email ?? null,
+                        location: page.url || window.location.pathname || '/okr',
+                        ts: new Date().toISOString(),
+                    }),
+                ),
+            );
+        };
+
+        ws.onerror = () => {
+            if (!isConnecting.value) {
+                return;
+            }
+
+            statusText.value = `Gagal handshake di ${target}`;
+
+        };
+
+        ws.onclose = (event) => {
+            if (isConnected.value) {
+                isConnected.value = false;
+            }
+
+            if (!isConnecting.value) {
+                statusText.value = 'Koneksi tertutup';
+                socket.value = null;
+                return;
+            }
+
+            if (index + 1 < candidates.length) {
+                setTimeout(() => connectWithIndex(index + 1), 350);
+                return;
+            }
+
+            isConnecting.value = false;
+            statusText.value = `Koneksi ditutup: ${event?.reason || 'tanpa reason'}`;
+            errorMessage.value = `Hermes WS tidak bisa dibuka: ${target}`;
+            socket.value = null;
+        };
     };
 
-    ws.onmessage = handleSocketMessage;
-
-    ws.onerror = () => {
-        errorMessage.value = 'Gagal koneksi ke Hermes WS.';
-    };
-
-    ws.onclose = () => {
-        isConnected.value = false;
-        isConnecting.value = false;
-        statusText.value = 'Koneksi tertutup';
-        socket.value = null;
-    };
-
-    socket.value = ws;
+    connectWithIndex(0);
 };
 
 const closeSocket = () => {
