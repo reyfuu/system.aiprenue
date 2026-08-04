@@ -12,7 +12,11 @@ use App\Models\PayrollPeriod;
 use App\Models\Pipeline;
 use App\Models\Script;
 use App\Models\Transaction;
+use App\Models\OkrPeriod;
+use App\Models\Objective;
 use App\Support\ExchangeRate;
+use App\Support\OkrMetrics;
+use App\Support\Quarter;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Schema;
 
@@ -74,6 +78,35 @@ class DashboardController extends Controller
         $crmValue      = (float) $crmCards->sum('amount_idr') + (float) $crmCards->sum('amount_usd') * $rate;
         $crmConversion = $crmTotal > 0 ? round(($crmClosed / $crmTotal) * 100, 1) : 0.0;
         $crmFollowUpRate = $crmTotal > 0 ? round(($crmDueSoon / $crmTotal) * 100, 1) : 0.0;
+
+        $salesSummary = [
+            'total'        => $crmTotal,
+            'open'         => $crmOpen,
+            'deals'        => $crmClosed,
+            'dueSoon'      => $crmDueSoon,
+            'valueTotal'   => (float) $crmValue,
+            'openRate'     => $crmTotal > 0 ? round(($crmOpen / $crmTotal) * 100, 1) : 0,
+            'conversion'   => $crmConversion,
+            'followUpRate' => $crmFollowUpRate,
+        ];
+
+        $q = Quarter::current();
+        [$okrYear, $okrQuarter] = [$q['year'], $q['quarter']];
+        $okrRealisasi = OkrMetrics::realisasi($okrYear, $okrQuarter);
+        $okrObjectives = Objective::forQuarter($okrYear, $okrQuarter);
+        $okrKrs = $okrObjectives->pluck('keyResults')->flatten(1);
+        $okrProgress = $okrObjectives
+            ->map(fn (Objective $o) => $o->progress($okrRealisasi))
+            ->filter(fn ($p) => $p !== null);
+        $okrPercent = $okrKrs->map(fn ($kr) => $kr->percent($okrRealisasi))->filter(fn ($p) => $p !== null);
+
+        $period = OkrPeriod::where('year', $okrYear)
+            ->where('quarter', $okrQuarter)
+            ->first();
+        $okrTarget = $period?->omset_target !== null && (float) $period->omset_target > 0
+            ? (float) $period->omset_target
+            : (float) $okrObjectives->sum(fn ($o) => (float) $o->omset_target);
+        $okrActual = (float) ($okrRealisasi['omset'] ?? 0);
 
         $hasPayrollTables = Schema::hasTable('payroll_periods') && Schema::hasTable('payroll_entries');
         $payrollSummary = [
@@ -271,6 +304,22 @@ class DashboardController extends Controller
                 'openRate'   => $crmTotal > 0 ? round(($crmOpen / $crmTotal) * 100, 1) : 0,
                 'conversion' => $crmConversion,
                 'followUpRate' => $crmFollowUpRate,
+            ],
+            'sales' => $salesSummary,
+            'okr' => [
+                'quarter' => Quarter::label($okrYear, $okrQuarter),
+                'objectives' => $okrObjectives->count(),
+                'keyResults' => $okrKrs->count(),
+                'progress' => $okrProgress->isEmpty() ? null : round($okrProgress->average(), 1),
+                'tercapai' => $okrPercent->filter(fn ($p) => $p >= 100)->count(),
+                'tertinggal' => $okrPercent->filter(fn ($p) => $p < 60)->count(),
+                'omsetTarget' => $okrTarget,
+                'omsetActual' => $okrActual,
+                'omsetPercent' => $okrTarget > 0 ? round($okrActual / $okrTarget * 100, 1) : null,
+                'view' => (float) ($okrRealisasi['view'] ?? 0),
+                'subscriber' => (float) ($okrRealisasi['subscriber'] ?? 0),
+                'omsetFk' => (float) ($okrRealisasi['omset_fk'] ?? 0),
+                'omsetAipreneur' => (float) ($okrRealisasi['omset_aipreneur'] ?? 0),
             ],
             'absensi' => $absensiSummary,
             'payroll' => $payrollSummary,

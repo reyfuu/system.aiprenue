@@ -20,6 +20,8 @@ const props = defineProps({
     pembukuan: { type: Object, default: () => ({}) }, // { pemasukan, pengeluaran, laba, transaksi, invTotal }
     insight: { type: Object, default: () => ({}) }, // { konten, views, followerGain, top[] } — IG & YouTube
     crm: { type: Object, default: () => ({}) }, // { total, open, deals, dueSoon, valueTotal, openRate, conversion, followUpRate }
+    sales: { type: Object, default: () => ({}) }, // { total, open, deals, dueSoon, valueTotal, openRate, conversion, followUpRate }
+    okr: { type: Object, default: () => ({}) }, // { quarter, objectives, keyResults, progress, tercapai, tertinggal, omsetTarget, omsetActual, omsetPercent, view, subscriber, omsetFk, omsetAipreneur }
     absensi: { type: Object, default: () => ({}) }, // { today_attendance, month_attendance, absence_requests, absence_waiting, absence_approved, absence_rejected }
     payroll: { type: Object, default: () => ({}) }, // { periods, draft, final, latest_period, latest_total_net, latest_employees, total_net, total_employees }
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
@@ -459,6 +461,71 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
                         <div class="flex items-center justify-between text-sm">
                             <span class="text-slate-500">Nilai CRM</span>
                             <span class="font-semibold text-slate-700">{{ rp(crm.valueTotal || 0) }}</span>
+                        </div>
+                    </div>
+                </Link>
+
+                <!-- ---- Sales — ringkas follow-up, deal, dan estimasi omzet ---- -->
+                <Link
+                    v-if="menus.pipeline"
+                    href="/pipelines"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">Sales</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ sales.total || 0 }} <span class="text-sm text-slate-400 font-medium">deal</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        Open {{ sales.open || 0 }} · Deal {{ sales.deals || 0 }} · Due {{ sales.dueSoon || 0 }}
+                    </p>
+                    <div class="mt-4 space-y-2">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Conversion</span>
+                            <span class="font-semibold text-emerald-600">{{ sales.conversion || 0 }}%</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Estimasi omzet</span>
+                            <span class="font-semibold text-slate-700">{{ rp(sales.valueTotal || 0) }}</span>
+                        </div>
+                    </div>
+                </Link>
+
+                <!-- ---- OKR — ringkasan target & realisasi kuartal berjalan ---- -->
+                <Link
+                    v-if="menus.okr"
+                    href="/okr"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">OKR {{ okr.quarter || '' }}</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ okr.progress !== null ? (okr.progress + '%') : '—' }}
+                        <span v-if="okr.progress !== null" class="text-sm text-slate-400 font-medium">progress</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ okr.objectives || 0 }} objective · {{ okr.keyResults || 0 }} KR
+                    </p>
+                    <div class="mt-4 space-y-2">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Tercapai / Tertinggal</span>
+                            <span class="font-semibold text-slate-700">{{ okr.tercapai || 0 }} / {{ okr.tertinggal || 0 }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Omzet</span>
+                            <span class="font-semibold text-emerald-600">{{ rp(okr.omsetActual || 0) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm border-t border-brand-50 pt-2">
+                            <span class="text-slate-500">Target</span>
+                            <span class="font-semibold text-slate-700">{{ okr.omsetTarget ? rp(okr.omsetTarget) : '—' }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">View / Subscriber</span>
+                            <span class="font-semibold text-slate-700">{{ ringkas(okr.view || 0) }} / {{ ringkas(okr.subscriber || 0) }}</span>
                         </div>
                     </div>
                 </Link>
