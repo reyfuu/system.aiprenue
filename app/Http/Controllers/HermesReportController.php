@@ -209,8 +209,8 @@ class HermesReportController extends Controller
         $config = config('services.hermes_agent');
         $token = (string) ($config['token'] ?? '');
         $baseUrl = trim((string) ($config['url'] ?? ''));
-        $chatPath = trim((string) ($config['chat_path'] ?? '/chat'), ' /');
         $timeout = (int) ($config['timeout'] ?? 20);
+        $chatPaths = $this->normalizeHermesChatPaths((string) ($config['chat_path'] ?? '/api/chat'));
 
         if ($token === '' || $baseUrl === '') {
             return response()->json([
@@ -221,25 +221,50 @@ class HermesReportController extends Controller
         }
 
         try {
-            $res = Http::timeout($timeout)
-                ->withToken($token)
-                ->acceptJson()
-                ->post(rtrim($baseUrl, '/') . '/' . $chatPath, [
-                    'message' => $message,
-                    'intent' => $intent,
-                    'user_id' => $userId,
-                    'source' => 'system',
-                    'context' => [
-                        'current_quarter' => Quarter::current(),
-                        'kanban' => $this->kanbanContext(),
-                    ],
-                ]);
+            $resolved = null;
+            $attempts = [];
+            $lastStatus = null;
 
-            if (! $res->successful()) {
+            foreach ($chatPaths as $chatPath) {
+                $url = rtrim($baseUrl, '/') . '/' . ltrim($chatPath, '/');
+                $res = Http::timeout($timeout)
+                    ->withToken($token)
+                    ->acceptJson()
+                    ->post($url, [
+                        'message' => $message,
+                        'intent' => $intent,
+                        'user_id' => $userId,
+                        'source' => 'system',
+                        'context' => [
+                            'current_quarter' => Quarter::current(),
+                            'kanban' => $this->kanbanContext(),
+                        ],
+                    ]);
+
+                $attempts[] = $chatPath . ' => ' . $res->status();
+                $lastStatus = $res->status();
+
+                if ($res->status() !== 405) {
+                    $resolved = $res;
+                    break;
+                }
+            }
+
+            $res = $resolved;
+
+            if (! $res?->successful()) {
+                if ($lastStatus === 405 && ! empty($attempts)) {
+                    return response()->json([
+                        'ok' => false,
+                        'source' => 'system',
+                        'reply' => "Hermes menolak jalur chat (HTTP 405) pada: " . implode(', ', $attempts),
+                    ], 502);
+                }
+
                 return response()->json([
                     'ok' => false,
                     'source' => 'system',
-                    'reply' => "Hermes tidak merespons (HTTP {$res->status()}). ".$this->fallbackReply($message),
+                    'reply' => "Hermes tidak merespons (HTTP {$lastStatus}). ".$this->fallbackReply($message),
                 ], 502);
             }
 
@@ -300,6 +325,32 @@ class HermesReportController extends Controller
                 ->where('done', false)
                 ->count(),
         ];
+    }
+
+    private function normalizeHermesChatPaths(string $chatPathConfig): array
+    {
+        $paths = collect(preg_split('/\\s*,\\s*/', $chatPathConfig))
+            ->map(static fn (string $path) => trim($path))
+            ->filter()
+            ->map(static fn (string $path) => trim($path, '/'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        if (empty($paths)) {
+            return ['api/chat'];
+        }
+
+        if (! in_array('api/chat', $paths, true)) {
+            $paths[] = 'api/chat';
+        }
+
+        if (! in_array('chat', $paths, true)) {
+            $paths[] = 'chat';
+        }
+
+        return $paths;
     }
 
     private function fallbackReply(string $message): string

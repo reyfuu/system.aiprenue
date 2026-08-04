@@ -13,6 +13,7 @@ const messages = ref([]);
 const isSubmitting = ref(false);
 const socket = ref(null);
 const requestId = ref(1);
+const wsConnectTimeoutId = ref(null);
 const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
 const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
