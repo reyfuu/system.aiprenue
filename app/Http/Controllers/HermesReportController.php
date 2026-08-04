@@ -10,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
+use App\Models\Category;
+use App\Models\Pipeline;
 
 class HermesReportController extends Controller
 {
@@ -45,6 +47,10 @@ class HermesReportController extends Controller
 
         if (preg_match('/\b(check|cek|lihat|tampilkan|detail)\b.*\breport\b|\bdetail\b.*\bhermes\b|\breport\b.*\bdetail\b/i', $normalized)) {
             return 'detail_report';
+        }
+
+        if (preg_match('/\bkanban\b|\bkaban\b|\bboard\b|\bkartu\b|\btugascard\b|\btodo\b|\bkanban\s*board\b/i', $normalized)) {
+            return 'kanban_query';
         }
 
         return 'chat';
@@ -101,6 +107,7 @@ class HermesReportController extends Controller
                     'source' => 'system',
                     'context' => [
                         'current_quarter' => Quarter::current(),
+                        'kanban' => $this->kanbanContext(),
                     ],
                 ]);
 
@@ -136,6 +143,39 @@ class HermesReportController extends Controller
                 'reply' => 'Tidak bisa terhubung ke Hermes saat ini. '.$this->fallbackReply($message),
             ], 502);
         }
+    }
+
+    private function kanbanContext(): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('pipelines') || ! \Illuminate\Support\Facades\Schema::hasTable('categories')) {
+            return [
+                'summary' => 'Data kanban tidak tersedia (table belum ada).',
+                'total_active' => 0,
+                'total_done' => 0,
+                'overdue' => 0,
+                'due_next_3_days' => 0,
+            ];
+        }
+
+        $boardKeys = Category::query()->where('type', 'kanban')->pluck('key')->all();
+        $base = Pipeline::query()->whereIn('category', $boardKeys)->whereNull('archived_at');
+
+        return [
+            'summary' => "{$base->count()} kartu aktif di board Kanban.",
+            'total_active' => (int) $base->count(),
+            'total_done' => (int) (clone $base)->where('done', true)->count(),
+            'overdue' => (int) (clone $base)
+                ->whereNotNull('deadline')
+                ->where('deadline', '<', today())
+                ->where('done', false)
+                ->count(),
+            'due_next_3_days' => (int) (clone $base)
+                ->whereNotNull('deadline')
+                ->whereDate('deadline', '>=', today())
+                ->whereDate('deadline', '<=', today()->addDays(3))
+                ->where('done', false)
+                ->count(),
+        ];
     }
 
     private function fallbackReply(string $message): string
