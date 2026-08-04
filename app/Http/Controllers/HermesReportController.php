@@ -15,8 +15,8 @@ class HermesReportController extends Controller
 {
     public function chat(Request $request): JsonResponse
     {
-        // Fitur chat Hermes untuk semua user yang login.
-        abort_if(! $request->user(), 403, 'Anda harus login untuk memakai chatbot Hermes.');
+        // Fitur chat Hermes hanya untuk owner & IT (sesuai menu daily_report).
+        abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses ke chat Hermes.');
 
         $data = $request->validate([
             'message' => ['required', 'string', 'max:3000'],
@@ -145,6 +145,9 @@ class HermesReportController extends Controller
 
     public function index(Request $request)
     {
+        // Daily Report hanya untuk owner/it.
+        abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses ke halaman ini.');
+
         $filters = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],

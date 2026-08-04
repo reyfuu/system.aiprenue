@@ -135,7 +135,7 @@ class User extends Authenticatable
         }
 
         if ($menu === 'daily_report') {
-            return true;
+            return in_array($this->role, ['owner', 'it'], true);
         }
 
         if (($izin = $this->izinDariDb()) !== null) {
