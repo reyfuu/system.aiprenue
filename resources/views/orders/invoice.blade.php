@@ -213,7 +213,7 @@
         <p class="small">1. Silakan kirim pembayaran setelah menerima faktur ini.</p>
         <p class="small">2. Tidak dapat melakukan pembatalan setelah pembayaran dilakukan.</p>
         @if (! empty($needsDepositTerm))
-            <p class="small">3. Untuk layanan Coaching dan Speaker, pembayaran booking minimal 50% dari total invoice dibayarkan saat booking tanggal, dan pelunasan dilakukan H-1 acara.</p>
+            <p class="small">3. Untuk coaching dan speaker harus bayar 50% terlebih dahulu untuk booking tanggal dan pelunasan h-1 acara.</p>
         @endif
         <p class="small">Saya telah setuju dengan syarat dan ketentuan yang berlaku.</p>
         <p class="small">Terimakasih telah bekerjasama dengan kami.</p>
