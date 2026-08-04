@@ -30,8 +30,33 @@ class InsightController extends Controller
             $platform = 'semua';
         }
 
+        $contentType = trim((string) $request->query('content_type', ''));
+        if (! array_key_exists($contentType, InsightContent::CONTENT_TYPES)) {
+            $contentType = 'semua';
+        }
+
+        $tipe = $contentType;
+
+        $filterByPlatform = InsightContent::query()
+            ->when($platform !== 'semua', fn ($q) => $q->where('platform', $platform));
+
+        $contentTypeQuery = clone $filterByPlatform;
+        $contentTypeOptions = $contentTypeQuery
+            ->whereNotNull('content_type')
+            ->distinct()
+            ->orderBy('content_type')
+            ->pluck('content_type')
+            ->filter()
+            ->reduce(
+                fn (array $acc, string $value) => $acc + [$value => InsightContent::CONTENT_TYPES[$value] ?? ucwords(str_replace('_', ' ', $value))],
+                []
+            );
+
+        $contentTypeOptions = ['semua' => 'Semua Tipe'] + $contentTypeOptions;
+
         $konten = InsightContent::query()
             ->when($platform !== 'semua', fn ($q) => $q->where('platform', $platform))
+            ->when($contentType !== 'semua', fn ($q) => $q->where('content_type', $contentType))
             ->orderByDesc('published_at')
             ->limit(200)   // batas atas skoring; UI menyebutkan kalau terpotong
             ->get();
@@ -45,6 +70,8 @@ class InsightController extends Controller
         return Inertia::render('Insight', [
             'platforms' => InsightContent::PLATFORMS,
             'aktif'     => $platform,
+            'contentTypes' => $contentTypeOptions,
+            'aktifTipe' => $tipe,
 
             // Kartu atas — hanya yang menjawab pertanyaan di docblock.
             'ringkasan' => [

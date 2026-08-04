@@ -2,21 +2,40 @@
 // Halaman Insight — performa konten Instagram & YouTube berdampingan.
 // Fokusnya menjawab "konten mana yang menang & kenapa", bukan memajang
 // sebanyak mungkin angka. Metrik yang tak menjawab itu sengaja tak ada.
+import { computed } from 'vue';
 import { router } from '@inertiajs/vue3'; // router untuk ganti filter platform
 import Layout from '../Layout.vue'; // Layout sudah render sidebar + toast
 
-defineProps({
+const props = defineProps({
     platforms: { type: Object, default: () => ({}) }, // key→label (instagram, youtube)
     aktif: { type: String, default: 'semua' }, // filter platform aktif
+    contentTypes: { type: Object, default: () => ({}) }, // key→label (semua, reel, short, ...)
+    aktifTipe: { type: String, default: 'semua' }, // filter tipe aktif
     ringkasan: { type: Object, default: () => ({}) }, // kartu atas
     konten: { type: Array, default: () => [] }, // top content, sudah terurut skor
     akun: { type: Array, default: () => [] }, // snapshot harian akun
 });
 
+const aktif = computed(() => props.aktif);
+const aktifTipe = computed(() => props.aktifTipe);
+const contentTypes = computed(() => props.contentTypes);
+const contentTypesList = computed(() =>
+    Object.entries(props.contentTypes || {})
+        .filter(([key]) => key !== 'semua')
+);
+
 // Ganti filter platform. preserveState:false — skor dihitung ulang terhadap
 // kumpulan yang baru, jadi seluruh angka halaman memang harus datang lagi.
 const gantiPlatform = (nilai) =>
     router.get('/insight', nilai === 'semua' ? {} : { platform: nilai }, { preserveScroll: true, preserveState: false });
+
+const gantiTipe = (nilai) => {
+    const query = {};
+    if (aktif.value !== 'semua') query.platform = aktif.value;
+    if (nilai !== 'semua') query.content_type = nilai;
+    if (nilai === 'semua' && aktif.value !== 'semua') query.platform = aktif.value;
+    router.get('/insight', query, { preserveScroll: true, preserveState: false });
+};
 
 // Angka besar → ringkas (12.400 → 12,4rb). Tabel jadi terbaca tanpa menggeser.
 const ringkas = (n) => {
@@ -77,6 +96,38 @@ const WARNA = {
 
                 <span v-if="aktif !== 'semua'" class="text-xs text-slate-400 ml-1">
                     Skor dihitung ulang terhadap konten {{ platforms[aktif] }} saja
+                </span>
+            </div>
+
+            <!-- ===== Filter tipe konten ===== -->
+            <div v-if="contentTypesList.length > 0" class="flex flex-wrap items-center gap-2">
+                <button
+                    :class="[
+                        'text-xs font-medium px-3 py-1.5 rounded-xl border transition',
+                        aktifTipe === 'semua'
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-slate-500 border-brand-100 hover:border-brand-300',
+                    ]"
+                    @click="gantiTipe('semua')"
+                >
+                    Semua Tipe
+                </button>
+                <button
+                    v-for="[key, label] in contentTypesList"
+                    :key="key"
+                    :class="[
+                        'text-xs font-medium px-3 py-1.5 rounded-xl border transition',
+                        aktifTipe === key
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-slate-500 border-brand-100 hover:border-brand-300',
+                    ]"
+                    @click="gantiTipe(key)"
+                >
+                    {{ label }}
+                </button>
+
+                <span v-if="aktifTipe !== 'semua'" class="text-xs text-slate-400 ml-1">
+                    Skor dihitung ulang juga terhadap tipe {{ contentTypes[aktifTipe] }} saja
                 </span>
             </div>
 
