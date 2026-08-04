@@ -34,6 +34,9 @@ return [
     // Kosong = endpointnya menolak semua permintaan.
     'hermes_agent' => [
         'token' => env('HERMES_AGENT_TOKEN'),
+        'url' => env('HERMES_AGENT_URL'),
+        'chat_path' => env('HERMES_AGENT_CHAT_PATH', '/chat'),
+        'timeout' => (int) env('HERMES_AGENT_TIMEOUT', 20),
     ],
 
     // 9router — proxy LLM lokal di VPS (127.0.0.1). Dipakai untuk generate
