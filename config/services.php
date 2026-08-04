@@ -30,6 +30,12 @@ return [
         'token' => env('INSIGHT_AGENT_TOKEN'),
     ],
 
+    // Agen Hermes (VPS) → POST /api/hermes/daily-report.
+    // Kosong = endpointnya menolak semua permintaan.
+    'hermes_agent' => [
+        'token' => env('HERMES_AGENT_TOKEN'),
+    ],
+
     // 9router — proxy LLM lokal di VPS (127.0.0.1). Dipakai untuk generate
     // OKR via ChatGPT & Claude. URL wajib penuh (http://host:port/v1).
     // token = API key 9router; chatgpt_model = model ChatGPT dengan prefix

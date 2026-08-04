@@ -186,7 +186,8 @@ class OrderController extends Controller
             ],
         ];
 
-        $needsDepositTerm = str_contains($order->tipe_order, 'coaching') || in_array($order->tipe_order, ['speaker'], true);
+        $orderType = strtolower(trim((string) $order->tipe_order));
+        $needsDepositTerm = str_contains($orderType, 'coaching') || str_contains($orderType, 'speaker');
 
         $invoicePayload = [
             'invoiceNo' => $invoiceNo,

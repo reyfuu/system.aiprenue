@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Support\OkrNotifications;
+use App\Support\Hermes;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -149,6 +150,7 @@ class HandleInertiaRequests extends Middleware
      */
     private function notifikasiServer(User $user)
     {
+        Hermes::autoReport($user);
         OkrNotifications::ingatkanDeadline($user);
 
         return $user->notifications()
