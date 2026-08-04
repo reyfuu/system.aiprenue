@@ -1,15 +1,334 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 
+const page = usePage();
 const isOpen = ref(false);
-const iframeUrl = 'https://hermes.aipreneur.co.id/';
+const isConnected = ref(false);
+const isConnecting = ref(false);
+const errorMessage = ref('');
+const statusText = ref('');
+const input = ref('');
+const messages = ref([]);
+const isSubmitting = ref(false);
+const socket = ref(null);
+const requestId = ref(1);
+const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
+const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
+const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD || 'chat').trim());
+
+const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
+const messagesPanel = ref(null);
+
+const closeMessage = () => {
+    isConnected.value = false;
+    isConnecting.value = false;
+    socket.value = null;
+};
+
+const pushMessage = (role, text) => {
+    messages.value.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role,
+        text,
+        createdAt: new Date().toISOString(),
+    });
+    nextTick(() => {
+        const el = messagesPanel.value;
+        if (el) {
+            el.scrollTop = el.scrollHeight;
+        }
+    });
+};
+
+const setTempAssistant = () => {
+    const temp = { id: `temp-${Date.now()}`, role: 'assistant', text: '', pending: true };
+    messages.value.push(temp);
+    return temp.id;
+};
+
+const updateMessageById = (id, updater) => {
+    const i = messages.value.findIndex((m) => m.id === id);
+    if (i === -1) return;
+    messages.value[i] = { ...messages.value[i], ...updater };
+    nextTick(() => {
+        const el = messagesPanel.value;
+        if (el) el.scrollTop = el.scrollHeight;
+    });
+};
+
+const normalizeReply = (payload) => {
+    if (!payload) return '';
+
+    if (typeof payload === 'string') {
+        return payload;
+    }
+
+    if (Array.isArray(payload)) {
+        return payload
+            .map((item) => (typeof item === 'string' ? item : item?.text || item?.content || item?.message || ''))
+            .filter(Boolean)
+            .join('\n')
+            .trim();
+    }
+
+    const keys = [
+        payload.reply,
+        payload.message,
+        payload.content,
+        payload.text,
+        payload.output,
+        payload.response,
+        payload.result?.reply,
+        payload.result?.message,
+        payload.result?.content,
+    ];
+
+    const direct = keys.find((item) => typeof item === 'string' && item.trim());
+    if (direct) return direct.trim();
+
+    const chunks = payload.chunk || payload.delta || payload.result?.chunk || payload.result?.delta;
+    if (typeof chunks === 'string' && chunks.trim()) return chunks.trim();
+
+    return '';
+};
+
+const isJsonRpcResponse = (payload) =>
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.jsonrpc === 'string' &&
+    ('result' in payload || 'error' in payload || 'params' in payload) &&
+    'id' in payload;
+
+const handleSocketMessage = (event) => {
+    let payload = null;
+
+    try {
+        payload = JSON.parse(event.data);
+    } catch {
+        pushMessage('assistant', event.data);
+        return;
+    }
+
+    if (isJsonRpcResponse(payload)) {
+        const text = normalizeReply(payload.result || payload.error);
+        const target = payload.id || `${Date.now()}`;
+
+        if (text) {
+            const existing = messages.value
+                .map((m, i) => ({ m, i }))
+                .find((row) => row.m.role === 'assistant' && row.m.pending && row.m.id.startsWith(`pending-${target}`));
+
+            if (existing) {
+                const newText = `${messages.value[existing.i].text}${text}`;
+                updateMessageById(messages.value[existing.i].id, { text: newText, pending: false });
+                return;
+            }
+        }
+
+        if (text) {
+            pushMessage('assistant', text);
+            return;
+        }
+
+        if (payload.error) {
+            const msg = payload.error.message || 'Hermes mengembalikan error.';
+            pushMessage('system', `Hermes error: ${msg}`);
+        }
+
+        return;
+    }
+
+    const text = normalizeReply(payload);
+    if (text) {
+        pushMessage('assistant', text);
+        return;
+    }
+
+    if (payload.event && payload.text) {
+        pushMessage('assistant', payload.text);
+        return;
+    }
+
+    if (payload.type === 'ping') {
+        return;
+    }
+};
+
+const buildRequest = (method, params) => ({
+    jsonrpc: '2.0',
+    id: requestId.value++,
+    method,
+    params,
+});
+
+const startSession = () => {
+    closeMessage();
+    statusText.value = 'Menghubungkan ke Hermes…';
+    isConnecting.value = true;
+    errorMessage.value = '';
+
+    if (!socketUrl.value) {
+        statusText.value = 'Endpoint WebSocket belum disetel';
+        isConnecting.value = false;
+        return;
+    }
+
+    const ws = new WebSocket(socketUrl.value);
+
+    ws.onopen = () => {
+        isConnected.value = true;
+        isConnecting.value = false;
+        statusText.value = 'Terhubung';
+
+        ws.send(
+            JSON.stringify(
+                buildRequest(initMethod.value, {
+                    sessionId,
+                    source: 'system_aipreneur',
+                    userId: page.props.auth?.user?.id ?? null,
+                    user: page.props.auth?.user?.name ?? null,
+                    email: page.props.auth?.user?.email ?? null,
+                    location: page.url || window.location.pathname || '/okr',
+                    ts: new Date().toISOString(),
+                }),
+            ),
+        );
+    };
+
+    ws.onmessage = handleSocketMessage;
+
+    ws.onerror = () => {
+        errorMessage.value = 'Gagal koneksi ke Hermes WS.';
+    };
+
+    ws.onclose = () => {
+        isConnected.value = false;
+        isConnecting.value = false;
+        statusText.value = 'Koneksi tertutup';
+        socket.value = null;
+    };
+
+    socket.value = ws;
+};
+
+const closeSocket = () => {
+    if (socket.value && socket.value.readyState <= 1) {
+        socket.value.close();
+    }
+    closeMessage();
+};
+
+const fallbackToHttp = async (messageText, pendingId) => {
+    try {
+        const res = await fetch(chatHost, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ message: messageText }),
+        });
+
+        const data = await res.json().catch(() => null);
+        const reply = data?.reply || data?.message || 'Tidak ada balasan.';
+
+        if (!res.ok) {
+            updateMessageById(pendingId, {
+                text: `Fallback HTTP gagal (${res.status}). ${reply}`,
+                pending: false,
+            });
+            return;
+        }
+
+        updateMessageById(pendingId, {
+            text: reply,
+            pending: false,
+            source: data?.source || 'system',
+        });
+    } catch (error) {
+        updateMessageById(pendingId, {
+            text: `Tidak bisa terhubung Hermes: ${String(error?.message || error)}`,
+            pending: false,
+        });
+    }
+};
+
+const sendChat = async () => {
+    const text = input.value.trim();
+    if (!text || isSubmitting.value) return;
+
+    isSubmitting.value = true;
+    pushMessage('user', text);
+    input.value = '';
+
+    const tempId = setTempAssistant();
+
+    const payload = {
+        sessionId,
+        message: text,
+        ts: new Date().toISOString(),
+        source: 'system_aipreneur',
+    };
+
+    if (socket.value && socket.value.readyState === WebSocket.OPEN) {
+        const messageId = requestId.value;
+        const rpc = buildRequest(chatMethod.value, payload);
+
+        updateMessageById(tempId, { id: `pending-${messageId}`, pending: true });
+
+        try {
+            socket.value.send(JSON.stringify(rpc));
+        } catch (error) {
+            updateMessageById(tempId, {
+                text: `Gagal kirim ke WebSocket: ${String(error?.message || error)}`,
+                pending: false,
+            });
+            closeSocket();
+            await fallbackToHttp(text, tempId);
+        }
+    } else {
+        updateMessageById(tempId, { text: 'WebSocket belum siap, mencoba fallback HTTP…', pending: false });
+        await fallbackToHttp(text, tempId);
+    }
+
+    isSubmitting.value = false;
+};
+
+const onToggle = () => {
+    isOpen.value = !isOpen.value;
+    if (isOpen.value) {
+        if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+            messages.value = messages.value.length ? messages.value : [
+                { id: `intro-${Date.now()}`, role: 'system', text: 'Siap terhubung ke Hermes.', createdAt: new Date().toISOString() },
+            ];
+            startSession();
+        }
+    }
+};
+
+watch(
+    () => isOpen.value,
+    (value) => {
+        if (!value) {
+            closeSocket();
+        }
+    },
+);
+
+onBeforeUnmount(() => {
+    closeSocket();
+});
 </script>
 
 <template>
     <div class="fixed bottom-6 right-6 z-50">
         <button
             type="button"
-            @click="isOpen = !isOpen"
+            @click="onToggle"
             class="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg focus:outline-none transition transform hover:scale-105"
             aria-label="Hermes AI Assistant"
         >
@@ -33,7 +352,49 @@ const iframeUrl = 'https://hermes.aipreneur.co.id/';
                 <span>Hermes AI Assistant</span>
                 <button type="button" @click="isOpen = false" class="text-white hover:text-gray-200">✕</button>
             </div>
-            <iframe :src="iframeUrl" class="w-full flex-grow border-none" allow="microphone; clipboard-read; clipboard-write"></iframe>
+            <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 text-xs text-slate-500 flex justify-between items-center">
+                <span>{{ statusText || 'Menyiapkan…' }}</span>
+                <span>{{ isConnected ? 'Streaming aktif' : 'Tidak terkoneksi' }}</span>
+            </div>
+
+            <div ref="messagesPanel" class="flex-1 overflow-y-auto p-3 space-y-2 text-sm">
+                <div
+                    v-for="item in messages"
+                    :key="item.id"
+                    class="rounded-xl px-3 py-2 max-w-[85%]"
+                    :class="[
+                        item.role === 'user' ? 'ml-auto bg-brand-600 text-white' : item.role === 'system' ? 'bg-yellow-100 text-yellow-900' : 'bg-slate-100 text-slate-700',
+                    ]"
+                >
+                    <p class="whitespace-pre-wrap">{{ item.text }}</p>
+                    <p v-if="item.pending" class="text-[11px] opacity-70 mt-1">mengetik…</p>
+                </div>
+            </div>
+
+            <form
+                class="p-3 border-t border-slate-200"
+                @submit.prevent="sendChat"
+            >
+                <p v-if="errorMessage" class="text-xs text-red-600 mb-2">{{ errorMessage }}</p>
+                <div class="flex gap-2">
+                    <input
+                        v-model="input"
+                        type="text"
+                        maxlength="2000"
+                        placeholder="Tanya tugas audi di kanban..."
+                        class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
+                        :disabled="isSubmitting"
+                    />
+                    <button
+                        type="submit"
+                        :disabled="!input.trim() || isSubmitting"
+                        class="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-brand-700"
+                    >
+                        {{ isSubmitting ? 'Kirim…' : 'Kirim' }}
+                    </button>
+                </div>
+                <p class="mt-1.5 text-[11px] text-slate-400">Koneksi: JSON-RPC via WebSocket (`/ws`) + fallback HTTP (`/hermes/chat`).</p>
+            </form>
         </div>
     </div>
 </template>

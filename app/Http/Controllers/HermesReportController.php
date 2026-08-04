@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Notifications\HermesDailyReportNotification;
 use App\Support\Hermes;
 use App\Support\Quarter;
@@ -30,6 +31,7 @@ class HermesReportController extends Controller
         return match ($intent) {
             'create_okr' => $this->responseCreateOkr(),
             'detail_report' => $this->responseDetailReport(),
+            'kanban_query' => $this->responseKanbanQuery($request->user(), $message),
             default => $this->responseHermesMessage($request->user()?->id, $message, $intent),
         };
     }
@@ -78,6 +80,128 @@ class HermesReportController extends Controller
             'reply' => Hermes::formatMessage($summary, Carbon::today()->translatedFormat('d M Y')),
             'summary' => $summary,
         ]);
+    }
+
+    private function responseKanbanQuery(?User $actor, string $message): JsonResponse
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('pipelines') || !\Illuminate\Support\Facades\Schema::hasTable('categories')) {
+            return response()->json([
+                'ok' => false,
+                'source' => 'system',
+                'reply' => 'Data kanban belum siap saat ini (struktur tabel belum tersedia).',
+            ], 502);
+        }
+
+        $boardKeys = Category::query()->where('type', 'kanban')->pluck('key')->all();
+        if (empty($boardKeys)) {
+            return response()->json([
+                'ok' => true,
+                'source' => 'system',
+                'reply' => 'Saat ini belum ada board kanban yang aktif untuk dibaca.',
+            ]);
+        }
+
+        $target = $this->extractUserMention($message, $actor);
+        $targetLabel = $target ? $target->name : 'semua user';
+
+        $query = Pipeline::query()
+            ->with('assignee:id,name')
+            ->whereIn('category', $boardKeys)
+            ->whereNull('archived_at');
+
+        if ($target) {
+            $query->where('assigned_to', $target->id);
+        } elseif ($actor) {
+            $query->where(function ($q) use ($actor) {
+                $q->whereNull('assigned_to')->orWhere('assigned_to', $actor->id);
+            });
+        }
+
+        $active = (clone $query)
+            ->where('done', false)
+            ->orderByRaw('COALESCE(deadline, DATE(\'9999-12-31\'))')
+            ->orderBy('id', 'desc')
+            ->take(8)
+            ->get(['id', 'endorse', 'deadline', 'progress', 'assigned_to']);
+
+        $doneToday = (clone $query)
+            ->where('done', true)
+            ->whereDate('completed_at', today())
+            ->orderByDesc('completed_at')
+            ->take(8)
+            ->get(['id', 'endorse', 'completed_at', 'progress', 'assigned_to']);
+
+        $activeCount = (clone $query)->where('done', false)->count();
+        $doneTodayCount = (clone $query)->where('done', true)->whereDate('completed_at', today())->count();
+        $overdueCount = (clone $query)
+            ->where('done', false)
+            ->whereNotNull('deadline')
+            ->where('deadline', '<', today())
+            ->count();
+
+        $lines = [
+            "Siap, aku ambil ringkasan kanban untuk {$targetLabel} hari ini.",
+            "Total aktif: {$activeCount} | Selesai hari ini: {$doneTodayCount} | Terlambat: {$overdueCount}.",
+            '',
+        ];
+
+        if ($active->isNotEmpty()) {
+            $lines[] = 'Masih aktif:';
+            foreach ($active as $card) {
+                $assignee = $card->assignee?->name ?? '-';
+                $due = $card->deadline ? $card->deadline->format('d M') : 'tanpa deadline';
+                $lines[] = "- #{$card->id} {$card->endorse} · {$card->progress} · deadline {$due} · PIC {$assignee}";
+            }
+            $lines[] = '';
+        }
+
+        if ($doneToday->isNotEmpty()) {
+            $lines[] = 'Selesai hari ini:';
+            foreach ($doneToday as $card) {
+                $assignee = $card->assignee?->name ?? '-';
+                $doneAt = $card->completed_at ? $card->completed_at->format('H:i') : '—';
+                $lines[] = "- #{$card->id} {$card->endorse} · {$card->progress} · selesai {$doneAt} · PIC {$assignee}";
+            }
+        }
+
+        if (! $active->isNotEmpty() && ! $doneToday->isNotEmpty()) {
+            $lines[] = 'Tidak ada item Kanban yang cocok dengan filter ini.';
+        }
+
+        return response()->json([
+            'ok' => true,
+            'source' => 'local',
+            'reply' => implode(PHP_EOL, $lines),
+        ]);
+    }
+
+    private function extractUserMention(string $message, ?User $actor): ?User
+    {
+        $normalized = strtolower(trim($message));
+        if ($actor && preg_match('/\b(saya|aku|gue|gue|ku)\b/i', $normalized)) {
+            return $actor;
+        }
+
+        $clean = preg_replace('/[^a-z0-9@._-\\s]/i', ' ', $normalized);
+        $tokens = array_filter(preg_split('/\\s+/', (string) $clean), fn ($token) => strlen($token) >= 3);
+
+        $stopWords = ['tugas', 'kerjaan', 'work', 'di', 'kanban', 'board', 'a', 'apa', 'apa saja', 'selesai', 'yang', 'mana', 'siapa', 'aja', 'saja', 'dari'];
+        foreach ($tokens as $token) {
+            if (in_array($token, $stopWords, true)) {
+                continue;
+            }
+
+            $user = User::query()
+                ->whereRaw('LOWER(name) LIKE ?', ["%{$token}%"])
+                ->orWhereRaw('LOWER(email) LIKE ?', ["%{$token}%"])
+                ->first();
+
+            if ($user) {
+                return $user;
+            }
+        }
+
+        return null;
     }
 
     private function responseHermesMessage(?int $userId, string $message, string $intent): JsonResponse
