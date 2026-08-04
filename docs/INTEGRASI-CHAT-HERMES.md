@@ -35,3 +35,47 @@ Tambahkan variabel berikut pada `.env` agar endpoint dan method bisa dikustom:
 - `VITE_HERMES_WS_INIT_METHOD=init`
 - `VITE_HERMES_WS_CHAT_METHOD=chat`
 - `VITE_HERMES_CHAT_URL=/hermes/chat`
+
+## Jalur koneksi yang harus dipakai
+
+- Koneksi chat realtime harus mengarah ke WebSocket endpoint:
+  - `wss://hermes.aipreneur.co.id/ws`
+- Jangan memanggil root `https://hermes.aipreneur.co.id/` untuk chat realtime.
+
+## Operasional service Hermes (VPS)
+
+Jalankan servis Hermes dashboard di VPS (atau lokal saat debug) dengan:
+
+```bash
+hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build &
+```
+
+Pastikan:
+
+- prosesnya jalan (TCP 9119 aktif),
+- reverse proxy mengarah ke endpoint websocket `/ws` dari domain publik `wss://hermes.aipreneur.co.id/ws`,
+- `HERMES_AGENT_URL` di app Laravel mengarah ke base HTTP VPS (`https://hermes.aipreneur.co.id`),
+- `HERMES_AGENT_CHAT_PATH` sesuai path chat yang benar (contoh: `/chat`).
+
+## Checklist verifikasi (jika muncul error koneksi)
+
+1. Jalankan / cek service Hermes:
+
+```bash
+hermes dashboard --host 127.0.0.1 --port 9119 --no-open --skip-build &
+lsof -i :9119 | grep LISTEN
+```
+
+2. Pastikan route WebSocket sudah benar ke `/ws`:
+
+```bash
+curl -i https://hermes.aipreneur.co.id/ws
+```
+
+3. Pastikan `.env` app Laravel memiliki nilai:
+
+- `HERMES_AGENT_URL=https://hermes.aipreneur.co.id`
+- `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS)
+- `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
+
+4. `HTTP 405` biasanya berarti Hermes VPS tidak menerima method/path yang kamu panggil untuk route chat (biasanya karena path salah, bukan karena WebSocket `/ws`).
