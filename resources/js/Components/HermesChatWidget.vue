@@ -14,6 +14,7 @@ const isSubmitting = ref(false);
 const socket = ref(null);
 const requestId = ref(1);
 const pendingAssistantMessageIds = ref({});
+const wsConnectTimeoutId = ref(null);
 const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
 const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
@@ -22,9 +23,17 @@ const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD ||
 const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
 const messagesPanel = ref(null);
 
+const clearWsConnectTimeout = () => {
+    if (wsConnectTimeoutId.value) {
+        clearTimeout(wsConnectTimeoutId.value);
+        wsConnectTimeoutId.value = null;
+    }
+};
+
 const closeMessage = () => {
     isConnected.value = false;
     isConnecting.value = false;
+    clearWsConnectTimeout();
     socket.value = null;
 };
 
@@ -186,10 +195,20 @@ const startSession = () => {
     }
 
     const ws = new WebSocket(socketUrl.value);
+    wsConnectTimeoutId.value = window.setTimeout(() => {
+        if (!isConnected.value && socket.value === ws) {
+            isConnecting.value = false;
+            errorMessage.value = 'Realtime Hermes belum tersambung, memakai fallback HTTP.';
+            statusText.value = 'Fallback aktif';
+            ws.close();
+        }
+    }, 6000);
 
     ws.onopen = () => {
+        clearWsConnectTimeout();
         isConnected.value = true;
         isConnecting.value = false;
+        errorMessage.value = '';
         statusText.value = 'Terhubung ke Hermes';
 
         ws.send(
@@ -210,11 +229,14 @@ const startSession = () => {
     ws.onmessage = handleSocketMessage;
 
     ws.onerror = () => {
+        clearWsConnectTimeout();
         errorMessage.value = 'Gagal koneksi ke Hermes WS.';
         statusText.value = 'Gagal koneksi';
+        isConnecting.value = false;
     };
 
     ws.onclose = () => {
+        clearWsConnectTimeout();
         isConnected.value = false;
         isConnecting.value = false;
         statusText.value = 'Koneksi tertutup';
