@@ -68,16 +68,18 @@ class HandleInertiaRequests extends Middleware
                     // Peta menu yang boleh dilihat → dipakai Sidebar
                     'menus' => [
                         'dashboard' => $user->canSee('dashboard'),
-                        'pipeline' => $user->canSee('pipeline'),
-                        'kanban' => $user->canSee('kanban'),
+                    'pipeline' => $user->canSee('pipeline'),
+                    'crm' => $user->canSee('crm'),
+                    'kanban' => $user->canSee('kanban'),
                         'order' => $user->canSee('order'),
                         'mindmap' => $user->canSee('mindmap'),
                         'script' => $user->canSee('script'),
                         'content' => $user->canSee('content'),     // kalender produksi konten
                         'tracking' => $user->canSee('tracking'),   // ringkasan progress owner/manager
                         'okr' => $user->canSee('okr'),          // OKR: objective & key result
-                        'absensi' => $user->canSee('absensi'),      // absensi — semua peran
-                        'pembukuan' => $user->canSee('pembukuan'),
+                    'absensi' => $user->canSee('absensi'),      // absensi — semua peran
+                    'payroll' => $user->canSee('payroll'),
+                    'pembukuan' => $user->canSee('pembukuan'),
                         'user' => $user->canSee('user'),
                         'insight' => $user->canSee('insight'),      // Insight IG & YouTube
                         'upload' => $user->canSee('upload'),       // Upload konten multi-platform (template)

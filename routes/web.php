@@ -22,6 +22,8 @@ use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\ColumnTaskController;
 use App\Http\Controllers\PipelineTaskController;
+use App\Http\Controllers\CRMController;
+use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -173,10 +175,23 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
     Route::get('/kpi', [KpiController::class, 'index'])->name('kpi.index');
     Route::post('/kpi/targets', [KpiController::class, 'storeTarget'])->name('kpi.targets.store');
 
+    // CRM — ringkasan Sales/Pipeline untuk follow-up, reminder, dan prioritas.
+    Route::get('/crm', [CRMController::class, 'index'])->name('crm.index');
+
+    // Payroll — perhitungan gaji bulanan + potongan/tunjangan dasar.
+    Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');
+    Route::post('/payroll/generate', [PayrollController::class, 'generate'])->name('payroll.generate');
+    Route::patch('/payroll/{payrollPeriod}/finalize', [PayrollController::class, 'finalize'])->name('payroll.finalize');
+
     // Absensi — semua peran boleh mengajukan cuti/sakit/izin & lihat riwayat.
     // Approve/tolak dibatasi canManage() di dalam AbsenceController.
     Route::get('/absensi', [AbsenceController::class, 'index'])->name('absensi.index');
     Route::post('/absensi', [AbsenceController::class, 'store'])->name('absensi.store');
+    Route::post('/absensi/check-in', [AbsenceController::class, 'checkIn'])->name('absensi.check-in');
+    Route::post('/absensi/check-out', [AbsenceController::class, 'checkOut'])->name('absensi.check-out');
+    Route::post('/absensi/presensi', [AbsenceController::class, 'storeAttendance'])->name('absensi.presensi.store');
+    Route::patch('/absensi/presensi/{attendance}', [AbsenceController::class, 'updateAttendance'])->name('absensi.presensi.update');
+    Route::delete('/absensi/presensi/{attendance}', [AbsenceController::class, 'destroyAttendance'])->name('absensi.presensi.destroy');
     Route::patch('/absensi/{absence}/status', [AbsenceController::class, 'updateStatus'])->name('absensi.status');
     Route::delete('/absensi/{absence}', [AbsenceController::class, 'destroy'])->name('absensi.destroy');
 

@@ -33,6 +33,10 @@ const form = useForm({
     email: '', // field email
     password: '', // field password
     role: 'manager', // default role manager
+    base_salary: 0,
+    meal_allowance: 0,
+    overtime_rate_per_hour: 0,
+    late_penalty_per_minute: 0,
 }); // akhir useForm
 
 // Buka modal untuk tambah user baru
@@ -57,6 +61,10 @@ const openEdit = (u) => {
     form.email = u.email; // isi email dari user
     form.password = ''; // password kosong (opsional)
     form.role = u.role; // isi role dari user
+    form.base_salary = u.base_salary;
+    form.meal_allowance = u.meal_allowance;
+    form.overtime_rate_per_hour = u.overtime_rate_per_hour;
+    form.late_penalty_per_minute = u.late_penalty_per_minute;
     open.value = true; // tampilkan modal
 }; // akhir openEdit
 
@@ -94,7 +102,16 @@ const resetPassword = (u) => {
         alert('Password minimal 6 karakter.');
         return;
     } // validasi minimal
-    router.put('/users/' + u.id, { name: u.name, email: u.email, role: u.role, password: pw }, { preserveScroll: true }); // kirim PUT, jaga posisi scroll
+    router.put('/users/' + u.id, {
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        base_salary: u.base_salary,
+        meal_allowance: u.meal_allowance,
+        overtime_rate_per_hour: u.overtime_rate_per_hour,
+        late_penalty_per_minute: u.late_penalty_per_minute,
+        password: pw,
+    }, { preserveScroll: true }); // kirim PUT, jaga posisi scroll
 }; // akhir resetPassword
 
 // Hapus user dengan konfirmasi
@@ -154,6 +171,7 @@ const destroy = (u) => {
                             <!-- kolom nama -->
                             <th class="px-4 py-3 text-left">Email</th>
                             <!-- kolom email -->
+                            <th class="px-4 py-3 text-left">Payroll</th>
                             <th class="px-4 py-3 text-left">Status</th>
                             <!-- kolom status -->
                             <th class="px-4 py-3 text-center">Aksi</th>
@@ -166,7 +184,7 @@ const destroy = (u) => {
                         <!-- isi tabel -->
                         <!-- baris kosong bila belum ada user -->
                         <tr v-if="users.length === 0">
-                            <td :colspan="4" class="px-4 py-10 text-center text-slate-400">Belum ada user.</td>
+                            <td :colspan="5" class="px-4 py-10 text-center text-slate-400">Belum ada user.</td>
                         </tr>
                         <!-- loop tiap user bila ada data -->
                         <tr v-for="u in users" :key="u.id" class="hover:bg-brand-50/60 transition">
@@ -175,6 +193,15 @@ const destroy = (u) => {
                             <!-- nama -->
                             <td class="px-4 py-2.5 text-slate-500">{{ u.email }}</td>
                             <!-- email -->
+                            <td class="px-4 py-2.5 text-slate-500">Rp {{ Number(u.base_salary || 0).toLocaleString('id-ID') }}</td>
+                            <td class="px-4 py-2.5">
+                                <span
+                                    class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-brand-50 text-brand-700"
+                                >
+                                    Rp {{ Number(u.meal_allowance || 0).toLocaleString('id-ID') }} + lembur
+                                    {{ Number(u.overtime_rate_per_hour || 0).toLocaleString('id-ID') }}/jam
+                                </span>
+                            </td>
                             <td class="px-4 py-2.5">
                                 <!-- sel status -->
                                 <span
@@ -325,6 +352,56 @@ const destroy = (u) => {
                         <!-- error role -->
                     </label>
                     <!-- akhir field role -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block font-medium text-slate-600"
+                            >Gaji Pokok
+                            <input
+                                v-model.number="form.base_salary"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                            />
+                            <span v-if="form.errors.base_salary" class="text-xs text-red-600">{{ form.errors.base_salary }}</span>
+                        </label>
+                        <label class="block font-medium text-slate-600"
+                            >Tunjangan
+                            <input
+                                v-model.number="form.meal_allowance"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                            />
+                            <span v-if="form.errors.meal_allowance" class="text-xs text-red-600">{{ form.errors.meal_allowance }}</span>
+                        </label>
+                        <label class="block font-medium text-slate-600"
+                            >Lembur / jam
+                            <input
+                                v-model.number="form.overtime_rate_per_hour"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                            />
+                            <span v-if="form.errors.overtime_rate_per_hour" class="text-xs text-red-600">{{ form.errors.overtime_rate_per_hour }}</span>
+                        </label>
+                        <label class="block font-medium text-slate-600"
+                            >Potongan telat / menit
+                            <input
+                                v-model.number="form.late_penalty_per_minute"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                            />
+                            <span v-if="form.errors.late_penalty_per_minute" class="text-xs text-red-600">{{ form.errors.late_penalty_per_minute }}</span>
+                        </label>
+                    </div>
                     <div class="flex justify-end gap-2 pt-2">
                         <!-- tombol aksi form -->
                         <button

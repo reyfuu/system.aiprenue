@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Absence;
+use App\Models\Attendance;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -16,10 +19,34 @@ class AbsenceController extends Controller
     {
         $user = $request->user();
         $bisaKelola = $user->canManage();   // owner/manager/it/admin → lihat semua + approve
+        $month = (string) $request->query('month', now()->format('Y-m'));
+
+        try {
+            $awalBulan = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        } catch (\Throwable) {
+            $awalBulan = now()->startOfMonth();
+            $month = $awalBulan->format('Y-m');
+        }
+
+        $akhirBulan = $awalBulan->copy()->endOfMonth();
+        $opsiBulan = collect(range(0, 11))->map(fn($i) => $awal = now()->subMonths($i)->startOfMonth())->filter(fn($awal) => $awal->isAfter(now()->subMonths(24)));
+        $bulanList = collect(range(0, 11))->map(fn($i) => now()->subMonths($i))->map(fn ($date) => [
+            'value' => $date->format('Y-m'),
+            'label' => $date->translatedFormat('F Y'),
+        ]);
 
         $query = Absence::with('user:id,name')->latest('start_date')->latest('id');
         if (! $bisaKelola) {
             $query->where('user_id', $user->id);   // selain manajemen: hanya milik sendiri
+        }
+
+        $attendanceQuery = Attendance::with('user:id,name')
+            ->whereBetween('work_date', [$awalBulan->toDateString(), $akhirBulan->toDateString()])
+            ->orderByDesc('work_date')
+            ->orderByDesc('id');
+
+        if (! $bisaKelola) {
+            $attendanceQuery->where('user_id', $user->id);
         }
 
         return Inertia::render('Absensi', [
@@ -37,6 +64,15 @@ class AbsenceController extends Controller
             'types' => Absence::TYPES,
             'statuses' => Absence::STATUSES,
             'canManage' => $bisaKelola,
+            'attendanceCanManage' => $bisaKelola,
+            'attendances' => $attendanceQuery->get()->map(fn ($a) => $this->attendanceRow($a)),
+            'attendanceMonth' => $month,
+            'attendanceMonthOptions' => $bulanList->values(),
+            'attendanceUsers' => $bisaKelola ? User::orderBy('name')->get(['id', 'name']) : [],
+            'attendanceSummary' => [
+                'totalRecords' => $attendanceQuery->count(),
+                'todayHasRecord' => Attendance::where('user_id', $user->id)->where('work_date', now()->toDateString())->exists(),
+            ],
         ]);
     }
 
@@ -65,6 +101,139 @@ class AbsenceController extends Controller
         ]);
 
         return back()->with('status', 'Pengajuan absensi terkirim.');
+    }
+
+    public function checkIn(Request $request)
+    {
+        $user = $request->user();
+        $today = now()->toDateString();
+        $attendance = Attendance::firstOrNew([
+            'user_id' => $user->id,
+            'work_date' => $today,
+        ]);
+
+        if ($attendance->check_in) {
+            return back()->with('status', 'Hari ini sudah check in.');
+        }
+
+        $attendance->fill([
+            'check_in' => now(),
+            'source' => 'self',
+        ])->save();
+
+        return back()->with('status', 'Check in berhasil.');
+    }
+
+    public function checkOut(Request $request)
+    {
+        $user = $request->user();
+        $today = now()->toDateString();
+        $attendance = Attendance::where('user_id', $user->id)->where('work_date', $today)->first();
+
+        if (! $attendance || ! $attendance->check_in) {
+            return back()->with('status', 'Check in dulu sebelum check out.');
+        }
+
+        if ($attendance->check_out) {
+            return back()->with('status', 'Hari ini sudah check out.');
+        }
+
+        $attendance->update([
+            'check_out' => now(),
+            'source' => 'self',
+        ]);
+
+        return back()->with('status', 'Check out berhasil.');
+    }
+
+    public function storeAttendance(Request $request)
+    {
+        abort_unless($request->user()->canManage(), 403, 'Hanya manajemen yang boleh input absensi manual.');
+
+        $data = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'work_date' => ['required', 'date'],
+            'check_in_time' => ['nullable', 'date_format:H:i'],
+            'check_out_time' => ['nullable', 'date_format:H:i'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (empty($data['check_in_time']) && empty($data['check_out_time'])) {
+            return back()->withErrors([
+                'check_in_time' => 'Isi jam masuk atau jam pulang.',
+            ]);
+        }
+
+        $workDate = Carbon::parse($data['work_date'])->toDateString();
+        $checkIn = $data['check_in_time'] ? Carbon::parse($workDate.' '.$data['check_in_time']) : null;
+        $checkOut = $data['check_out_time'] ? Carbon::parse($workDate.' '.$data['check_out_time']) : null;
+
+        if ($checkIn && $checkOut && $checkOut->lessThanOrEqualTo($checkIn)) {
+            return back()->withErrors([
+                'check_out_time' => 'Jam pulang harus setelah jam masuk.',
+            ]);
+        }
+
+        Attendance::updateOrCreate(
+            ['user_id' => $data['user_id'], 'work_date' => $workDate],
+            [
+                'check_in' => $checkIn,
+                'check_out' => $checkOut,
+                'note' => $data['note'] ?? null,
+                'source' => 'manual',
+            ]
+        );
+
+        return back()->with('status', 'Presensi manual disimpan.');
+    }
+
+    public function updateAttendance(Request $request, Attendance $attendance)
+    {
+        abort_unless($request->user()->canManage(), 403, 'Hanya manajemen yang boleh edit absensi manual.');
+
+        $data = $request->validate([
+            'user_id' => ['required', 'exists:users,id'],
+            'work_date' => ['required', 'date'],
+            'check_in_time' => ['nullable', 'date_format:H:i'],
+            'check_out_time' => ['nullable', 'date_format:H:i'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (empty($data['check_in_time']) && empty($data['check_out_time'])) {
+            return back()->withErrors([
+                'check_in_time' => 'Isi jam masuk atau jam pulang.',
+            ]);
+        }
+
+        $workDate = Carbon::parse($data['work_date'])->toDateString();
+        $checkIn = $data['check_in_time'] ? Carbon::parse($workDate.' '.$data['check_in_time']) : null;
+        $checkOut = $data['check_out_time'] ? Carbon::parse($workDate.' '.$data['check_out_time']) : null;
+
+        if ($checkIn && $checkOut && $checkOut->lessThanOrEqualTo($checkIn)) {
+            return back()->withErrors([
+                'check_out_time' => 'Jam pulang harus setelah jam masuk.',
+            ]);
+        }
+
+        $attendance->update([
+            'user_id' => $data['user_id'],
+            'work_date' => $workDate,
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'note' => $data['note'] ?? null,
+            'source' => 'manual',
+        ]);
+
+        return back()->with('status', 'Presensi manual diperbarui.');
+    }
+
+    public function destroyAttendance(Request $request, Attendance $attendance)
+    {
+        abort_unless($request->user()->canManage(), 403, 'Hanya manajemen yang boleh hapus absensi manual.');
+
+        $attendance->delete();
+
+        return back()->with('status', 'Presensi manual dihapus.');
     }
 
     /** Setujui/tolak pengajuan — hanya tim manajemen. */
@@ -97,5 +266,23 @@ class AbsenceController extends Controller
         $absence->delete();
 
         return back()->with('status', 'Pengajuan dihapus.');
+    }
+
+    private function attendanceRow(Attendance $attendance): array
+    {
+        return [
+            'id' => $attendance->id,
+            'user_id' => $attendance->user_id,
+            'user' => $attendance->user?->name,
+            'date' => $attendance->work_date?->toDateString(),
+            'check_in' => $attendance->check_in?->format('H:i'),
+            'check_out' => $attendance->check_out?->format('H:i'),
+            'source' => $attendance->source,
+            'note' => $attendance->note,
+            'late_minutes' => $attendance->lateMinutes(),
+            'overtime_minutes' => $attendance->overtimeMinutes(),
+            'worked_minutes' => $attendance->workingMinutes(),
+            'is_weekend' => (bool) $attendance->isWorkday() === false,
+        ];
     }
 }
