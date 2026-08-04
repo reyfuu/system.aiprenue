@@ -398,3 +398,35 @@ onBeforeUnmount(() => {
         </div>
     </div>
 </template>
+
+<style scoped>
+@keyframes hermes-thinking {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+    40% {
+        transform: translateY(-2px);
+        opacity: 1;
+    }
+}
+
+.hermes-thinking-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    background: currentColor;
+    margin-left: 2px;
+    animation: hermes-thinking 1.1s infinite;
+}
+
+.hermes-thinking-dot-delay-1 {
+    animation-delay: 0.15s;
+}
+
+.hermes-thinking-dot-delay-2 {
+    animation-delay: 0.3s;
+}
+</style>
