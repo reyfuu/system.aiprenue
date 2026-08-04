@@ -8,7 +8,7 @@ Implementasi ini menanamkan widget chat Hermes berbasis **WebSocket JSON-RPC** k
   - `resources/js/Components/HermesChatWidget.vue`
 
 - Komponen menampilkan tombol floating chat di kanan bawah yang membuka panel chat (embed WS):
-  - Endpoint WebSocket: `wss://hermes.aipreneur.co.id/ws`
+  - Endpoint WebSocket: `wss://hermes.aipreneur.co.id/ws` (proxy kompatibel ke `/api/ws`)
   - Method inisialisasi default: `init`
   - Method kirim pesan default: `chat`
   - Protokol: JSON-RPC 2.0 (`jsonrpc`, `id`, `method`, `params`)
@@ -55,7 +55,7 @@ Pastikan:
 - prosesnya jalan (TCP 9119 aktif),
 - reverse proxy mengarah ke endpoint websocket `/ws` dari domain publik `wss://hermes.aipreneur.co.id/ws`,
 - `HERMES_AGENT_URL` di app Laravel mengarah ke base HTTP VPS (`https://hermes.aipreneur.co.id`),
-- `HERMES_AGENT_CHAT_PATH` sesuai path chat yang benar (contoh: `/chat`).
+  - `HERMES_AGENT_CHAT_PATH` sesuai path chat yang benar (contoh: `/api/chat`).
 
 ## Checklist verifikasi (jika muncul error koneksi)
 
@@ -76,6 +76,11 @@ curl -i https://hermes.aipreneur.co.id/ws
 
 - `HERMES_AGENT_URL=https://hermes.aipreneur.co.id`
 - `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS)
-- `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
+  - `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
+
+> Catatan penting:
+>
+> Endpoint `/chat` di Hermes dashboard biasanya dipakai untuk WebSocket (GET/upgrade), sehingga `POST /chat` bisa memberi 405.
+> Kalau fallback HTTP dari Laravel menyala dan Hermes merespons `HTTP 405`, ubah `HERMES_AGENT_CHAT_PATH` ke endpoint POST yang valid (umumnya `/api/chat`) dan pastikan token `HERMES_AGENT_TOKEN` aktif.
 
 4. `HTTP 405` biasanya berarti Hermes VPS tidak menerima method/path yang kamu panggil untuk route chat (biasanya karena path salah, bukan karena WebSocket `/ws`).
