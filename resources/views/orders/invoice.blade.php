@@ -221,9 +221,9 @@
 
     <div class="section">
         <div class="section-title">BANK ACCOUNT</div>
-        <p class="small">{{ $bankAccount }}</p>
-        <p class="small">{{ $bankName }}</p>
-        <p class="small">{{ $bankOwner }}</p>
+        <p class="small">Bank: {{ $bankName }}</p>
+        <p class="small">Nomor rekening: {{ $bankAccount }}</p>
+        <p class="small">a/n {{ $bankOwner }}</p>
     </div>
 
     <div class="divider"></div>

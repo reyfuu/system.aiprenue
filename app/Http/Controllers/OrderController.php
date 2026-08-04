@@ -186,11 +186,13 @@ class OrderController extends Controller
             ],
         ];
 
+        $needsDepositTerm = str_contains($order->tipe_order, 'coaching') || in_array($order->tipe_order, ['speaker'], true);
+
         $invoicePayload = [
             'invoiceNo' => $invoiceNo,
             'issuedAt' => $issuedAt->format('d M Y'),
             'maker' => 'Freddie',
-            'needsDepositTerm' => in_array($order->tipe_order, ['coaching_1on1', 'coaching_perusahaan', 'speaker'], true),
+            'needsDepositTerm' => $needsDepositTerm,
             'customerName' => $order->nama_customer,
             'customerAddress' => $order->alamat ? trim("{$order->alamat}, {$order->kota}", ', ') : ($order->kota ?? ''),
             'items' => $lineItems,

@@ -19,6 +19,9 @@ const props = defineProps({
     script: { type: Object, default: () => ({}) }, // { folders, files }
     pembukuan: { type: Object, default: () => ({}) }, // { pemasukan, pengeluaran, laba, transaksi, invTotal }
     insight: { type: Object, default: () => ({}) }, // { konten, views, followerGain, top[] } — IG & YouTube
+    crm: { type: Object, default: () => ({}) }, // { total, open, deals, dueSoon, valueTotal, openRate, conversion, followUpRate }
+    absensi: { type: Object, default: () => ({}) }, // { today_attendance, month_attendance, absence_requests, absence_waiting, absence_approved, absence_rejected }
+    payroll: { type: Object, default: () => ({}) }, // { periods, draft, final, latest_period, latest_total_net, latest_employees, total_net, total_employees }
     filter: { type: Object, default: () => ({ bulan: 'semua', opsi: [] }) }, // periode aktif + pilihannya
     daftar: { type: Object, default: null }, // drill-down: null = tampilkan grafik
 });
@@ -370,6 +373,96 @@ const labaPositif = computed(() => (props.pembukuan.laba ?? 0) >= 0);
 
             <!-- ===== Kartu ringkasan per modul ===== -->
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- ---- Absensi — ringkas aktivitas presensi + pengajuan ---- -->
+                <Link
+                    v-if="menus.absensi"
+                    href="/absensi"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">Absensi</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ absensi.today_attendance || 0 }} <span class="text-sm text-slate-400 font-medium">check-in hari ini</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ absensi.month_attendance || 0 }} presensi bulan ini
+                    </p>
+                    <div class="mt-4 space-y-2">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Pengajuan</span>
+                            <span class="font-semibold text-slate-700">{{ absensi.absence_requests || 0 }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Menunggu</span>
+                            <span class="font-semibold text-amber-600">{{ absensi.absence_waiting || 0 }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Disetujui</span>
+                            <span class="font-semibold text-emerald-600">{{ absensi.absence_approved || 0 }}</span>
+                        </div>
+                    </div>
+                </Link>
+
+                <!-- ---- Payroll — ringkas periode dan total gaji ---- -->
+                <Link
+                    v-if="menus.payroll"
+                    href="/payroll"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">Payroll</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ payroll.periods || 0 }} <span class="text-sm text-slate-400 font-medium">periode</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ payroll.draft || 0 }} draft · {{ payroll.final || 0 }} final
+                    </p>
+                    <div class="mt-4 space-y-2">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Periode aktif</span>
+                            <span class="font-semibold text-slate-700">
+                                {{ payroll.latest_period?.period || '—' }}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Total net (aktif)</span>
+                            <span class="font-semibold text-emerald-600">{{ rp(payroll.latest_total_net || 0) }}</span>
+                        </div>
+                    </div>
+                </Link>
+
+                <!-- ---- CRM — ringkas sales-prospect (dipisah dari pipeline omzet) ---- -->
+                <Link
+                    v-if="menus.crm"
+                    href="/crm"
+                    class="block bg-white rounded-2xl shadow-sm border border-brand-100 p-5 hover:border-brand-300 hover:shadow-md transition"
+                >
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-bold text-slate-700">CRM</h2>
+                        <span class="text-xs text-brand-600 font-semibold">Lihat →</span>
+                    </div>
+                    <p class="text-3xl font-bold text-brand-700">
+                        {{ crm.total || 0 }} <span class="text-sm text-slate-400 font-medium">lead</span>
+                    </p>
+                    <p class="text-xs text-slate-400 mt-1">
+                        Open {{ crm.open || 0 }} · Deal {{ crm.deals || 0 }} · Due {{ crm.dueSoon || 0 }}
+                    </p>
+                    <div class="mt-4 space-y-2">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Conversion</span>
+                            <span class="font-semibold text-emerald-600">{{ crm.conversion || 0 }}%</span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-slate-500">Nilai CRM</span>
+                            <span class="font-semibold text-slate-700">{{ rp(crm.valueTotal || 0) }}</span>
+                        </div>
+                    </div>
+                </Link>
+
                 <!-- ---- Insight: performa konten IG & YouTube (ringkas) ---- -->
                 <Link
                     v-if="menus.insight"
