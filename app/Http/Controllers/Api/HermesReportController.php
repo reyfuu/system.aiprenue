@@ -32,10 +32,10 @@ class HermesReportController extends Controller
         Hermes::sendToConfiguredRoles($date);
 
         return response()->json([
-            'ok'          => true,
-            'date'        => $date->toDateString(),
-            'sent_to'     => $recipientCount,
-            'summary'     => $summary,
+            'ok' => true,
+            'date' => $date->toDateString(),
+            'sent_to' => $recipientCount,
+            'summary' => $summary,
         ], 201);
     }
 
@@ -49,4 +49,3 @@ class HermesReportController extends Controller
         abort_unless(hash_equals($token, (string) $request->bearerToken()), 401, 'Token tidak sah.');
     }
 }
-

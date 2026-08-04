@@ -19,8 +19,7 @@ class HermesDailyReportNotification extends Notification
         private readonly string $message,
         private readonly array $summary,
         private readonly string $reportDate,
-    ) {
-    }
+    ) {}
 
     /** @return array<int, string> */
     public function via(object $notifiable): array
@@ -37,7 +36,7 @@ class HermesDailyReportNotification extends Notification
             'message' => $this->message,
             'summary' => $this->summary,
             'report_date' => $this->reportDate,
-            'url' => null,
+            'url' => '/daily-report?from='.$this->reportDate.'&to='.$this->reportDate,
             'priority' => ['name' => 'Informasi'],
         ];
     }

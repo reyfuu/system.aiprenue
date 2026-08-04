@@ -3,8 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use App\Models\Traits\Auditable;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, Auditable, SoftDeletes;
+    use Auditable, HasFactory, Notifiable, SoftDeletes;
 
     public const ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'it' => 'IT', 'admin' => 'Admin', 'staff' => 'Staff'];
 
@@ -72,6 +72,7 @@ class User extends Authenticatable
         'akses' => 'Manajemen Akses',
         'audit' => 'Audit Log',
         'payroll' => 'Payroll',
+        'daily_report' => 'Daily Report',
     ];
 
     /** Cache per-instance: `menus` dibangun dgn ~10 kali canSee() pada user yang
@@ -131,6 +132,10 @@ class User extends Authenticatable
         // di sini; ia menu terpisah ('kpi') berisi data operasional papan saja.
         if (in_array($menu, ['pembukuan', 'tracking', 'okr'], true)) {
             return in_array($this->role, ['owner', 'manager'], true);
+        }
+
+        if ($menu === 'daily_report') {
+            return in_array($this->role, ['owner', 'it'], true);
         }
 
         if (($izin = $this->izinDariDb()) !== null) {
@@ -219,21 +224,21 @@ class User extends Authenticatable
         $kandidat = [
             'dashboard' => 'dashboard',
             'crm' => 'crm.index',
-            'kanban'    => 'pipelines.kanban',
-            'pipeline'  => 'pipelines.index',
+            'kanban' => 'pipelines.kanban',
+            'pipeline' => 'pipelines.index',
             'payroll' => 'payroll.index',
-            'order'     => 'orders.index',
-            'script'    => 'script.index',
-            'insight'   => 'insight.index',
-            'content'   => 'content.index',
-            'tracking'  => 'tracking.index',
-            'okr'       => 'okr.index',
+            'order' => 'orders.index',
+            'script' => 'script.index',
+            'insight' => 'insight.index',
+            'content' => 'content.index',
+            'tracking' => 'tracking.index',
+            'okr' => 'okr.index',
             'pembukuan' => 'pembukuan.index',
-            'upload'    => 'upload.index',
-            'mindmap'   => 'mindmaps.index',
-            'user'      => 'users.index',
-            'akses'     => 'akses.index',
-            'audit'     => 'audit.index',
+            'upload' => 'upload.index',
+            'mindmap' => 'mindmaps.index',
+            'user' => 'users.index',
+            'akses' => 'akses.index',
+            'audit' => 'audit.index',
         ];
 
         foreach ($kandidat as $menu => $route) {

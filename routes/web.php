@@ -7,9 +7,12 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\ColumnController;
+use App\Http\Controllers\ColumnTaskController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\ContentController;
+use App\Http\Controllers\CRMController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HermesReportController;
 use App\Http\Controllers\InsightController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KpiController;
@@ -18,12 +21,10 @@ use App\Http\Controllers\MindmapController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OkrController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PembukuanController;
 use App\Http\Controllers\PipelineController;
-use App\Http\Controllers\ColumnTaskController;
 use App\Http\Controllers\PipelineTaskController;
-use App\Http\Controllers\CRMController;
-use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ScriptController;
 use App\Http\Controllers\TrackingController;
 use App\Http\Controllers\TransactionController;
@@ -31,7 +32,6 @@ use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\EnsureMenuAccess;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -178,6 +178,9 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // CRM — ringkasan Sales/Pipeline untuk follow-up, reminder, dan prioritas.
     Route::get('/crm', [CRMController::class, 'index'])->name('crm.index');
+
+    // Daily Report — riwayat kiriman ringkasan harian Hermes untuk owner/it.
+    Route::get('/daily-report', [HermesReportController::class, 'index'])->name('hermes-report.index');
 
     // Payroll — perhitungan gaji bulanan + potongan/tunjangan dasar.
     Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');

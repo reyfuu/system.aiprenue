@@ -65,6 +65,7 @@ const ITEMS = [
         icon: 'M12 11c0-1.1.9-2 2-2s2 .9 2 2m-4 0v0M5 11h14a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8a1 1 0 011-1zm3 0V7a4 4 0 018 0v4',
     },
     { key: 'audit', label: 'Audit Log', href: '/audit', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+    { key: 'daily_report', label: 'Daily Report', href: '/daily-report', icon: 'M13 16h-1v-4H8v4H7V9h6v7zm0-8a1 1 0 11-2 0 1 1 0 012 0z' },
     // Tautan EKSTERNAL ke aplikasi ProdPilot — buka tab baru, bukan navigasi SPA.
     // `external: true` cuma soal RENDER (<a> bukan <Link>). Hak aksesnya tetap dari
     // menus.prodpilot (User::MENU_ACCESS) — owner/it/manager saja.
