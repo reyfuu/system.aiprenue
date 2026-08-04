@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Output;
 use App\Support\ExchangeRate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -161,6 +162,54 @@ class OrderController extends Controller
         return back()->with('status', 'Order diperbarui.');
     }
 
+    public function invoice(Request $request, Order $order)
+    {
+        $order->load('outputs');
+
+        $maker = trim((string) $request->query('maker'))
+            ?: trim((string) $order->invoice_maker)
+            ?: trim((string) $request->user()?->name)
+            ?: 'Freddie';
+        $issuedAt = $order->created_at ?? now();
+        $invoiceNo = $issuedAt->format('Ymd') . str_pad((string) $order->id, 5, '0', STR_PAD_LEFT);
+
+        $items = [];
+        $subtotal = (float) ($order->total_idr + $order->total_usd * ExchangeRate::usdToIdr());
+
+        foreach ($order->outputs as $output) {
+            $items[] = (string) $output->name;
+        }
+
+        if (empty($items)) {
+            $items[] = "Pelunasan {$order->tipe_order}";
+        }
+
+        $lineItems = [
+            [
+                'description' => implode(", ", $items),
+                'qty' => 1,
+                'total' => $subtotal,
+            ],
+        ];
+
+        $invoicePayload = [
+            'invoiceNo' => $invoiceNo,
+            'issuedAt' => $issuedAt->format('d M Y'),
+            'maker' => $maker,
+            'customerName' => $order->nama_customer,
+            'customerAddress' => $order->alamat ? trim("{$order->alamat}, {$order->kota}", ', ') : ($order->kota ?? ''),
+            'items' => $lineItems,
+            'subtotal' => $subtotal,
+            'bankName' => 'BCA',
+            'bankAccount' => '8293117771',
+            'bankOwner' => 'Aipreneur Digital Indonesia',
+        ];
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('orders.invoice', $invoicePayload)->setPaper('a4', 'portrait');
+
+        return $pdf->stream("Invoice-{$invoiceNo}.pdf");
+    }
+
     public function destroy(Order $order)
     {
         foreach (array_keys(self::FILES) as $field) {
@@ -180,6 +229,14 @@ class OrderController extends Controller
         $data = $request->validate($this->rules());
         $data['total_idr'] = $data['total_idr'] ?? 0;
         $data['total_usd'] = $data['total_usd'] ?? 0;
+
+        // Kolom invoice_maker belum tentu ada di semua database produksi (terutama yang
+        // dipindah dari dump lama). Agar fitur tetap jalan tanpa migration tambahan,
+        // buang key ini saat skema belum mendukungnya.
+        if (! Schema::hasColumn('orders', 'invoice_maker') && array_key_exists('invoice_maker', $data)) {
+            unset($data['invoice_maker']);
+        }
+
         // `outputs` bukan kolom di tabel orders — masuk lewat pivot (sync di store/update).
         // Kalau ikut terbawa ke Order::create(), Eloquent melempar (kolom tak ada).
         unset($data['outputs']);

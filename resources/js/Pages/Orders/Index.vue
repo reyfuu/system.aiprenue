@@ -199,6 +199,13 @@ const destroy = (o) => {
         router.delete('/orders/' + o.id, { preserveScroll: true });
     }
 };
+
+const invoiceUrl = (o) => {
+    const maker = (o?.invoice_maker || auth?.value?.user?.name || '').toString().trim();
+    const makerParam = maker ? `?maker=${encodeURIComponent(maker)}` : '';
+
+    return `/orders/${o.id}/invoice${makerParam}`;
+};
 </script>
 
 <template>
@@ -445,6 +452,14 @@ const destroy = (o) => {
                             <!-- Aksi -->
                             <td class="px-2.5 py-2.5 text-center whitespace-nowrap">
                                 <div v-if="auth?.user?.canManage" class="flex items-center justify-center gap-1">
+                                    <a
+                                        :href="invoiceUrl(o)"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
+                                    >
+                                        Invoice
+                                    </a>
                                     <button
                                         class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition"
                                         @click="openEdit(o)"
