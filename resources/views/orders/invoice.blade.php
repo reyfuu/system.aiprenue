@@ -212,13 +212,18 @@
         <div class="section-title">SYARAT DAN KETENTUAN PEMBAYARAN</div>
         <p class="small">1. Silakan kirim pembayaran setelah menerima faktur ini.</p>
         <p class="small">2. Tidak dapat melakukan pembatalan setelah pembayaran dilakukan.</p>
+        @if (! empty($needsDepositTerm))
+            <p class="small">3. Untuk layanan Coaching dan Speaker, pembayaran booking minimal 50% dari total invoice dibayarkan saat booking tanggal, dan pelunasan dilakukan H-1 acara.</p>
+        @endif
         <p class="small">Saya telah setuju dengan syarat dan ketentuan yang berlaku.</p>
         <p class="small">Terimakasih telah bekerjasama dengan kami.</p>
     </div>
 
     <div class="section">
         <div class="section-title">BANK ACCOUNT</div>
-        <p class="small">{{ $bankAccount }} {{ $bankName }} {{ $bankOwner }}</p>
+        <p class="small">{{ $bankAccount }}</p>
+        <p class="small">{{ $bankName }}</p>
+        <p class="small">{{ $bankOwner }}</p>
     </div>
 
     <div class="divider"></div>

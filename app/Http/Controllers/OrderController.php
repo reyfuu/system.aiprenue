@@ -190,6 +190,7 @@ class OrderController extends Controller
             'invoiceNo' => $invoiceNo,
             'issuedAt' => $issuedAt->format('d M Y'),
             'maker' => 'Freddie',
+            'needsDepositTerm' => in_array($order->tipe_order, ['coaching_1on1', 'coaching_perusahaan', 'speaker'], true),
             'customerName' => $order->nama_customer,
             'customerAddress' => $order->alamat ? trim("{$order->alamat}, {$order->kota}", ', ') : ($order->kota ?? ''),
             'items' => $lineItems,
