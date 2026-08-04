@@ -35,7 +35,7 @@ return [
     'hermes_agent' => [
         'token' => env('HERMES_AGENT_TOKEN'),
         'url' => env('HERMES_AGENT_URL'),
-        'chat_path' => env('HERMES_AGENT_CHAT_PATH', '/chat'),
+        'chat_path' => env('HERMES_AGENT_CHAT_PATH', '/api/chat'),
         'timeout' => (int) env('HERMES_AGENT_TIMEOUT', 20),
     ],
 
