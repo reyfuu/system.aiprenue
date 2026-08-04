@@ -19,6 +19,12 @@ class InsightContent extends Model
     use SoftDeletes;
 
     public const PLATFORMS = ['instagram' => 'Instagram', 'youtube' => 'YouTube'];
+    public const CONTENT_TYPES = [
+        'reel'  => 'Reel',
+        'feed'  => 'Feed',
+        'short' => 'YouTube Short',
+        'video' => 'Video',
+    ];
 
     /** Bobot content_score, langsung dari spesifikasi. Jumlahnya wajib 1.00 —
      *  ada tes yang menjaga itu, supaya mengubah satu bobot tanpa menyesuaikan
