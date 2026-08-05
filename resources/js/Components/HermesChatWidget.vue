@@ -430,7 +430,7 @@ const onToggle = () => {
     if (isOpen.value) {
         if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
             messages.value = messages.value.length ? messages.value : [
-                { id: `intro-${Date.now()}`, role: 'system', text: 'Siap terhubung ke Hermes.', createdAt: new Date().toISOString() },
+                { id: `intro-${Date.now()}`, role: 'system', text: 'Hermes AI Assistant siap membantu.', createdAt: new Date().toISOString() },
             ];
             startSession();
         }
