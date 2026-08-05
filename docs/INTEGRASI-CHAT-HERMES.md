@@ -55,7 +55,7 @@ Pastikan:
 - prosesnya jalan (TCP 9119 aktif),
 - reverse proxy mengarah ke endpoint websocket `/ws` dari domain publik `wss://hermes.aipreneur.co.id/ws`,
 - `HERMES_AGENT_URL` di app Laravel mengarah ke base HTTP VPS (`https://hermes.aipreneur.co.id`),
-  - `HERMES_AGENT_CHAT_PATH` sesuai path chat yang benar (contoh: `/api/chat`).
+  - `HERMES_AGENT_CHAT_PATH` sesuai path chat yang benar (contoh: `/v1/chat/completions`).
 
 ## Checklist verifikasi (jika muncul error koneksi)
 
@@ -75,7 +75,7 @@ curl -i https://hermes.aipreneur.co.id/ws
 3. Pastikan `.env` app Laravel memiliki nilai:
 
 - `HERMES_AGENT_URL=https://hermes.aipreneur.co.id`
-- `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS; boleh isi beberapa path dipisah koma, contoh: `/api/chat,/chat`)
+- `HERMES_AGENT_CHAT_PATH=/v1/chat/completions` (atau path HTTP chat yang valid dari VPS; boleh isi beberapa path dipisah koma, contoh: `/v1/chat/completions,/v1/responses`)
   - `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
   - `VITE_HERMES_WS_TOKEN=<HERMES_DASHBOARD_SESSION_TOKEN yang sama dengan service Hermes>`
 
@@ -84,7 +84,17 @@ curl -i https://hermes.aipreneur.co.id/ws
 
 > Catatan penting:
 >
-> Endpoint `/chat` di Hermes dashboard biasanya dipakai untuk WebSocket (GET/upgrade), sehingga `POST /chat` bisa memberi 405.
-> Kalau fallback HTTP dari Laravel menyala dan Hermes merespons `HTTP 405`, ubah `HERMES_AGENT_CHAT_PATH` ke endpoint POST yang valid (umumnya `/api/chat`) dan pastikan token `HERMES_AGENT_TOKEN` aktif.
+> Endpoint chat Hermes **bukan** endpoint WebSocket. Gunakan endpoint HTTP yang sesuai, biasanya:
+> - `/v1/chat/completions`
+> - `/v1/responses`
+> Kalau fallback HTTP dari Laravel menyala dan Hermes merespons `HTTP 405`, cek dulu `HERMES_AGENT_CHAT_PATH` (harus `/v1/...`) dan token `HERMES_AGENT_TOKEN`.
 
 4. `HTTP 405` biasanya berarti Hermes VPS tidak menerima method/path yang kamu panggil untuk route chat (biasanya karena path salah, bukan karena WebSocket `/ws`).
+5. Pastikan Hermes diekspos via HTTPS/WSS di `443`:
+
+```bash
+curl -ik https://hermes.aipreneur.co.id/ws
+curl -ikw "%{http_code}\\n" -X POST https://hermes.aipreneur.co.id/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}],"max_tokens":4}'
+```

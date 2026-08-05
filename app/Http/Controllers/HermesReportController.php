@@ -459,14 +459,6 @@ class HermesReportController extends Controller
             $paths[] = 'v1/responses';
         }
 
-        if (! in_array('api/chat', $paths, true)) {
-            $paths[] = 'api/chat';
-        }
-
-        if (! in_array('chat', $paths, true)) {
-            $paths[] = 'chat';
-        }
-
         return $paths;
     }
 
