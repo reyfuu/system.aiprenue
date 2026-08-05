@@ -409,7 +409,7 @@ const sendChat = async () => {
             await fallbackToHttp(text, tempId);
         }
     } else {
-        updateMessageById(tempId, { text: 'WebSocket belum siap, mencoba fallback HTTP…', pending: false });
+        updateMessageById(tempId, { text: 'Sedang memproses...', pending: true });
         await fallbackToHttp(text, tempId);
     }
 
