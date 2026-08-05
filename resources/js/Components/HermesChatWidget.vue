@@ -481,7 +481,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 text-xs text-slate-500 flex justify-between items-center">
                 <span>{{ statusText || 'Menyiapkan…' }}</span>
-                <span>{{ isConnected ? 'Streaming aktif' : 'Tidak terkoneksi' }}</span>
+                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-emerald-600 font-medium">Aktif</span></span>
             </div>
 
             <div ref="messagesPanel" class="flex-1 overflow-y-auto p-3 space-y-2 text-sm">
