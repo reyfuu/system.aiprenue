@@ -10,6 +10,8 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Models\Category;
 use App\Models\Pipeline;
@@ -175,6 +177,91 @@ class HermesReportController extends Controller
         ]);
     }
 
+    public function wsTicket(Request $request): JsonResponse
+    {
+        // Endpoint hanya untuk user yang sama-sama bisa akses fitur daily report.
+        abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses tiket Hermes WS.');
+
+        $baseUrl = trim((string) (config('services.hermes_agent.url') ?? ''));
+        $token = trim((string) (config('services.hermes_agent.token') ?? ''));
+
+        if ($baseUrl === '') {
+            return response()->json([
+                'ok' => false,
+                'ticket' => null,
+                'fallback_http' => true,
+                'websocket_available' => false,
+                'message' => 'Konfigurasi HERMES_AGENT_URL belum diset.',
+            ]);
+        }
+
+        if ($token === '') {
+            return response()->json([
+                'ok' => false,
+                'ticket' => null,
+                'fallback_http' => true,
+                'websocket_available' => false,
+                'message' => 'Konfigurasi HERMES_AGENT_TOKEN belum diset.',
+            ]);
+        }
+
+        try {
+            $url = rtrim($baseUrl, '/') . '/api/auth/ws-ticket';
+            $response = Http::timeout(8)
+                ->withToken($token)
+                ->acceptJson()
+                ->post($url, []);
+
+            if (! $response->ok()) {
+                Log::warning('Hermes WS ticket request failed', [
+                    'status' => $response->status(),
+                    'body' => Str::limit((string) $response->body(), 200),
+                ]);
+
+                return response()->json([
+                    'ok' => false,
+                    'ticket' => null,
+                    'fallback_http' => true,
+                    'websocket_available' => false,
+                    'message' => "Hermes menolak tiket WS (HTTP {$response->status()}).",
+                    'detail' => $response->json(),
+                ]);
+            }
+
+            $payload = (array) $response->json();
+            $ticket = (string) ($payload['ticket'] ?? '');
+
+            if ($ticket === '') {
+                return response()->json([
+                    'ok' => false,
+                    'ticket' => null,
+                    'fallback_http' => true,
+                    'websocket_available' => false,
+                    'message' => 'Hermes tidak mengembalikan ticket WS.',
+                    'detail' => $response->json(),
+                ]);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'ticket' => $ticket,
+                'fallback_http' => false,
+                'websocket_available' => true,
+                'detail' => $payload['expires_at'] ?? $payload['expires_in'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Hermes WS ticket request exception', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'ok' => false,
+                'ticket' => null,
+                'fallback_http' => true,
+                'websocket_available' => false,
+                'message' => 'Tidak bisa mengambil tiket WebSocket dari Hermes.',
+            ]);
+        }
+    }
+
     private function extractUserMention(string $message, ?User $actor): ?User
     {
         $normalized = strtolower(trim($message));
@@ -308,10 +395,14 @@ class HermesReportController extends Controller
                 'actions' => is_array(($lastBody['actions'] ?? null)) ? $lastBody['actions'] : [],
             ]);
         } catch (\Throwable $e) {
+            $message = 'Tidak bisa terhubung ke Hermes saat ini.';
+            $debug = config('app.debug') ? (' ' . $e->getMessage()) : '';
+
             return response()->json([
                 'ok' => false,
                 'source' => 'system',
-                'reply' => 'Tidak bisa terhubung ke Hermes saat ini. ' . $this->fallbackReply($message),
+                'reply' => $message . $debug . ' ' . $this->fallbackReply($message),
+                'detail' => config('app.debug') ? $e->getMessage() : null,
             ], 502);
         }
     }
@@ -368,6 +459,21 @@ class HermesReportController extends Controller
         }
 
         $direct = data_get($body, 'text');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'error.message');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'error.detail');
+        if (is_string($direct) && trim($direct) !== '') {
+            return trim($direct);
+        }
+
+        $direct = data_get($body, 'detail');
         if (is_string($direct) && trim($direct) !== '') {
             return trim($direct);
         }

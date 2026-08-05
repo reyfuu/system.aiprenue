@@ -22,16 +22,56 @@ const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD ||
 
 const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
 const messagesPanel = ref(null);
-
-const websocketEndpoint = computed(() => {
+const wsHost = computed(() => {
     if (!socketUrl.value) return '';
-    if (!socketToken.value) {
-        return socketUrl.value;
-    }
 
-    const joiner = socketUrl.value.includes('?') ? '&' : '?';
-    return `${socketUrl.value}${joiner}token=${encodeURIComponent(socketToken.value)}`;
+    try {
+        return new URL(socketUrl.value).hostname;
+    } catch {
+        return '';
+    }
 });
+
+const isCrossDomain = computed(() => Boolean(wsHost.value) && wsHost.value !== window.location.hostname);
+const shouldUseTokenAuth = computed(() => Boolean(socketToken.value) && isCrossDomain.value);
+const websocketAuthMode = computed(() => (isCrossDomain.value ? (shouldUseTokenAuth.value ? 'token' : 'ticket') : 'cookie'));
+
+const wsBaseEndpoint = computed(() => socketUrl.value.trim());
+
+const buildWebsocketUrl = (token, queryName = 'ticket') => {
+    const endpoint = wsBaseEndpoint.value;
+    if (!endpoint) return '';
+    if (!token) return endpoint;
+    const joiner = endpoint.includes('?') ? '&' : '?';
+    return `${endpoint}${joiner}${queryName}=${encodeURIComponent(token)}`;
+};
+
+const requestWsTicket = async () => {
+    try {
+        const res = await fetch('/hermes/ws-ticket', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.fallback_http || data?.websocket_available === false) {
+            return null;
+        }
+        if (!res.ok || !data?.ok) {
+            throw new Error(data?.message || `HTTP ${res.status}`);
+        }
+        const ticket = String(data?.ticket || '').trim();
+        if (!ticket) {
+            throw new Error('ticket kosong');
+        }
+        return ticket;
+    } catch (error) {
+        throw new Error(String(error?.message || error));
+    }
+};
 
 const clearWsConnectTimeout = () => {
     if (wsConnectTimeoutId.value) {
@@ -183,7 +223,7 @@ const buildRequest = (method, params) => ({
     params,
 });
 
-const startSession = () => {
+const startSession = async () => {
     closeMessage();
     statusText.value = 'Menghubungkan ke Hermes…';
     isConnecting.value = true;
@@ -195,22 +235,84 @@ const startSession = () => {
         return;
     }
 
-    const ws = new WebSocket(websocketEndpoint.value);
-    wsConnectTimeoutId.value = window.setTimeout(() => {
-        if (!isConnected.value && socket.value === ws) {
-            isConnecting.value = false;
-            errorMessage.value = 'Realtime Hermes belum tersambung, memakai fallback HTTP.';
-            statusText.value = 'Fallback aktif';
-            ws.close();
-        }
-    }, 6000);
+    const buildWs = () =>
+        new Promise((resolve, reject) => {
+            let ws;
+            const createSocket = (endpoint) => {
+                ws = new WebSocket(endpoint);
+                wsConnectTimeoutId.value = window.setTimeout(() => {
+                    if (!isConnected.value && socket.value === ws) {
+                        isConnecting.value = false;
+                        errorMessage.value = 'Realtime Hermes belum tersambung, memakai fallback HTTP.';
+                        statusText.value = 'Fallback aktif';
+                        ws.close();
+                        reject(new Error('Timeout koneksi Hermes WS'));
+                    }
+                }, 6000);
 
-    ws.onopen = () => {
-        clearWsConnectTimeout();
-        isConnected.value = true;
+                ws.onopen = () => {
+                    clearWsConnectTimeout();
+                    isConnected.value = true;
+                    isConnecting.value = false;
+                    statusText.value = `Terhubung (${websocketAuthMode.value})`;
+
+                    resolve(ws);
+                };
+
+                ws.onmessage = handleSocketMessage;
+
+                ws.onerror = () => {
+                    clearWsConnectTimeout();
+                    errorMessage.value = 'Gagal koneksi ke Hermes WS.';
+                    reject(new Error('gagal handshake WS'));
+                };
+
+                ws.onclose = () => {
+                    clearWsConnectTimeout();
+                    isConnected.value = false;
+                    isConnecting.value = false;
+                    statusText.value = 'Koneksi tertutup';
+                    socket.value = null;
+                };
+
+                return ws;
+            };
+
+            if (isCrossDomain.value && !shouldUseTokenAuth.value) {
+                requestWsTicket()
+                    .then((ticket) => {
+                        if (!ticket) {
+                            statusText.value = 'Mode HTTP aktif';
+                            isConnecting.value = false;
+                            isConnected.value = false;
+                            errorMessage.value = '';
+                            resolve(null);
+                            return;
+                        }
+
+                        createSocket(buildWebsocketUrl(ticket, 'ticket'));
+                    })
+                    .catch(reject);
+                return;
+            }
+
+            return createSocket(shouldUseTokenAuth.value ? buildWebsocketUrl(socketToken.value, 'token') : wsBaseEndpoint.value);
+        });
+
+    const ws = await buildWs().catch((error) => {
+        statusText.value = 'Gagal setup koneksi Hermes';
         isConnecting.value = false;
-        statusText.value = 'Terhubung';
+        errorMessage.value = String(error?.message || error);
+        return null;
+    });
 
+    if (!ws) {
+        return;
+    }
+
+    socket.value = ws;
+
+    try {
         ws.send(
             JSON.stringify(
                 buildRequest(initMethod.value, {
@@ -224,24 +326,9 @@ const startSession = () => {
                 }),
             ),
         );
-    };
-
-    ws.onmessage = handleSocketMessage;
-
-    ws.onerror = () => {
-        clearWsConnectTimeout();
-        errorMessage.value = 'Gagal koneksi ke Hermes WS.';
-    };
-
-    ws.onclose = () => {
-        clearWsConnectTimeout();
-        isConnected.value = false;
-        isConnecting.value = false;
-        statusText.value = 'Koneksi tertutup';
-        socket.value = null;
-    };
-
-    socket.value = ws;
+    } catch (error) {
+        errorMessage.value = `Gagal kirim init Hermes: ${String(error?.message || error)}`;
+    }
 };
 
 const closeSocket = () => {

@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Output;
 use App\Models\User;
 use App\Support\ExchangeRate;
+use Carbon\Carbon;
 use Database\Seeders\OrderSeeder;
 use Database\Seeders\PipelineSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,6 +48,17 @@ class OrderTest extends TestCase
             'kota' => 'Kota Bandung',
             'tipe_pembayaran' => 'full',
         ], $override);
+    }
+
+    private function createOrderWithCreatedAt(string $dateTime): Order
+    {
+        $order = Order::create($this->payload());
+        $ts = Carbon::parse($dateTime);
+        $order->created_at = $ts;
+        $order->updated_at = $ts;
+        $order->saveQuietly();
+
+        return $order;
     }
 
     public function test_total_pembayaran_adalah_idr_plus_usd_dikonversi(): void
@@ -421,5 +433,28 @@ class OrderTest extends TestCase
     {
         $this->actingAs($this->user('staff'))->post('/orders', $this->payload())->assertForbidden();
         $this->assertSame(0, Order::count());
+    }
+
+    public function test_nomor_invoice_berdasarkan_hari_dan_reset_setiap_tanggal(): void
+    {
+        $user = $this->user();
+
+        $firstToday = $this->createOrderWithCreatedAt('2026-08-04 09:00:00');
+        $secondToday = $this->createOrderWithCreatedAt('2026-08-04 11:00:00');
+        $firstTomorrow = $this->createOrderWithCreatedAt('2026-08-05 08:00:00');
+
+        $this->actingAs($user);
+
+        $resp1 = $this->get('/orders/'.$firstToday->id.'/invoice');
+        $resp2 = $this->get('/orders/'.$secondToday->id.'/invoice');
+        $resp3 = $this->get('/orders/'.$firstTomorrow->id.'/invoice');
+
+        $resp1->assertStatus(200);
+        $resp2->assertStatus(200);
+        $resp3->assertStatus(200);
+
+        $this->assertStringContainsString('Invoice-20260804-001.pdf', $resp1->headers->get('content-disposition'));
+        $this->assertStringContainsString('Invoice-20260804-002.pdf', $resp2->headers->get('content-disposition'));
+        $this->assertStringContainsString('Invoice-20260805-001.pdf', $resp3->headers->get('content-disposition'));
     }
 }

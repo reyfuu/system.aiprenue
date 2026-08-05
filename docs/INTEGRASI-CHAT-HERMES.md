@@ -36,6 +36,13 @@ Tambahkan variabel berikut pada `.env` agar endpoint dan method bisa dikustom:
 - `VITE_HERMES_WS_CHAT_METHOD=chat`
 - `VITE_HERMES_CHAT_URL=/hermes/chat`
 
+Kalau `system.aipreneur.co.id` masih jalan di web hosting (atau domain tidak sama dengan `hermes.aipreneur.co.id`),  
+set juga:
+
+- `VITE_HERMES_WS_TOKEN=<HERMES_DASHBOARD_SESSION_TOKEN>`
+
+Widget akan otomatis memakai koneksi WS lewat query `?token=...` untuk domain lintas host.
+
 ## Jalur koneksi yang harus dipakai
 
 - Koneksi chat realtime harus mengarah ke WebSocket endpoint:

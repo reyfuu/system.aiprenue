@@ -150,6 +150,16 @@
             width: 40%;
             font-size: 12px;
             color: #334155;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            text-align: right;
+        }
+
+        .signature-label {
+            margin: 0 0 20px;
+            text-align: right;
+            color: #475569;
+            font-size: 11px;
         }
     </style>
 </head>
@@ -234,7 +244,10 @@
         <p class="small">Apartemen Puncak Dharmahusada Ruko No.9H</p>
     </div>
 
-    <p class="signature">{{ $maker }}</p>
+    <div class="signature">
+        <p class="signature-label">Disetujui oleh</p>
+        <p>{{ $maker }}</p>
+    </div>
 </body>
 
 </html>
