@@ -165,7 +165,10 @@ class OrderController extends Controller
         $order->load('outputs');
 
         $issuedAt = $order->created_at ?? now();
-        $invoiceNo = $issuedAt->format('Ymd') . str_pad((string) $order->id, 5, '0', STR_PAD_LEFT);
+        $dailySequence = Order::whereDate('created_at', $issuedAt->toDateString())
+            ->where('id', '<=', $order->id)
+            ->count();
+        $invoiceNo = $issuedAt->format('Ymd') . '-' . str_pad((string) $dailySequence, 3, '0', STR_PAD_LEFT);
 
         $items = [];
         $subtotal = (float) ($order->total_idr + $order->total_usd * ExchangeRate::usdToIdr());

@@ -181,6 +181,7 @@ Route::middleware(['auth', EnsureMenuAccess::class])->group(function () {
 
     // Daily Report — riwayat kiriman ringkasan harian Hermes untuk semua user.
     Route::get('/daily-report', [HermesReportController::class, 'index'])->name('hermes-report.index');
+    Route::get('/hermes/ws-ticket', [HermesReportController::class, 'wsTicket'])->name('hermes.ws-ticket');
     Route::post('/hermes/chat', [HermesReportController::class, 'chat'])->name('hermes.chat');
 
     // Payroll — perhitungan gaji bulanan + potongan/tunjangan dasar.
