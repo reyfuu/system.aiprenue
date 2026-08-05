@@ -77,6 +77,10 @@ curl -i https://hermes.aipreneur.co.id/ws
 - `HERMES_AGENT_URL=https://hermes.aipreneur.co.id`
 - `HERMES_AGENT_CHAT_PATH=/chat` (atau path HTTP chat yang valid dari VPS; boleh isi beberapa path dipisah koma, contoh: `/api/chat,/chat`)
   - `VITE_HERMES_WS_URL=wss://hermes.aipreneur.co.id/ws`
+  - `VITE_HERMES_WS_TOKEN=<HERMES_DASHBOARD_SESSION_TOKEN yang sama dengan service Hermes>`
+
+> Catatan: untuk mode `auth_required=false` (Hermes berjalan pada `--host 127.0.0.1`), koneksi WS bisa memakai query param `token=...`.
+> Jadi token harus sama dengan `HERMES_DASHBOARD_SESSION_TOKEN` di VPS service.
 
 > Catatan penting:
 >

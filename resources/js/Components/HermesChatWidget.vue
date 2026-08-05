@@ -16,11 +16,22 @@ const requestId = ref(1);
 const wsConnectTimeoutId = ref(null);
 const sessionId = `aipreneur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const socketUrl = computed(() => (import.meta.env.VITE_HERMES_WS_URL || 'wss://hermes.aipreneur.co.id/ws').trim());
+const socketToken = computed(() => (import.meta.env.VITE_HERMES_WS_TOKEN || '').trim());
 const initMethod = computed(() => (import.meta.env.VITE_HERMES_WS_INIT_METHOD || 'init').trim());
 const chatMethod = computed(() => (import.meta.env.VITE_HERMES_WS_CHAT_METHOD || 'chat').trim());
 
 const chatHost = import.meta.env.VITE_HERMES_CHAT_URL || '/hermes/chat';
 const messagesPanel = ref(null);
+
+const websocketEndpoint = computed(() => {
+    if (!socketUrl.value) return '';
+    if (!socketToken.value) {
+        return socketUrl.value;
+    }
+
+    const joiner = socketUrl.value.includes('?') ? '&' : '?';
+    return `${socketUrl.value}${joiner}token=${encodeURIComponent(socketToken.value)}`;
+});
 
 const clearWsConnectTimeout = () => {
     if (wsConnectTimeoutId.value) {
@@ -184,7 +195,7 @@ const startSession = () => {
         return;
     }
 
-    const ws = new WebSocket(socketUrl.value);
+    const ws = new WebSocket(websocketEndpoint.value);
     wsConnectTimeoutId.value = window.setTimeout(() => {
         if (!isConnected.value && socket.value === ws) {
             isConnecting.value = false;
