@@ -87,6 +87,8 @@ const closeMessage = () => {
     socket.value = null;
 };
 
+const cleanText = (val) => typeof val === "string" ? val.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+/g, "").replace(/`/g, "") : val;
+
 const pushMessage = (role, text) => {
     messages.value.push({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -493,7 +495,7 @@ onBeforeUnmount(() => {
                         item.role === 'user' ? 'ml-auto bg-brand-600 text-white' : item.role === 'system' ? 'bg-yellow-100 text-yellow-900' : 'bg-slate-100 text-slate-700',
                     ]"
                 >
-                    <p class="whitespace-pre-wrap">{{ item.text }}</p>
+                    <p class="whitespace-pre-wrap">{{ cleanText(item.text) }}</p>
                     <p v-if="item.pending" class="text-[11px] opacity-70 mt-1">mengetik…</p>
                 </div>
             </div>
