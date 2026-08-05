@@ -496,7 +496,7 @@ onBeforeUnmount(() => {
                     ]"
                 >
                     <p class="whitespace-pre-wrap">{{ cleanText(item.text) }}</p>
-                    <p v-if="item.pending" class="text-[11px] opacity-70 mt-1">mengetik…</p>
+                    <div v-if="item.pending" class="flex items-center gap-1 mt-1 text-slate-500 text-xs py-0.5"><span class="hermes-thinking-dot"></span><span class="hermes-thinking-dot hermes-thinking-dot-delay-1"></span><span class="hermes-thinking-dot hermes-thinking-dot-delay-2"></span></div>
                 </div>
             </div>
 
@@ -522,7 +522,7 @@ onBeforeUnmount(() => {
                         {{ isSubmitting ? 'Kirim…' : 'Kirim' }}
                     </button>
                 </div>
-                <p class="mt-1.5 text-[11px] text-slate-400">Koneksi: JSON-RPC via WebSocket (`/ws`) + fallback HTTP (`/hermes/chat`).</p>
+                
             </form>
         </div>
     </div>
