@@ -4,14 +4,19 @@ namespace App\Support;
 
 use App\Models\Absence;
 use App\Models\Attendance;
+use App\Models\InsightContent;
+use App\Models\Mindmap;
+use App\Models\Objective;
 use App\Models\Order;
 use App\Models\Pipeline;
 use App\Models\PayrollEntry;
 use App\Models\PayrollPeriod;
+use App\Models\Script;
 use App\Models\User;
 use App\Models\Transaction;
 use App\Notifications\HermesDailyReportNotification;
 use App\Support\ExchangeRate;
+use App\Support\OkrMetrics;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -117,6 +122,55 @@ class Hermes
                 ->sum('amount_idr');
         }
 
+        // ---- Kanban ----
+        $kanbanActive = 0;
+        $kanbanDoneToday = 0;
+        $kanbanOverdue = 0;
+        if (Schema::hasTable('pipelines') && Schema::hasTable('categories')) {
+            $kanbanBoards = Pipeline::categories('kanban');
+            $kBase = Pipeline::query()
+                ->whereIn('category', array_keys($kanbanBoards))
+                ->whereNull('archived_at');
+            $kanbanActive    = (int) (clone $kBase)->where('done', false)->count();
+            $kanbanDoneToday = (int) (clone $kBase)->where('done', true)->whereDate('completed_at', $dateStr)->count();
+            $kanbanOverdue   = (int) (clone $kBase)->where('done', false)->whereNotNull('deadline')->where('deadline', '<', $date->startOfDay())->count();
+        }
+
+        // ---- OKR ----
+        $okrObjectives = 0;
+        $okrProgress = null;
+        $okrTercapai = 0;
+        if (Schema::hasTable('objectives') && Schema::hasTable('okr_periods')) {
+            $q = Quarter::current();
+            $realisasi = OkrMetrics::realisasi($q['year'], $q['quarter']);
+            $objectives = Objective::forQuarter($q['year'], $q['quarter']);
+            $okrObjectives = $objectives->count();
+            $progressArr = $objectives->map(fn ($o) => $o->progress($realisasi))->filter(fn ($p) => $p !== null);
+            $okrProgress = $progressArr->isEmpty() ? null : round($progressArr->average(), 1);
+            $krs = $objectives->pluck('keyResults')->flatten(1);
+            $okrTercapai = $krs->filter(fn ($kr) => $kr->percent($realisasi) >= 100)->count();
+        }
+
+        // ---- Insight ----
+        $insightKonten = 0;
+        $insightViews = 0;
+        $insightFollowerGain = 0;
+        if (Schema::hasTable('insight_contents')) {
+            $insightKonten = (int) InsightContent::whereDate('published_at', $dateStr)->count();
+            $insightViews  = (int) InsightContent::whereDate('published_at', $dateStr)->sum('views');
+            $insightFollowerGain = (int) InsightContent::whereDate('published_at', $dateStr)->sum('followers_gained');
+        }
+
+        // ---- Mindmap & Script ----
+        $mindmapUpdated = 0;
+        $scriptNew = 0;
+        if (Schema::hasTable('mindmaps')) {
+            $mindmapUpdated = (int) Mindmap::whereDate('updated_at', $dateStr)->count();
+        }
+        if (Schema::hasTable('scripts')) {
+            $scriptNew = (int) Script::whereDate('created_at', $dateStr)->count();
+        }
+
         return [
             'date' => $dateStr,
             'orders' => [
@@ -145,19 +199,71 @@ class Hermes
                 'pemasukan' => (float) $transaksiIn,
                 'pengeluaran' => (float) $transaksiOut,
             ],
+            'kanban' => [
+                'active' => $kanbanActive,
+                'done_today' => $kanbanDoneToday,
+                'overdue' => $kanbanOverdue,
+            ],
+            'okr' => [
+                'objectives' => $okrObjectives,
+                'progress' => $okrProgress,
+                'tercapai' => $okrTercapai,
+            ],
+            'insight' => [
+                'konten_baru' => $insightKonten,
+                'views' => $insightViews,
+                'follower_gain' => $insightFollowerGain,
+            ],
+            'mindmap' => [
+                'updated' => $mindmapUpdated,
+            ],
+            'script' => [
+                'new' => $scriptNew,
+            ],
         ];
     }
 
     public static function formatMessage(array $s, string $date): string
     {
         $toRupiah = fn (float $nominal) => 'Rp '.number_format($nominal, 0, ',', '.');
+        $nl = PHP_EOL;
+
+        $okrLine = '';
+        if (! empty($s['okr'])) {
+            $prog = $s['okr']['progress'] !== null ? $s['okr']['progress'].'%' : 'belum ada data';
+            $okrLine = "{$nl}OKR: {$s['okr']['objectives']} objective aktif, rata-rata progres {$prog}, {$s['okr']['tercapai']} KR tercapai 100%.";
+        }
+
+        $insightLine = '';
+        if (! empty($s['insight'])) {
+            $insightLine = "{$nl}Insight: {$s['insight']['konten_baru']} konten tayang hari ini, {$s['insight']['views']} views, +{$s['insight']['follower_gain']} follower.";
+        }
+
+        $kanbanLine = '';
+        if (! empty($s['kanban'])) {
+            $kanbanLine = "{$nl}Kanban: {$s['kanban']['active']} tugas aktif, {$s['kanban']['done_today']} selesai hari ini, {$s['kanban']['overdue']} terlambat.";
+        }
+
+        $mindmapLine = ! empty($s['mindmap']) && $s['mindmap']['updated'] > 0
+            ? "{$nl}Mindmap: {$s['mindmap']['updated']} peta diperbarui hari ini."
+            : '';
+
+        $scriptLine = ! empty($s['script']) && $s['script']['new'] > 0
+            ? "{$nl}Script: {$s['script']['new']} naskah baru dibuat hari ini."
+            : '';
 
         return "Laporan harian {$date}"
-            .PHP_EOL.'- Order: '.$s['orders']['created'].' new ('.$toRupiah((float) $s['orders']['created_value_idr']).')'
-            .PHP_EOL.'- Bayar hari ini: '.$s['orders']['paid'].' transaksi ('.$toRupiah((float) $s['orders']['paid_value_idr']).')'
-            .PHP_EOL.'- Absensi: '.$s['absensi']['hadir'].' hadir · '.$s['absensi']['izin_dengan_status_menunggu'].' pengajuan menunggu'
-            .PHP_EOL.'- CRM: '.$s['crm']['new'].' lead baru, '.$s['crm']['won_today'].' won, '.$s['crm']['due_soon'].' due ≤7 hari'
-            .PHP_EOL.'- Pembukuan: in '.$toRupiah((float) $s['pembukuan']['pemasukan']).' · out '.$toRupiah((float) $s['pembukuan']['pengeluaran']);
+            ."{$nl}Order: {$s['orders']['created']} order masuk ({$toRupiah((float) $s['orders']['created_value_idr'])}), {$s['orders']['full']} lunas, {$s['orders']['dp']} DP."
+            ."{$nl}Pembayaran diterima: {$s['orders']['paid']} transaksi ({$toRupiah((float) $s['orders']['paid_value_idr'])})."
+            ."{$nl}Absensi: {$s['absensi']['hadir']} hadir, {$s['absensi']['izin_dengan_status_menunggu']} pengajuan izin menunggu persetujuan."
+            ."{$nl}CRM/Sales: {$s['crm']['new']} lead baru, {$s['crm']['won_today']} deal won, {$s['crm']['due_soon']} deal jatuh tempo ≤7 hari."
+            .($okrLine)
+            .($kanbanLine)
+            ."{$nl}Pembukuan: pemasukan {$toRupiah((float) $s['pembukuan']['pemasukan'])}, pengeluaran {$toRupiah((float) $s['pembukuan']['pengeluaran'])}."
+            ."{$nl}Payroll: {$s['payroll']['entries']} entri dibuat, {$s['payroll']['periods_updated']} periode diperbarui."
+            .($insightLine)
+            .($mindmapLine)
+            .($scriptLine);
     }
 
     public static function recipientsByRole(): Collection
