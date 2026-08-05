@@ -211,6 +211,7 @@ class HermesReportController extends Controller
         $baseUrl = trim((string) ($config['url'] ?? ''));
         $timeout = (int) ($config['timeout'] ?? 20);
         $chatPaths = $this->normalizeHermesChatPaths((string) ($config['chat_path'] ?? ''));
+        $unsupportedStatusCodes = [404, 405, 410];
 
         if ($token === '' || $baseUrl === '') {
             return response()->json([
@@ -220,11 +221,20 @@ class HermesReportController extends Controller
             ]);
         }
 
+        if (empty($chatPaths)) {
+            return response()->json([
+                'ok' => false,
+                'source' => 'system',
+                'reply' => 'Path chat Hermes belum diatur (HERMES_AGENT_CHAT_PATH kosong). ' . $this->fallbackReply($message),
+            ], 200);
+        }
+
         try {
             $resolved = null;
             $attempts = [];
             $lastStatus = null;
             $lastBody = null;
+            $allUnsupported = true;
 
             foreach ($chatPaths as $chatPath) {
                 $url = rtrim($baseUrl, '/') . '/' . ltrim($chatPath, '/');
@@ -238,11 +248,24 @@ class HermesReportController extends Controller
                 $attempts[] = $chatPath . ' => ' . $res->status();
                 $lastBody = (array) $res->json();
                 $lastStatus = $res->status();
+                if (! in_array($res->status(), $unsupportedStatusCodes, true)) {
+                    $allUnsupported = false;
+                }
 
                 if ($res->status() !== 405) {
                     $resolved = $res;
                     break;
                 }
+            }
+
+            if ($allUnsupported && ! empty($attempts)) {
+                return response()->json([
+                    'ok' => false,
+                    'source' => 'system',
+                    'reply' => 'Hermes belum menyediakan endpoint HTTP chat yang valid untuk path ini (semua coba: '
+                        . implode(', ', $attempts)
+                        . '). ' . $this->fallbackReply($message),
+                ], 200);
             }
 
             $res = $resolved;
