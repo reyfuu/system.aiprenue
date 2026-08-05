@@ -575,8 +575,7 @@ class HermesReportController extends Controller
         abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses ke halaman ini.');
 
         $filters = $request->validate([
-            'from' => ['nullable', 'date'],
-            'to' => ['nullable', 'date', 'after_or_equal:from'],
+            'period' => ['nullable', 'in:7,30,90'],
             'status' => ['nullable', 'in:all,read,unread'],
         ]);
 
@@ -585,12 +584,9 @@ class HermesReportController extends Controller
             ->where('type', HermesDailyReportNotification::class)
             ->latest('created_at');
 
-        if ($from = $filters['from'] ?? null) {
-            $query->whereDate('created_at', '>=', $from);
-        }
-
-        if ($to = $filters['to'] ?? null) {
-            $query->whereDate('created_at', '<=', $to);
+        // Period preset: 7, 30, atau 90 hari terakhir. Default = semua.
+        if ($days = (int) ($filters['period'] ?? 0)) {
+            $query->where('created_at', '>=', now()->subDays($days)->startOfDay());
         }
 
         if (($filters['status'] ?? 'all') === 'read') {
@@ -623,6 +619,17 @@ class HermesReportController extends Controller
                     'payroll_periods_updated' => (int) ($summary['payroll']['periods_updated'] ?? 0),
                     'pembukuan_in' => (float) ($summary['pembukuan']['pemasukan'] ?? 0),
                     'pembukuan_out' => (float) ($summary['pembukuan']['pengeluaran'] ?? 0),
+                    'kanban_active' => (int) ($summary['kanban']['active'] ?? 0),
+                    'kanban_done_today' => (int) ($summary['kanban']['done_today'] ?? 0),
+                    'kanban_overdue' => (int) ($summary['kanban']['overdue'] ?? 0),
+                    'okr_objectives' => (int) ($summary['okr']['objectives'] ?? 0),
+                    'okr_progress' => $summary['okr']['progress'] ?? null,
+                    'okr_tercapai' => (int) ($summary['okr']['tercapai'] ?? 0),
+                    'insight_konten' => (int) ($summary['insight']['konten_baru'] ?? 0),
+                    'insight_views' => (int) ($summary['insight']['views'] ?? 0),
+                    'insight_follower' => (int) ($summary['insight']['follower_gain'] ?? 0),
+                    'mindmap_updated' => (int) ($summary['mindmap']['updated'] ?? 0),
+                    'script_new' => (int) ($summary['script']['new'] ?? 0),
                 ],
                 'read_at' => optional($notification->read_at)->toIso8601String(),
                 'created_at' => optional($notification->created_at)->toIso8601String(),
