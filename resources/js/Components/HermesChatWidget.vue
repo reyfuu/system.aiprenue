@@ -3,13 +3,13 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 
 const page = usePage();
-const isOpen = ref(sessionStorage.getItem("hermes_widget_open") === "true");
+const isOpen = ref(sessionStorage.getItem("hermes_open_v2") === "true");
 const isConnected = ref(false);
 const isConnecting = ref(false);
 const errorMessage = ref('');
 const statusText = ref('');
 const input = ref('');
-const messages = ref((() => { try { return JSON.parse(sessionStorage.getItem("hermes_widget_messages")) || []; } catch { return []; } })());
+const messages = ref((() => { try { return JSON.parse(sessionStorage.getItem("hermes_messages_v2")) || []; } catch { return []; } })());
 const isSubmitting = ref(false);
 const socket = ref(null);
 const requestId = ref(1);
@@ -437,8 +437,8 @@ const onToggle = () => {
     }
 };
 
-watch(isOpen, (val) => sessionStorage.setItem("hermes_widget_open", String(val)));
-watch(messages, (val) => sessionStorage.setItem("hermes_widget_messages", JSON.stringify(val)), { deep: true });
+watch(isOpen, (val) => sessionStorage.setItem("hermes_open_v2", String(val)));
+watch(messages, (val) => sessionStorage.setItem("hermes_messages_v2", JSON.stringify(val)), { deep: true });
 
 watch(
     () => isOpen.value,
