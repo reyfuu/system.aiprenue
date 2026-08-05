@@ -388,9 +388,8 @@ const fallbackToHttp = async (messageText, pendingId) => {
 
 const sendChat = async () => {
     const text = input.value.trim();
-    if (!text || isSubmitting.value) return;
+    if (!text) return;
 
-    isSubmitting.value = true;
     pushMessage('user', text);
     input.value = '';
 
@@ -424,7 +423,6 @@ const sendChat = async () => {
         await fallbackToHttp(text, tempId);
     }
 
-    isSubmitting.value = false;
 };
 
 const onToggle = () => {
@@ -515,14 +513,13 @@ onBeforeUnmount(() => {
                         maxlength="2000"
                         placeholder="Tanya tugas audi di kanban..."
                         class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400"
-                        :disabled="isSubmitting"
-                    />
+                        />
                     <button
                         type="submit"
-                        :disabled="!input.trim() || isSubmitting"
+                        :disabled="!input.trim()"
                         class="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-brand-700"
                     >
-                        {{ isSubmitting ? 'Kirim…' : 'Kirim' }}
+                        Kirim
                     </button>
                 </div>
                 
