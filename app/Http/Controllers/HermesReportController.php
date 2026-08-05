@@ -20,8 +20,7 @@ class HermesReportController extends Controller
 {
     public function chat(Request $request): JsonResponse
     {
-        // Fitur chat Hermes hanya untuk owner & IT (sesuai menu daily_report).
-        abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses ke chat Hermes.');
+
 
         $data = $request->validate([
             'message' => ['required', 'string', 'max:3000'],
@@ -179,9 +178,6 @@ class HermesReportController extends Controller
 
     public function wsTicket(Request $request): JsonResponse
     {
-        // Endpoint hanya untuk user yang sama-sama bisa akses fitur daily report.
-        abort_unless($request->user()?->canSee('daily_report'), 403, 'Anda tidak punya akses tiket Hermes WS.');
-
         $baseUrl = trim((string) (config('services.hermes_agent.url') ?? ''));
         $token = trim((string) (config('services.hermes_agent.token') ?? ''));
 
