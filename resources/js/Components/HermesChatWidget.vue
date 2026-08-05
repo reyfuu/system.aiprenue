@@ -263,15 +263,18 @@ const startSession = async () => {
 
                 ws.onerror = () => {
                     clearWsConnectTimeout();
-                    errorMessage.value = 'Gagal koneksi ke Hermes WS.';
-                    reject(new Error('gagal handshake WS'));
+                    errorMessage.value = '';
+                    statusText.value = 'HTTP Chat Aktif';
+                    resolve(null);
                 };
 
                 ws.onclose = () => {
                     clearWsConnectTimeout();
                     isConnected.value = false;
                     isConnecting.value = false;
-                    statusText.value = 'Koneksi tertutup';
+                    if (!statusText.value) {
+                        statusText.value = 'HTTP Chat Aktif';
+                    }
                     socket.value = null;
                 };
 
@@ -282,7 +285,7 @@ const startSession = async () => {
                 requestWsTicket()
                     .then((ticket) => {
                         if (!ticket) {
-                            statusText.value = 'Mode HTTP aktif';
+                            statusText.value = 'HTTP Chat Aktif';
                             isConnecting.value = false;
                             isConnected.value = false;
                             errorMessage.value = '';
@@ -292,7 +295,13 @@ const startSession = async () => {
 
                         createSocket(buildWebsocketUrl(ticket, 'ticket'));
                     })
-                    .catch(reject);
+                    .catch(() => {
+                        statusText.value = 'HTTP Chat Aktif';
+                        isConnecting.value = false;
+                        isConnected.value = false;
+                        errorMessage.value = '';
+                        resolve(null);
+                    });
                 return;
             }
 
