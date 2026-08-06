@@ -8,15 +8,45 @@ import ModalWrap from '../ModalWrap.vue'; // pembungkus modal
 import { rp } from '../scripts/lib/format'; // format Rupiah
 
 // Props dari controller
-defineProps({
+const props = defineProps({
     payload: Object, // data chart/rekap
     transactions: Array, // daftar transaksi mentah
     inventories: Array, // daftar inventaris mentah
     types: Object, // peta pemasukan/pengeluaran
     categories: { type: Array, default: () => [] }, // daftar kategori transaksi
 });
-
+const { payload, transactions, inventories, types, categories } = props;
 const asset = (path) => (path ? '/storage/' + path : null);
+const OTHER_CATEGORY_VALUE = '__lainnya__';
+const OTHER_CATEGORY_LABEL = 'Lainnya';
+
+const normalizeCategoryValue = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const availableCategories = ref(
+    Array.from(
+        new Set(
+            [
+                ...categories,
+                ...transactions
+                    .map((t) => normalizeCategoryValue(t.category))
+                    .filter((cat) => cat && cat !== OTHER_CATEGORY_VALUE && cat !== OTHER_CATEGORY_LABEL),
+            ]
+                .filter((cat) => normalizeCategoryValue(cat) !== OTHER_CATEGORY_LABEL)
+                .filter((cat) => normalizeCategoryValue(cat) !== OTHER_CATEGORY_VALUE),
+        ),
+    ),
+);
+
+const ensureCategoryInOptions = (value) => {
+    const category = normalizeCategoryValue(value);
+    if (!category || category === OTHER_CATEGORY_VALUE || category === OTHER_CATEGORY_LABEL) {
+        return;
+    }
+
+    if (!availableCategories.value.includes(category)) {
+        availableCategories.value.push(category);
+    }
+};
 
 // ---- Modal Transaksi ----
 const txOpen = ref(false);
@@ -25,14 +55,40 @@ const txBuktiInput = ref(null);
 const txForm = useForm({
     type: 'pemasukan',
     category: '',
+    category_other: '',
     description: '',
     amount_idr: '',
     date: '',
     bukti: null,
 });
+const setTxCategory = (value) => {
+    const normalized = normalizeCategoryValue(value);
+
+    if (!normalized) {
+        txForm.category = '';
+        txForm.category_other = '';
+        return;
+    }
+
+    if (normalized === OTHER_CATEGORY_LABEL) {
+        txForm.category = OTHER_CATEGORY_VALUE;
+        txForm.category_other = '';
+        return;
+    }
+
+    if (availableCategories.value.includes(normalized)) {
+        txForm.category = normalized;
+        txForm.category_other = '';
+        return;
+    }
+
+    txForm.category = OTHER_CATEGORY_VALUE;
+    txForm.category_other = normalized;
+};
 const openTxCreate = () => {
     txEditId.value = null;
     txForm.reset();
+    txForm.category_other = '';
     txForm.clearErrors();
     if (txBuktiInput.value) txBuktiInput.value.value = '';
     txOpen.value = true;
@@ -40,7 +96,7 @@ const openTxCreate = () => {
 const openTxEdit = (t) => {
     txEditId.value = t.id;
     txForm.type = t.type;
-    txForm.category = t.category;
+    setTxCategory(t.category);
     txForm.description = t.description ?? '';
     txForm.amount_idr = t.amount_idr;
     txForm.date = t.date;
@@ -50,18 +106,45 @@ const openTxEdit = (t) => {
     txOpen.value = true;
 };
 const submitTx = () => {
-    const done = {
+    const done = (category = '') => ({
         forceFormData: true,
         onSuccess: () => {
+            ensureCategoryInOptions(category);
             txOpen.value = false;
             txForm.reset();
         },
         preserveScroll: true,
+    });
+
+    const txPayload = (d, method = null) => {
+        const normalized = { ...d };
+        if (d.category === OTHER_CATEGORY_VALUE) {
+            normalized.category = (d.category_other ?? '').trim();
+        }
+        normalized.category = (normalized.category ?? '').trim();
+        delete normalized.category_other;
+
+        if (method) {
+            normalized._method = method;
+        }
+
+        return normalized;
     };
+
     if (txEditId.value) {
-        txForm.transform((d) => ({ ...d, _method: 'put' })).post('/transactions/' + txEditId.value, done);
+        const normalized = txPayload(txForm.data(), 'put');
+        if (!normalized.category) {
+            txForm.setError('category', 'Kategori wajib diisi.');
+            return;
+        }
+        txForm.transform(() => normalized).post('/transactions/' + txEditId.value, done(normalized.category));
     } else {
-        txForm.post('/transactions', done);
+        const normalized = txPayload(txForm.data());
+        if (!normalized.category) {
+            txForm.setError('category', 'Kategori wajib diisi.');
+            return;
+        }
+        txForm.transform(() => normalized).post('/transactions', done(normalized.category));
     }
 };
 const delTx = (t) => {
@@ -90,7 +173,7 @@ const scanStruk = async (e) => {
         if (data.ok && data.data) {
             const d = data.data; // isi field yang berhasil dibaca; biarkan yang kosong
             if (d.type) txForm.type = d.type;
-            if (d.category) txForm.category = d.category;
+            if (d.category) setTxCategory(d.category);
             if (d.amount_idr) txForm.amount_idr = d.amount_idr;
             if (d.date) txForm.date = d.date;
             if (d.description) txForm.description = d.description;
@@ -401,16 +484,17 @@ const delInv = (i) => {
                     >Kategori
                     <select
                         v-model="txForm.category"
+                        @change="setTxCategory($event.target.value)"
                         required
                         class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
                     >
                         <option value="" disabled>Pilih kategori…</option>
-                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                        <option value="__lainnya__">✏️ Lainnya (tulis manual)…</option>
+                        <option v-for="cat in availableCategories" :key="cat" :value="cat">{{ cat }}</option>
+                        <option :value="OTHER_CATEGORY_VALUE">✏️ Lainnya (tulis manual)…</option>
                     </select>
                     <input
-                        v-if="txForm.category === '__lainnya__'"
-                        v-model="txForm.category"
+                        v-if="txForm.category === OTHER_CATEGORY_VALUE"
+                        v-model="txForm.category_other"
                         required
                         placeholder="Tulis kategori…"
                         class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
