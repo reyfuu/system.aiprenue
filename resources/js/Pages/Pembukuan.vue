@@ -130,9 +130,23 @@ const setTxCategory = (value) => {
         return;
     }
 
-    if (normalized === OTHER_CATEGORY_LABEL) {
+    if (normalized === OTHER_CATEGORY_LABEL || normalized === OTHER_CATEGORY_VALUE) {
+        if (typeof window === 'undefined') {
+            txForm.category = '';
+            txForm.category_other = '';
+            return;
+        }
+
+        const custom = window.prompt('Tulis nama kategori lainnya:', '');
+        const normalizedCustom = normalizeCategoryValue(custom);
+        if (!normalizedCustom) {
+            txForm.category = '';
+            txForm.category_other = '';
+            return;
+        }
+
         txForm.category = OTHER_CATEGORY_VALUE;
-        txForm.category_other = '';
+        txForm.category_other = normalizedCustom;
         return;
     }
 
@@ -179,7 +193,12 @@ const submitTx = () => {
     const txPayload = (d, method = null) => {
         const normalized = { ...d };
         if (d.category === OTHER_CATEGORY_VALUE) {
-            normalized.category = (d.category_other ?? '').trim();
+            const custom = normalizeCategoryValue(d.category_other);
+            if (!custom) {
+                txForm.setError('category', 'Kategori lainnya wajib diisi.');
+                return null;
+            }
+            normalized.category = custom;
         }
         normalized.category = (normalized.category ?? '').trim();
         delete normalized.category_other;
@@ -193,6 +212,7 @@ const submitTx = () => {
 
     if (txEditId.value) {
         const normalized = txPayload(txForm.data(), 'put');
+        if (!normalized) return;
         if (!normalized.category) {
             txForm.setError('category', 'Kategori wajib diisi.');
             return;
@@ -200,6 +220,7 @@ const submitTx = () => {
         txForm.transform(() => normalized).post('/transactions/' + txEditId.value, done(normalized.category));
     } else {
         const normalized = txPayload(txForm.data());
+        if (!normalized) return;
         if (!normalized.category) {
             txForm.setError('category', 'Kategori wajib diisi.');
             return;
@@ -569,13 +590,6 @@ const delInv = (i) => {
                             </button>
                         </span>
                     </div>
-                    <input
-                        v-if="txForm.category === OTHER_CATEGORY_VALUE"
-                        v-model="txForm.category_other"
-                        required
-                        placeholder="Tulis kategori…"
-                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
-                    />
                     <span v-if="txForm.errors.category" class="text-xs text-red-600">{{ txForm.errors.category }}</span>
                 </label>
                 <label class="block font-medium text-slate-600"
