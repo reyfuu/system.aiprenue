@@ -1,6 +1,6 @@
 <script setup>
 // Halaman Pembukuan: chart (read-only) + CRUD transaksi & inventaris (super_admin/it).
-import { ref } from 'vue'; // state modal/edit
+import { computed, ref } from 'vue'; // state modal/edit
 import { useForm, router } from '@inertiajs/vue3'; // form Inertia + aksi hapus
 import Layout from '../Layout.vue'; // kerangka + sidebar + toast
 import Pembukuan from '../scripts/components/Pembukuan.vue'; // komponen chart (prop `data`)
@@ -19,23 +19,56 @@ const { payload, transactions, inventories, types, categories } = props;
 const asset = (path) => (path ? '/storage/' + path : null);
 const OTHER_CATEGORY_VALUE = '__lainnya__';
 const OTHER_CATEGORY_LABEL = 'Lainnya';
+const DELETED_CATEGORIES_KEY = 'pembukuan_deleted_categories_v1';
+const categoryStore = typeof window !== 'undefined' ? window.localStorage.getItem(DELETED_CATEGORIES_KEY) : null;
+const parseCategoryStore = () => {
+    if (!categoryStore) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(categoryStore);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
 
-const normalizeCategoryValue = (value) => (typeof value === 'string' ? value.trim() : '');
-
-const availableCategories = ref(
+const normalizeCategories = (list) =>
     Array.from(
         new Set(
-            [
-                ...categories,
-                ...transactions
-                    .map((t) => normalizeCategoryValue(t.category))
-                    .filter((cat) => cat && cat !== OTHER_CATEGORY_VALUE && cat !== OTHER_CATEGORY_LABEL),
-            ]
-                .filter((cat) => normalizeCategoryValue(cat) !== OTHER_CATEGORY_LABEL)
-                .filter((cat) => normalizeCategoryValue(cat) !== OTHER_CATEGORY_VALUE),
+            list
+                .filter((cat) => {
+                    const normalized = normalizeCategoryValue(cat);
+                    return normalized && normalized !== OTHER_CATEGORY_VALUE && normalized !== OTHER_CATEGORY_LABEL;
+                })
+                .map((cat) => normalizeCategoryValue(cat)),
         ),
-    ),
+    );
+
+const normalizeCategoryValue = (value) => (typeof value === 'string' ? value.trim() : '');
+const deletedCategories = ref(
+    parseCategoryStore()
+        .filter((item) => typeof item === 'string')
+        .map((item) => normalizeCategoryValue(item))
+        .filter(Boolean),
 );
+
+const customCategories = ref([]);
+const categorySource = computed(() =>
+    normalizeCategories([
+        ...categories,
+        ...transactions.map((t) => normalizeCategoryValue(t.category)),
+        ...customCategories.value,
+    ]),
+);
+const availableCategories = computed(() => categorySource.value.filter((cat) => !deletedCategories.value.includes(cat)));
+
+const persistDeletedCategories = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    window.localStorage.setItem(DELETED_CATEGORIES_KEY, JSON.stringify(deletedCategories.value));
+};
 
 const ensureCategoryInOptions = (value) => {
     const category = normalizeCategoryValue(value);
@@ -43,8 +76,35 @@ const ensureCategoryInOptions = (value) => {
         return;
     }
 
-    if (!availableCategories.value.includes(category)) {
-        availableCategories.value.push(category);
+    if (!categorySource.value.includes(category) && !customCategories.value.includes(category)) {
+        customCategories.value.push(category);
+    }
+
+    const removedIdx = deletedCategories.value.indexOf(category);
+    if (removedIdx >= 0) {
+        deletedCategories.value.splice(removedIdx, 1);
+        persistDeletedCategories();
+    }
+};
+
+const deleteCategory = (category) => {
+    const normalized = normalizeCategoryValue(category);
+    if (!normalized || deletedCategories.value.includes(normalized)) {
+        return;
+    }
+
+    if (!confirm(`Hapus kategori “${normalized}” dari daftar pilihan?`)) {
+        return;
+    }
+
+    if (!deletedCategories.value.includes(normalized)) {
+        deletedCategories.value.push(normalized);
+    }
+    persistDeletedCategories();
+
+    if (txForm.category === normalized) {
+        txForm.category = '';
+        txForm.category_other = '';
     }
 };
 
@@ -76,7 +136,7 @@ const setTxCategory = (value) => {
         return;
     }
 
-    if (availableCategories.value.includes(normalized)) {
+    if (categorySource.value.includes(normalized) || deletedCategories.value.includes(normalized)) {
         txForm.category = normalized;
         txForm.category_other = '';
         return;
@@ -492,6 +552,23 @@ const delInv = (i) => {
                         <option v-for="cat in availableCategories" :key="cat" :value="cat">{{ cat }}</option>
                         <option :value="OTHER_CATEGORY_VALUE">✏️ Lainnya (tulis manual)…</option>
                     </select>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <span
+                            v-for="cat in availableCategories"
+                            :key="`chip-${cat}`"
+                            class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
+                        >
+                            <span>{{ cat }}</span>
+                            <button
+                                type="button"
+                                class="text-red-500 hover:text-red-700 leading-none"
+                                title="Hapus kategori"
+                                @click="deleteCategory(cat)"
+                            >
+                                ×
+                            </button>
+                        </span>
+                    </div>
                     <input
                         v-if="txForm.category === OTHER_CATEGORY_VALUE"
                         v-model="txForm.category_other"
