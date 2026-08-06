@@ -1,6 +1,6 @@
 <script setup>
 // Halaman Pembukuan: chart (read-only) + CRUD transaksi & inventaris (super_admin/it).
-import { ref } from 'vue'; // state modal/edit
+import { computed, ref } from 'vue'; // state modal/edit
 import { useForm, router } from '@inertiajs/vue3'; // form Inertia + aksi hapus
 import Layout from '../Layout.vue'; // kerangka + sidebar + toast
 import Pembukuan from '../scripts/components/Pembukuan.vue'; // komponen chart (prop `data`)
@@ -8,15 +8,105 @@ import ModalWrap from '../ModalWrap.vue'; // pembungkus modal
 import { rp } from '../scripts/lib/format'; // format Rupiah
 
 // Props dari controller
-defineProps({
+const props = defineProps({
     payload: Object, // data chart/rekap
     transactions: Array, // daftar transaksi mentah
     inventories: Array, // daftar inventaris mentah
     types: Object, // peta pemasukan/pengeluaran
     categories: { type: Array, default: () => [] }, // daftar kategori transaksi
 });
-
+const { payload, transactions, inventories, types, categories } = props;
 const asset = (path) => (path ? '/storage/' + path : null);
+const OTHER_CATEGORY_VALUE = '__lainnya__';
+const OTHER_CATEGORY_LABEL = 'Lainnya';
+const DELETED_CATEGORIES_KEY = 'pembukuan_deleted_categories_v1';
+const categoryStore = typeof window !== 'undefined' ? window.localStorage.getItem(DELETED_CATEGORIES_KEY) : null;
+const parseCategoryStore = () => {
+    if (!categoryStore) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(categoryStore);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const normalizeCategories = (list) =>
+    Array.from(
+        new Set(
+            list
+                .filter((cat) => {
+                    const normalized = normalizeCategoryValue(cat);
+                    return normalized && normalized !== OTHER_CATEGORY_VALUE && normalized !== OTHER_CATEGORY_LABEL;
+                })
+                .map((cat) => normalizeCategoryValue(cat)),
+        ),
+    );
+
+const normalizeCategoryValue = (value) => (typeof value === 'string' ? value.trim() : '');
+const deletedCategories = ref(
+    parseCategoryStore()
+        .filter((item) => typeof item === 'string')
+        .map((item) => normalizeCategoryValue(item))
+        .filter(Boolean),
+);
+
+const customCategories = ref([]);
+const categorySource = computed(() =>
+    normalizeCategories([
+        ...categories,
+        ...transactions.map((t) => normalizeCategoryValue(t.category)),
+        ...customCategories.value,
+    ]),
+);
+const availableCategories = computed(() => categorySource.value.filter((cat) => !deletedCategories.value.includes(cat)));
+
+const persistDeletedCategories = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    window.localStorage.setItem(DELETED_CATEGORIES_KEY, JSON.stringify(deletedCategories.value));
+};
+
+const ensureCategoryInOptions = (value) => {
+    const category = normalizeCategoryValue(value);
+    if (!category || category === OTHER_CATEGORY_VALUE || category === OTHER_CATEGORY_LABEL) {
+        return;
+    }
+
+    if (!categorySource.value.includes(category) && !customCategories.value.includes(category)) {
+        customCategories.value.push(category);
+    }
+
+    const removedIdx = deletedCategories.value.indexOf(category);
+    if (removedIdx >= 0) {
+        deletedCategories.value.splice(removedIdx, 1);
+        persistDeletedCategories();
+    }
+};
+
+const deleteCategory = (category) => {
+    const normalized = normalizeCategoryValue(category);
+    if (!normalized || deletedCategories.value.includes(normalized)) {
+        return;
+    }
+
+    if (!confirm(`Hapus kategori “${normalized}” dari daftar pilihan?`)) {
+        return;
+    }
+
+    if (!deletedCategories.value.includes(normalized)) {
+        deletedCategories.value.push(normalized);
+    }
+    persistDeletedCategories();
+
+    if (txForm.category === normalized) {
+        txForm.category = '';
+        txForm.category_other = '';
+    }
+};
 
 // ---- Modal Transaksi ----
 const txOpen = ref(false);
@@ -25,14 +115,54 @@ const txBuktiInput = ref(null);
 const txForm = useForm({
     type: 'pemasukan',
     category: '',
+    category_other: '',
     description: '',
     amount_idr: '',
     date: '',
     bukti: null,
 });
+const setTxCategory = (value) => {
+    const normalized = normalizeCategoryValue(value);
+
+    if (!normalized) {
+        txForm.category = '';
+        txForm.category_other = '';
+        return;
+    }
+
+    if (normalized === OTHER_CATEGORY_LABEL || normalized === OTHER_CATEGORY_VALUE) {
+        if (typeof window === 'undefined') {
+            txForm.category = '';
+            txForm.category_other = '';
+            return;
+        }
+
+        const custom = window.prompt('Tulis nama kategori lainnya:', '');
+        const normalizedCustom = normalizeCategoryValue(custom);
+        if (!normalizedCustom) {
+            txForm.category = '';
+            txForm.category_other = '';
+            return;
+        }
+
+        txForm.category = OTHER_CATEGORY_VALUE;
+        txForm.category_other = normalizedCustom;
+        return;
+    }
+
+    if (categorySource.value.includes(normalized) || deletedCategories.value.includes(normalized)) {
+        txForm.category = normalized;
+        txForm.category_other = '';
+        return;
+    }
+
+    txForm.category = OTHER_CATEGORY_VALUE;
+    txForm.category_other = normalized;
+};
 const openTxCreate = () => {
     txEditId.value = null;
     txForm.reset();
+    txForm.category_other = '';
     txForm.clearErrors();
     if (txBuktiInput.value) txBuktiInput.value.value = '';
     txOpen.value = true;
@@ -40,7 +170,7 @@ const openTxCreate = () => {
 const openTxEdit = (t) => {
     txEditId.value = t.id;
     txForm.type = t.type;
-    txForm.category = t.category;
+    setTxCategory(t.category);
     txForm.description = t.description ?? '';
     txForm.amount_idr = t.amount_idr;
     txForm.date = t.date;
@@ -50,18 +180,52 @@ const openTxEdit = (t) => {
     txOpen.value = true;
 };
 const submitTx = () => {
-    const done = {
+    const done = (category = '') => ({
         forceFormData: true,
         onSuccess: () => {
+            ensureCategoryInOptions(category);
             txOpen.value = false;
             txForm.reset();
         },
         preserveScroll: true,
+    });
+
+    const txPayload = (d, method = null) => {
+        const normalized = { ...d };
+        if (d.category === OTHER_CATEGORY_VALUE) {
+            const custom = normalizeCategoryValue(d.category_other);
+            if (!custom) {
+                txForm.setError('category', 'Kategori lainnya wajib diisi.');
+                return null;
+            }
+            normalized.category = custom;
+        }
+        normalized.category = (normalized.category ?? '').trim();
+        delete normalized.category_other;
+
+        if (method) {
+            normalized._method = method;
+        }
+
+        return normalized;
     };
+
     if (txEditId.value) {
-        txForm.transform((d) => ({ ...d, _method: 'put' })).post('/transactions/' + txEditId.value, done);
+        const normalized = txPayload(txForm.data(), 'put');
+        if (!normalized) return;
+        if (!normalized.category) {
+            txForm.setError('category', 'Kategori wajib diisi.');
+            return;
+        }
+        txForm.transform(() => normalized).post('/transactions/' + txEditId.value, done(normalized.category));
     } else {
-        txForm.post('/transactions', done);
+        const normalized = txPayload(txForm.data());
+        if (!normalized) return;
+        if (!normalized.category) {
+            txForm.setError('category', 'Kategori wajib diisi.');
+            return;
+        }
+        txForm.transform(() => normalized).post('/transactions', done(normalized.category));
     }
 };
 const delTx = (t) => {
@@ -90,7 +254,7 @@ const scanStruk = async (e) => {
         if (data.ok && data.data) {
             const d = data.data; // isi field yang berhasil dibaca; biarkan yang kosong
             if (d.type) txForm.type = d.type;
-            if (d.category) txForm.category = d.category;
+            if (d.category) setTxCategory(d.category);
             if (d.amount_idr) txForm.amount_idr = d.amount_idr;
             if (d.date) txForm.date = d.date;
             if (d.description) txForm.description = d.description;
@@ -401,20 +565,31 @@ const delInv = (i) => {
                     >Kategori
                     <select
                         v-model="txForm.category"
+                        @change="setTxCategory($event.target.value)"
                         required
                         class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
                     >
                         <option value="" disabled>Pilih kategori…</option>
-                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                        <option value="__lainnya__">✏️ Lainnya (tulis manual)…</option>
+                        <option v-for="cat in availableCategories" :key="cat" :value="cat">{{ cat }}</option>
+                        <option :value="OTHER_CATEGORY_VALUE">✏️ Lainnya (tulis manual)…</option>
                     </select>
-                    <input
-                        v-if="txForm.category === '__lainnya__'"
-                        v-model="txForm.category"
-                        required
-                        placeholder="Tulis kategori…"
-                        class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
-                    />
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <span
+                            v-for="cat in availableCategories"
+                            :key="`chip-${cat}`"
+                            class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600"
+                        >
+                            <span>{{ cat }}</span>
+                            <button
+                                type="button"
+                                class="text-red-500 hover:text-red-700 leading-none"
+                                title="Hapus kategori"
+                                @click="deleteCategory(cat)"
+                            >
+                                ×
+                            </button>
+                        </span>
+                    </div>
                     <span v-if="txForm.errors.category" class="text-xs text-red-600">{{ txForm.errors.category }}</span>
                 </label>
                 <label class="block font-medium text-slate-600"
