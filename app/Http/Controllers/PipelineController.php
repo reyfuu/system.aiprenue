@@ -185,6 +185,9 @@ class PipelineController extends Controller
                 'dp2' => $p->dp2,
                 'dp3' => $p->dp3,
                 'dp_count' => collect([$p->dp1, $p->dp2, $p->dp3])->filter(fn ($v) => (float) $v > 0)->count(),
+                'follow_up1' => $p->follow_up1?->toDateString(),
+                'follow_up2' => $p->follow_up2?->toDateString(),
+                'follow_up3' => $p->follow_up3?->toDateString(),
                 'assignee' => $p->assignee?->name,
                 // Pembuat kartu. null = kartu lama (dibuat sebelum kolomnya ada) —
                 // UI menampilkannya sbg '—', bukan menebak siapa pun.
@@ -662,6 +665,9 @@ class PipelineController extends Controller
             'dp1' => 'nullable|numeric|min:0',
             'dp2' => 'nullable|numeric|min:0',
             'dp3' => 'nullable|numeric|min:0',
+            'follow_up1' => 'nullable|date',
+            'follow_up2' => 'nullable|date',
+            'follow_up3' => 'nullable|date',
             'notes' => 'nullable|string',
             'outputs' => 'array',
             'outputs.*' => 'exists:outputs,id',

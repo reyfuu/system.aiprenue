@@ -330,6 +330,9 @@ const editForm = useForm({
     dp1: '',
     dp2: '',
     dp3: '',
+    follow_up1: '',
+    follow_up2: '',
+    follow_up3: '',
     link: '',
     deadline: '',
     score: '',
@@ -363,6 +366,9 @@ const fillForm = (card) => {
     editForm.dp1 = card.dp1 ?? '';
     editForm.dp2 = card.dp2 ?? '';
     editForm.dp3 = card.dp3 ?? '';
+    editForm.follow_up1 = card.follow_up1 ?? '';
+    editForm.follow_up2 = card.follow_up2 ?? '';
+    editForm.follow_up3 = card.follow_up3 ?? '';
     editForm.link = card.link ?? '';
     editForm.deadline = card.deadline ?? '';
     editForm.score = card.score ?? '';
@@ -436,6 +442,9 @@ const submitCard = () => {
                   dp1: '',
                   dp2: '',
                   dp3: '',
+                  follow_up1: '',
+                  follow_up2: '',
+                  follow_up3: '',
                   outputs: [],
                   kontak_wa: '',
                   kontak_gmail: '',
@@ -2083,6 +2092,33 @@ class="block font-medium text-slate-600"
                         />
                     </label>
                 </div>
+                <!-- Follow Up 1-3 (Sales Pipeline) -->
+                <div v-if="isPipeline" class="col-span-2 grid grid-cols-3 gap-3">
+                    <label class="block font-medium text-slate-600"
+                        >Follow Up 1
+                        <input
+                            v-model="editForm.follow_up1"
+                            type="date"
+                            class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                        />
+                    </label>
+                    <label class="block font-medium text-slate-600"
+                        >Follow Up 2
+                        <input
+                            v-model="editForm.follow_up2"
+                            type="date"
+                            class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                        />
+                    </label>
+                    <label class="block font-medium text-slate-600"
+                        >Follow Up 3
+                        <input
+                            v-model="editForm.follow_up3"
+                            type="date"
+                            class="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-brand-400 outline-none"
+                        />
+                    </label>
+                </div>
                 <div class="col-span-2 font-medium text-slate-600">
                     <label for="card-link">{{ isPipeline ? 'Link Video' : 'Tautan' }}</label>
                     <div class="mt-1 flex gap-2">
@@ -2280,6 +2316,12 @@ class="block font-medium text-slate-600"
                 </p>
                 <p v-if="detailCard.completed_at">
                     <span class="font-medium text-slate-600">Selesai:</span> {{ fmtCreated(detailCard.completed_at) }}
+                </p>
+                <p v-if="isPipeline && (detailCard.follow_up1 || detailCard.follow_up2 || detailCard.follow_up3)">
+                    <span class="font-medium text-slate-600">Follow Up:</span>
+                    <span class="text-slate-700 ml-1">
+                        {{ [detailCard.follow_up1, detailCard.follow_up2, detailCard.follow_up3].filter(Boolean).join(' · ') }}
+                    </span>
                 </p>
                 <p v-if="KETEPATAN[detailCard.ketepatan]">
                     <span class="font-medium text-slate-600">Ketepatan:</span>

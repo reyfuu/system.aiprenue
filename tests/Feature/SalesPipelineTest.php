@@ -155,6 +155,27 @@ class SalesPipelineTest extends TestCase
         $this->assertSame([$output->id], $kartu->outputs->pluck('id')->all());
     }
 
+    public function test_kartu_sales_bisa_menyimpan_tanggal_follow_up(): void
+    {
+        $this->actingAs($this->user('owner'))->post('/pipelines', [
+            'category' => 'sales',
+            'account' => 'fk',
+            'endorse' => 'Deal Follow Up',
+            'progress' => 'kontak',
+            'payment_status' => 'dp',
+            'dp1' => 1_000_000,
+            'follow_up1' => '2026-08-10',
+            'follow_up2' => '2026-08-15',
+            'follow_up3' => '2026-08-20',
+        ])->assertSessionHasNoErrors();
+
+        $kartu = Pipeline::firstWhere('endorse', 'Deal Follow Up');
+        $this->assertNotNull($kartu);
+        $this->assertSame('2026-08-10', $kartu->follow_up1?->toDateString());
+        $this->assertSame('2026-08-15', $kartu->follow_up2?->toDateString());
+        $this->assertSame('2026-08-20', $kartu->follow_up3?->toDateString());
+    }
+
     /** Setiap kategori hanya boleh punya satu pilihan. */
     public function test_kartu_menolak_dua_label_dari_kategori_yang_sama(): void
     {
